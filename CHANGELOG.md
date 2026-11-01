@@ -40,7 +40,13 @@ release check (alzeo-cockpit/, was spark-cockpit/): nothing on the box reads the
 box's tools and its other projects. Its violet is warmer, as chosen on screenshots on 2026-10-31: the ground #170b38
 (was #120b36), the brand #9a6bff, #ccb5ff and #6a3fe0 (were #8c6cff, #c4b5ff and #5b3fd9), what floats #22164f and
 #2c1d66 (were #1d164d and #271e62), the halos of the background, painted and drawn, moved the same way. The 27B lane
-keeps its own hue.
+keeps its own hue. Every text keeps 4.5:1 over the brightest of the halos. Measured again on every view, desktop and
+phone, with the tool of 2026-10-11 (the brightest 5 % of the background under the glyphs, six moments of the backdrop's
+cycle), the warmer violet had put two texts under it: a danger button's label in Library on a phone at 4.45 (4.51 with
+the old violet, the two releases measured side by side on the same box) and the in-flight label of Traffic at 4.11.
+Their text is a little lighter, #ffe1dc and #ebe5ff, and the 22 views measured again have no text under 4.5:1, the
+lowest at 4.70 (Now, on a phone). The in-flight label shows only while a request runs: its 4.76 is the measured
+background with the lighter text, a projection that gave the button's 4.71 to within 0.01.
 
 **Checked after the rename.** From the reference box, once the repository had its new name: the API answers the old
 name with a 301 to the repository's id and the new one with the repository, and the cockpit's release check, which
