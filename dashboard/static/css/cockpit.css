@@ -1,4 +1,4 @@
-/* Spark Cockpit, the control room of one DGX Spark.
+/* Alzeo cockpit, the control room of one DGX Spark.
 
    The design starts from the machine's defining fact: one pool of 121.6 GiB of unified
    memory that the lanes take turns occupying. The pool is the hero of the first screen,
@@ -34,13 +34,13 @@
 :root{
   color-scheme:dark;
   /* deep indigo: the ground, and the panels of translucent light laid on it */
-  --ink-0:#120b36; --ink-1:rgba(255,255,255,.055); --ink-2:rgba(255,255,255,.085); --ink-3:rgba(255,255,255,.13); --ink-4:rgba(255,255,255,.18);
+  --ink-0:#170b38; --ink-1:rgba(255,255,255,.055); --ink-2:rgba(255,255,255,.085); --ink-3:rgba(255,255,255,.13); --ink-4:rgba(255,255,255,.18);
   --rule-1:rgba(255,255,255,.10); --rule-2:rgba(255,255,255,.16); --rule-3:rgba(255,255,255,.28);
   /* text: white, then two quieter tones, each still 4.5:1 over the brightest of the panels
      where the halos pass (measured on every view, desktop and phone, 2026-10-11) */
   --fg-1:#ffffff; --fg-2:rgba(255,255,255,.88); --fg-3:rgba(255,255,255,.80);
   /* violet: the brand, on the controls */
-  --brand:#8c6cff; --brand-hi:#c4b5ff; --brand-lo:#5b3fd9; --brand-ink:#1a0f42;
+  --brand:#9a6bff; --brand-hi:#ccb5ff; --brand-lo:#6a3fe0; --brand-ink:#1a0f42;
   /* state: green ready, amber on its way, red broken, grey idle */
   --ok:#4ade80; --ok-hi:#dcfce7; --warn:#fbbf24; --warn-hi:#ffe7b3; --bad:#f87171; --bad-hi:#ffdcd8; --idle:rgba(255,255,255,.5);
   /* a box that differs from what its release recommends (v1.36.0): neither a fault nor a warning */
@@ -50,7 +50,7 @@
   /* each lane's own hue: its share of the pool, the pool's legend, the head's gauge */
   --lane-27b:#8c6cff; --lane-flash:#38bdf8; --lane-image:#f472b6; --lane-video:#fb923c; --lane-kolibri:#34d399; --lane-nemotron:#84cc16; --lane-nemotron-super:#eab308; --lane-flash-local:#22d3ee; --lane-ornith-122b:#f87171;
   /* what floats over the page (a sheet, the dock, a toast, the phone's drawer) is opaque */
-  --raised:#1d164d; --raised-hi:#271e62;
+  --raised:#22164f; --raised-hi:#2c1d66;
   --shadow-1:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 40px -24px rgba(5,2,20,.7);
   --shadow-2:0 1px 0 rgba(255,255,255,.08) inset, 0 28px 60px -30px rgba(5,2,20,.8);
   /* type */
@@ -85,8 +85,8 @@ body{min-height:100vh; min-height:100dvh; background:var(--ink-0); color:var(--f
    browser with no WebGL keeps */
 body::before{content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background:
-    radial-gradient(1000px 700px at 55% 105%, rgba(110,70,230,.55), transparent 62%),
-    radial-gradient(800px 600px at 100% 0%, rgba(70,90,220,.30), transparent 60%), var(--ink-0)}
+    radial-gradient(1000px 700px at 55% 105%, rgba(122,62,232,.55), transparent 62%),
+    radial-gradient(800px 600px at 100% 0%, rgba(116,56,206,.30), transparent 60%), var(--ink-0)}
 #backdrop{position:fixed; inset:0; width:100vw; height:100vh; max-width:none; z-index:0; pointer-events:none;
   opacity:0; transition:opacity 1.2s ease}
 .has-backdrop #backdrop{opacity:1}
@@ -115,7 +115,7 @@ img,svg,video,canvas{display:block; max-width:100%}
 /* ── the spine: brand, what serves, the pool at a glance, the job, the line ── */
 .spine{position:sticky; top:0; z-index:40; height:var(--head); display:flex; align-items:center; gap:var(--s-4);
   padding:var(--sa-t) max(var(--s-5), var(--sa-r)) 0 max(var(--s-4), var(--sa-l)); border-bottom:1px solid var(--rule-1);
-  background:rgba(18,11,54,.72); backdrop-filter:saturate(1.2) blur(16px);
+  background:rgba(23,11,56,.72); backdrop-filter:saturate(1.2) blur(16px);
   -webkit-backdrop-filter:saturate(1.2) blur(16px)}
 
 .menu-btn{display:none; flex:none; width:40px; height:40px; border-radius:12px; border:1px solid var(--rule-2);
@@ -176,7 +176,7 @@ img,svg,video,canvas{display:block; max-width:100%}
 .rail{position:sticky; top:var(--head); align-self:start; height:calc(100dvh - var(--head)); overflow:auto;
   padding:var(--s-5) var(--s-3) calc(var(--s-4) + var(--sa-b)) max(var(--s-3), var(--sa-l));
   border-right:1px solid rgba(255,255,255,.08); display:flex; flex-direction:column; gap:var(--s-5);
-  background:rgba(18,11,54,.45)}
+  background:rgba(23,11,56,.45)}
 .rail .grp{display:flex; flex-direction:column; gap:2px}
 .rail .grp h2{font-size:var(--t-12); font-weight:520; color:var(--fg-3); padding:0 var(--s-3) var(--s-1); letter-spacing:.01em}
 .nav{position:relative; display:flex; align-items:center; gap:var(--s-3); width:100%; padding:9px var(--s-3);

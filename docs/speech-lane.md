@@ -3,7 +3,7 @@
 Speech recognition (ASR) and speech synthesis (TTS) on the same box as the text lanes,
 behind OpenAI-compatible audio routes, on the CPU alone: no GPU memory, so it runs beside
 whichever lane serves, flash included (discussion
-[#38](https://github.com/hasso5703/dgx-spark-qwen38/discussions/38)). Qwen3-ASR hears 30
+[#38](https://github.com/hasso5703/alzeo/discussions/38)). Qwen3-ASR hears 30
 languages; Kokoro-82M speaks seven, with 41 voices. Opt-in, and not in the one command
 yet: `./install-speech.sh` installs it, from a clone, on a box where `./install.sh` ran.
 

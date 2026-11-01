@@ -664,7 +664,7 @@ class TheOneLinerReachesIt(unittest.TestCase):
         # The normal path's call, the one after a text engine proved itself. The other
         # call belongs to the image-is-the-boot-lane exit, which ends before step 9 on
         # purpose and is held by AnUpdateKeepsTheImageLaneAsTheBootLane.
-        cockpit = self.text.index("10/10 Spark Cockpit")
+        cockpit = self.text.index("10/10 Alzeo cockpit")
         i = self.text.index('"$REPO_DIR/install-image.sh"', cockpit)
         self.assertLess(cockpit, i)
         tail = self.text[i:i + 300]

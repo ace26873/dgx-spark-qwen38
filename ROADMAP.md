@@ -231,7 +231,7 @@ the cockpit drift panel says so, per lane, until it is.
   "is this lane alive", the metrics join as history, not as a second
   opinion about life.
 - **The speech lane, next steps** (asked for in
-  [discussion #38](https://github.com/hasso5703/dgx-spark-qwen38/discussions/38)). It is
+  [discussion #38](https://github.com/hasso5703/alzeo/discussions/38)). It is
   built, opt-in: `./install-speech.sh` serves Qwen3-ASR and Kokoro-82M on the CPU, beside
   any lane, behind OpenAI's audio routes ([docs/speech-lane.md](docs/speech-lane.md)), from
   a script of its own. Possible next steps, none of them planned: a cockpit view (record and

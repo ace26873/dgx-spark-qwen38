@@ -307,11 +307,11 @@ def permission_is_auto(permission) -> bool:
 
 
 # ── the relay ────────────────────────────────────────────────────────────────
-SIGN_IN_PAGE = """<!doctype html><meta charset="utf-8"><title>Spark Cockpit</title>
+SIGN_IN_PAGE = """<!doctype html><meta charset="utf-8"><title>Alzeo cockpit</title>
 <style>body{{font:15px/1.5 system-ui,sans-serif;background:#0e1014;color:#ece9e1;display:grid;place-items:center;min-height:100vh;margin:0}}
 main{{max-width:44ch;padding:32px;text-align:center}}a{{color:#d9b45e}}</style>
 <main><h1 style="font-size:18px">Cockpit session required</h1>
-<p>This is the agent relay of the Spark Cockpit. Sign in to the cockpit at
+<p>This is the agent relay of the Alzeo cockpit. Sign in to the cockpit at
 <a href="{cockpit}">{cockpit}</a>, then come back to the Agent view.</p></main>"""
 
 

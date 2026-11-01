@@ -1,7 +1,7 @@
-# One command turns a DGX Spark into a private AI server
+# Alzeo: one command turns a DGX Spark into a private AI server
 
 <p align="center">
-  <img src="docs/img/tour.webp" width="270" alt="The Spark cockpit in ten seconds: a laptop and a phone driving the box, the live memory, a coding agent whose test passes, an image and a video made on the box, the seven lanes">
+  <img src="docs/img/tour.webp" width="270" alt="The Alzeo cockpit in ten seconds: a laptop and a phone driving the box, the live memory, a coding agent whose test passes, an image and a video made on the box, the seven lanes">
 </p>
 <p align="center"><a href="#see-it-in-49-seconds">Watch the 49-second tour, with sound</a></p>
 <p align="center"><a href="https://hasso5703.github.io/">The website: every model measured, guides, every GB10 machine</a></p>
@@ -11,11 +11,14 @@ video, Kolibri-1, Nemotron 3.5 Bolt, Nemotron 3.5 Super VL and Ornith 1.5 122B: 
 GB10 box such as the ASUS Ascent GX10. No prompt, image or video leaves the box.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+curl -fsSL https://get.alzeo.ai | bash
 ```
 
 Prefer to read it before it runs? Clone the repo and run `./install.sh`: that is all the
 one-liner does ([Quickstart](#quickstart)).
+
+Alzeo was named dgx-spark-qwen38 until 2026-11-01. A box installed before updates as it always did,
+its folder and services keep their names, and every old address of the repository leads here.
 
 | Model | Measured on the reference box, an ASUS Ascent GX10 |
 |---|---|
@@ -58,7 +61,7 @@ builds on its published config,
 takes its measurements as its DGX Spark reference, and it is listed in
 [awesome-dgx-spark](https://github.com/bidual/awesome-dgx-spark).
 
-![The Spark cockpit's Now view: one pool of unified memory and what holds it, and the eight lanes in their rack with their makers' marks, the serving one edged in green](docs/img/cockpit-now.png)
+![The Alzeo cockpit's Now view: one pool of unified memory and what holds it, and the eight lanes in their rack with their makers' marks, the serving one edged in green](docs/img/cockpit-now.png)
 
 *The cockpit, installed by default: one pool of unified memory, lanes that take turns in it, and the whole box run from a browser, on a laptop or a phone.*
 
@@ -157,7 +160,7 @@ The README is the entry point. Everything longer lives next to it, one subject p
                          | text engine :30000          |  27B, flash, FP4-Local, Kolibri, Bolt,
                          | (one lane at a time)        |  Super VL or Ornith, OpenAI + Anthropic
                          +-----------------------------+
-  you, from a browser -->| Spark Cockpit :30090        |  health that is real, actions,
+  you, from a browser -->| Alzeo cockpit :30090        |  health that is real, actions,
   (desk or phone)        | + Agent view (opencode web) |  jobs, registry, recipes, logs
                          +-----------------------------+
 ```
@@ -173,7 +176,7 @@ One command, first install and updates alike. It clones or updates `~/dgx-spark-
 **Updating a box adds the lanes it does not have yet, on demand.** A lane a box never had (the flash beside the 27B, images, video, Kolibri, the two Nemotron lanes, Flash FP4-Local, Ornith 122B) gets its units, and its first Load from the cockpit prepares it; a lane already on the box (installed whole, from any version, or begun by a first Load) is updated whole, as before. `--all-weights` builds the new ones now and proves them, and `--with-<lane>` does it for one lane. To leave a lane out, pass its flag on each run that should leave it out (a `--no-<lane>` counts for the run that passes it only): `--no-kolibri`, `--no-nemotron`, `--no-nemotron-super`, `--no-flash-local`, `--no-ornith-122b`, `--no-flash` (or `--no-27b` on a flash box), `--no-image`, `--no-video`, after `bash -s --` on the one-liner.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+curl -fsSL https://get.alzeo.ai | bash
 ```
 
 **No `sudo` in front of it, ever.** The installer calls `sudo` itself, for the privileged steps and for nothing else. Under `sudo`, `$HOME` is `/root`: the clone, the API key, the chat template and the compile cache all land in `/root`, the units are rendered pointing there, and the engine then installs, starts and serves perfectly well with a key nobody has, so every client reading `~/.config/qwen38/api-key` gets 401. Both entry points refuse root before writing anything (`tests/test_install_root_refusal.py`).
@@ -181,16 +184,16 @@ curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get
 Options ride on the **bash side** of the pipe (an env prefix on `curl` would not reach the installer):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | MODEL_CHOICE=flash bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | CONTEXT_MODE=native bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | MODEL_CHOICE=uncensored bash
+curl -fsSL https://get.alzeo.ai | MODEL_CHOICE=flash bash
+curl -fsSL https://get.alzeo.ai | CONTEXT_MODE=native bash
+curl -fsSL https://get.alzeo.ai | MODEL_CHOICE=uncensored bash
 ```
 
 Or the explicit way:
 
 ```bash
-git clone https://github.com/hasso5703/dgx-spark-qwen38.git
-cd dgx-spark-qwen38
+git clone https://github.com/hasso5703/alzeo.git ~/dgx-spark-qwen38   # the box's folder keeps this name
+cd ~/dgx-spark-qwen38
 ./install.sh            # image + checkpoints + systemd service, starts at every boot
 ./bench.sh              # verify your tok/s
 ```
@@ -265,14 +268,14 @@ Combinations that make sense:
 
 ```bash
 # one-liner forms (variables on the bash side, flags after "bash -s --")
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash                                  # 27B stock serving (1M), opencode, cockpit; every other lane prepared at its first Load
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --all-weights              # the whole box now, every lane built and proved (about 763 GB of downloads, 930 of disk)
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --no-flash --no-video --no-kolibri --no-nemotron --no-nemotron-super --no-flash-local --no-ornith-122b   # a smaller disk: the 27B and images only, on each run that passes them
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | CONTEXT_MODE=native bash              # the 262144 window instead
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | MODEL_CHOICE=flash bash               # Flash-Next lane (service only)
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --no-opencode              # API only, no opencode files
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --no-cockpit               # engine and proxy only, no web UI
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | MODEL_CHOICE=uncensored bash           # abliterated 27B, 1M context
+curl -fsSL https://get.alzeo.ai | bash                                  # 27B stock serving (1M), opencode, cockpit; every other lane prepared at its first Load
+curl -fsSL https://get.alzeo.ai | bash -s -- --all-weights              # the whole box now, every lane built and proved (about 763 GB of downloads, 930 of disk)
+curl -fsSL https://get.alzeo.ai | bash -s -- --no-flash --no-video --no-kolibri --no-nemotron --no-nemotron-super --no-flash-local --no-ornith-122b   # a smaller disk: the 27B and images only, on each run that passes them
+curl -fsSL https://get.alzeo.ai | CONTEXT_MODE=native bash              # the 262144 window instead
+curl -fsSL https://get.alzeo.ai | MODEL_CHOICE=flash bash               # Flash-Next lane (service only)
+curl -fsSL https://get.alzeo.ai | bash -s -- --no-opencode              # API only, no opencode files
+curl -fsSL https://get.alzeo.ai | bash -s -- --no-cockpit               # engine and proxy only, no web UI
+curl -fsSL https://get.alzeo.ai | MODEL_CHOICE=uncensored bash           # abliterated 27B, 1M context
 # clone forms
 ./install.sh --no-service && ./run.sh                    # no systemd, foreground, Ctrl+C stops it (128 GB box)
 CONTEXT_MODE=native ./install.sh                         # the 262144 window on a 1M box
@@ -394,7 +397,7 @@ It costs 46 GB (34 checkpoint, 12 runtime and its build). A plain install puts i
 `--no-image` leaves it out of the run that passes it; `--with-image` installs it whole now:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --with-image
+curl -fsSL https://get.alzeo.ai | bash -s -- --with-image
 ```
 
 Then it is a lane driven like the others: on the cockpit's Lanes view, pick
@@ -449,7 +452,7 @@ and fetches its checkpoint; `--with-video` installs it whole now and proves it w
 `--no-video` leaves it out of the run that passes it; `--with-video` installs it whole now:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --with-video
+curl -fsSL https://get.alzeo.ai | bash -s -- --with-video
 ```
 
 Then it is a lane driven like the others: on the cockpit's Lanes view, pick
@@ -567,7 +570,7 @@ on the text port behind the same proxy and key, as model `qwen3.8-flash-next-fp4
 Anthropic dialect alike, reasoning at `xhigh` unless a request asks for less, images inside the
 request. It needs 121 GB, installed on demand like the others: `--with-flash-local` or
 `--all-weights` does it at install, `--no-flash-local` leaves it out. Contributed by Dimitris
-Kontokostas ([#55](https://github.com/hasso5703/dgx-spark-qwen38/pull/55)).
+Kontokostas ([#55](https://github.com/hasso5703/alzeo/pull/55)).
 
 On the cockpit's Lanes view, pick **Flash FP4-Local (NVIDIA)** and press **Load** (17 to 19 minutes to
 answer the first time, about 5 and a half after). From a terminal, `./prepare-lane.sh flash-local`
@@ -901,7 +904,7 @@ venv. Since v1.12 `install.sh` installs it as step 10/10, once the engine has an
 generation, and prints its URL as the last thing it says:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+curl -fsSL https://get.alzeo.ai | bash
 # ... ends with:  ▶ OPEN THE COCKPIT:  http://<address>:30090
 # the login is the API key from ~/.config/qwen38/api-key
 ```

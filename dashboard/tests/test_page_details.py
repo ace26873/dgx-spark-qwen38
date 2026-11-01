@@ -560,7 +560,7 @@ class TheUpdateCommandsNameThisCheckout(unittest.TestCase):
     again the release the box already ran, and the banner a git pull that skips get.sh's
     guards (found in review, 2026-10-14)."""
 
-    UPDATE = "cd /opt/qwen && curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash"
+    UPDATE = "cd /opt/qwen && curl -fsSL https://get.alzeo.ai | bash"
 
     def test_both_commands(self):
         r = run(self, r"""

@@ -5,7 +5,7 @@ An engine that dies is started again by systemd, and a boot takes minutes: about
 This page says what happens in that time, to the box and to
 the clients, and what v1.21.0 added so that a restart can neither freeze the machine nor end
 an agent's session. Every number here was measured on the reference box (DGX Spark, driver
-580.178.04, kernel 6.17.0-1032) on 2026-10-01, for [issue #26](https://github.com/hasso5703/dgx-spark-qwen38/issues/26).
+580.178.04, kernel 6.17.0-1032) on 2026-10-01, for [issue #26](https://github.com/hasso5703/alzeo/issues/26).
 
 ## The timeline of a crash
 

@@ -52,7 +52,7 @@ if [ "$(id -u)" = "0" ]; then
     die "do not put sudo in front of this installer.
 
   you ran     : sudo ...   (your login is $SUDO_USER)
-  run instead : curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+  run instead : curl -fsSL https://get.alzeo.ai | bash
   or locally  : ./install.sh      (it calls sudo itself, for the steps that need it)
 
 Under sudo, HOME is /root: the API key, the chat template and the compile cache
@@ -3564,7 +3564,7 @@ except Exception as e:
     # that fails to install never fails the engine that is already serving.
     COCKPIT_URL=""
     if [ "$COCKPIT" -eq 1 ]; then
-      step "10/10 Spark Cockpit (the web UI this box is meant to be driven from)"
+      step "10/10 Alzeo cockpit (the web UI this box is meant to be driven from)"
       DASH_ENV=()
       if [ ! -f /etc/systemd/system/qwen38-dashboard.service ]; then
         # First install only. A re-run passes nothing, so install-dashboard.sh

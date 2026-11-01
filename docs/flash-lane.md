@@ -32,7 +32,7 @@ page tables, which works because this part reports
 That attribute holds in the GPU's ATS addressing mode only. Outside it SGLang
 refuses the file backend when it loads the weights ("needs a device whose
 pageable host memory accesses go through the host page tables"), as on the GB10
-of [issue #54](https://github.com/hasso5703/dgx-spark-qwen38/issues/54), whose
+of [issue #54](https://github.com/hasso5703/alzeo/issues/54), whose
 mode reads None. `nvidia-smi --query-gpu=addressing_mode --format=csv,noheader`
 names the mode: ATS, HMM or None. The reference box runs in ATS. The box of
 issue #54 boots with the same `iommu.passthrough=0` and the same `nvidia_uvm`

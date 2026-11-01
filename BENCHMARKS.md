@@ -141,7 +141,7 @@ Caveat on cross-reading: that harness generates synthetic tokens (`tg128` at a s
 
 ## vLLM + DSpark, same battery (third-party data)
 
-[erikvullings](https://github.com/hasso5703/dgx-spark-qwen38/issues/2) ran battery v1 (`bench-matrix.sh`, two-call wall-clock delta, temperature 0) against vLLM 0.27-dev serving the **same pinned checkpoints as this repo** (`RadixArk/Qwen3.8-27B-NVFP4` plus the RadixArk DSpark drafter, wired into vLLM via [eugr's radixark-dspark mod](https://github.com/eugr/spark-vllm-docker/tree/main/mods/radixark-dspark)) on a freshly rebooted, otherwise idle GB10 Spark:
+[erikvullings](https://github.com/hasso5703/alzeo/issues/2) ran battery v1 (`bench-matrix.sh`, two-call wall-clock delta, temperature 0) against vLLM 0.27-dev serving the **same pinned checkpoints as this repo** (`RadixArk/Qwen3.8-27B-NVFP4` plus the RadixArk DSpark drafter, wired into vLLM via [eugr's radixark-dspark mod](https://github.com/eugr/spark-vllm-docker/tree/main/mods/radixark-dspark)) on a freshly rebooted, otherwise idle GB10 Spark:
 
 | Workload (battery v1, greedy) | vLLM + DSpark v1 (idle box) | vLLM + DSpark v2 (idle box, 2026-08-29) | SGLang + DSpark v1 (this repo, loaded box) |
 |---|---|---|---|

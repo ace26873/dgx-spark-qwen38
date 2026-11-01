@@ -10,7 +10,7 @@ the cockpit builds its runtime and fetches its checkpoint (46 GB: 34 checkpoint,
 ```bash
 ./install.sh --with-image
 # or, from nothing at all, with every other lane:
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+curl -fsSL https://get.alzeo.ai | bash
 ```
 
 Once installed, a plain `./install.sh` keeps it and updates it. `./install-image.sh`

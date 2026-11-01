@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Spark Cockpit as a systemd service. Idempotent, and safe to run alone.
+# Install the Alzeo cockpit as a systemd service. Idempotent, and safe to run alone.
 # Since v1.12 install.sh runs this as its step 10/10, so a plain install leaves a
 # cockpit you can open; --no-cockpit is how you opt out of that.
 # Installs: qwen38-dashboard.service (DASH_BIND:DASH_PORT) and the narrow sudoers
@@ -130,7 +130,7 @@ curl -s -m 2 "http://$PROBE:$PORT/api/health" >/dev/null 2>&1 \
 # the relay, and the whole summary came out twice at the end of every install. The relay
 # line and the key warning are the news; the rest was just printed.
 QUIET="${DASH_QUIET:-0}"
-[ "$QUIET" = "1" ] || echo "Spark Cockpit: http://$PROBE:$PORT (login = the API key)"
+[ "$QUIET" = "1" ] || echo "Alzeo cockpit: http://$PROBE:$PORT (login = the API key)"
 if [ "$BIND" != "127.0.0.1" ] && [ "$BIND" != "localhost" ] && [ "$BIND" != "::1" ]; then
   [ "$QUIET" = "1" ] || echo "Bound to $BIND: reachable from other machines. The API key is the only gate."
   [ -s "$HOME/.config/qwen38/api-key" ] \

@@ -77,7 +77,7 @@ Plugins load when opencode starts (a running session never picks it up). Log at
 SGLang path (25.6 tok/s on code against 32-40, prose 17.7-18.2 against 17-22, prefill
 about a third), the four traps that make a GGUF benchmark on GB10 lie to you, and what
 evidence would make a GGUF target worth adding. Written for
-[issue #12](https://github.com/hasso5703/dgx-spark-qwen38/issues/12).
+[issue #12](https://github.com/hasso5703/alzeo/issues/12).
 
 **`extras/cake-ingress/`**: ingress anti-bufferbloat. While a model download saturates
 your link, the queue builds up inside the ISP box and everything else drowns (measured on

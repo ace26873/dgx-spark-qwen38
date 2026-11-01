@@ -127,7 +127,7 @@ try {
   ok('behind: the banner names both versions', /Version v1\.99\.0 is out; this box runs v1\.15\.0/.test(s), s);
   // the update is the one command, run from this checkout: install.sh alone fetches nothing,
   // and a git pull skips get.sh's guards (found in review, 2026-10-14)
-  const ONE = 'curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash';
+  const ONE = 'curl -fsSL https://get.alzeo.ai | bash';
   // the checks below put the state in and draw it in the very evaluation that reads it, b the update
   // banner, and the page's own stream leaves F.update alone until that evaluation ends: it draws the
   // real state, a message a second, and took the banner and its button away in between (found in

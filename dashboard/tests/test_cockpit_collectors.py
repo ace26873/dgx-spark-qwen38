@@ -127,7 +127,7 @@ class TheUpdateCommand(Base):
         # nothing: it installed again the release the box already ran (found in review,
         # 2026-10-14). The update is the README's one command; run from the checkout, get.sh
         # updates that clone, wherever it is, and no other.
-        one = "curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash"
+        one = "curl -fsSL https://get.alzeo.ai | bash"
         self.assertIn(f"\n{one}\n", (REPO / "README.md").read_text())
         t = self.cp.STATE["config"]["data"]["terminal_only"]
         self.assertEqual(t["update"], f"cd {REPO} && {one}")

@@ -11,7 +11,7 @@ installs it as step 10/10, once the engine has answered a real generation, and
 prints its URL as the last thing it says. You do not run anything else:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+curl -fsSL https://get.alzeo.ai | bash
 # ... ends with:  ▶ OPEN THE COCKPIT:  http://<address>:30090
 # the login is the API key from ~/.config/qwen38/api-key
 ```

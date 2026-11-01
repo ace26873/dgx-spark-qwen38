@@ -229,14 +229,14 @@ class TheSummaryComesOutOnce(unittest.TestCase):
 
     def test_the_first_run_prints_the_whole_summary(self):
         out = self.summary("0")
-        for line in ("Spark Cockpit: http://127.0.0.1:30090", "Bound to 0.0.0.0", "Agent relay:", "Remove with:"):
+        for line in ("Alzeo cockpit: http://127.0.0.1:30090", "Bound to 0.0.0.0", "Agent relay:", "Remove with:"):
             self.assertIn(line, out)
 
     def test_the_nested_run_prints_only_what_is_new(self):
         out = self.summary("1")
         self.assertIn("Agent relay: tailscale:30091", out)
         self.assertIn("WARNING:", out, "a missing key still has to be said")
-        for line in ("Spark Cockpit:", "Bound to", "Remove with:"):
+        for line in ("Alzeo cockpit:", "Bound to", "Remove with:"):
             self.assertNotIn(line, out)
 
     def test_the_agent_installer_asks_for_the_quiet_run(self):

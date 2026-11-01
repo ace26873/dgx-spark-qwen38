@@ -114,7 +114,7 @@ class ABoxBootingAnotherLaneGetsTheAgentTab(unittest.TestCase):
         self.assertLess(seg.index('"$REPO_DIR/dashboard/install-dashboard.sh"'), seg.index(self.AGENT))
         self.assertIn(self.GUARD + "        " + self.AGENT, seg)
         self.assertIn('|| echo "NOTE: the Agent view did not install', seg, "a failure is a note, as at step 10")
-        step10 = INSTALL[INSTALL.index('step "10/10 Spark Cockpit'):]
+        step10 = INSTALL[INSTALL.index('step "10/10 Alzeo cockpit'):]
         self.assertIn(self.GUARD + "          " + self.AGENT, step10, "the same condition as step 10's")
 
     def restarted(self, binary_after_start, served="1.19.4", on_disk="1.19.4"):

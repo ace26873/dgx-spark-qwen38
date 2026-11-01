@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spark Cockpit: the repo's web dashboard.
+"""Alzeo cockpit: the repo's web dashboard.
 
 Single-file stdlib backend: no pip, no venv, nothing to break. Collectors, an
 SSE stream, a static UI, and a supervised action surface that runs one job at a
@@ -2069,8 +2069,7 @@ def collect_update():
     if now - _RELEASE["ts"] >= age:
         _RELEASE["ts"] = now
         try:
-            j = _get_json("https://api.github.com/repos/hasso5703/"
-                          "dgx-spark-qwen38/releases/latest", timeout=8.0)
+            j = _get_json("https://api.github.com/repos/hasso5703/alzeo/releases/latest", timeout=8.0)
             tag = (j.get("tag_name") or "").strip()
             _RELEASE.update(answered=True, fails=0)
             if _semver(tag):
@@ -2925,12 +2924,10 @@ STATE["config"] = {"data": {"usable_frac": USABLE_FRAC, "version": VERSION, "dry
                             # get.sh updates this clone: install.sh alone fetches nothing, and
                             # Settings gave it as the update (found in review, 2026-10-14)
                             "terminal_only": {"update_stack": f"cd {REPO_DIR} && ./install.sh",
-                                              "update": f"cd {REPO_DIR} && curl -fsSL https://raw."
-                                                        "githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash",
+                                              "update": f"cd {REPO_DIR} && curl -fsSL https://get.alzeo.ai | bash",
                                               # every setting but the site's to the recommended one,
                                               # the operator's choices too (v1.36.0, 2026-10-17)
-                                              "recommended": f"cd {REPO_DIR} && curl -fsSL https://raw."
-                                                             "githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh"
+                                              "recommended": f"cd {REPO_DIR} && curl -fsSL https://get.alzeo.ai"
                                                              " | bash -s -- --recommended",
                                               "install_agent": f"cd {REPO_DIR} && dashboard/install-agent.sh"}},
                    "ts": time.time()}
@@ -5180,13 +5177,11 @@ def upstream_snapshot(max_age: float = 3600.0) -> dict:
             rows.append(row)
         rel = {"local": installed_release() or ""}
         try:
-            j = _get_json("https://api.github.com/repos/hasso5703/"
-                          "dgx-spark-qwen38/releases/latest")
+            j = _get_json("https://api.github.com/repos/hasso5703/alzeo/releases/latest")
             rel["latest"] = j.get("tag_name", "")
         except Exception as e:  # noqa: BLE001
             try:
-                tags = _get_json("https://api.github.com/repos/hasso5703/"
-                                 "dgx-spark-qwen38/tags")
+                tags = _get_json("https://api.github.com/repos/hasso5703/alzeo/tags")
                 rel["latest"] = tags[0]["name"] if tags else ""
             except Exception:  # noqa: BLE001
                 rel["latest"] = None
@@ -5880,7 +5875,7 @@ def main():
     if AGENT_PORT > 0:
         threading.Thread(target=agent_relay_thread, daemon=True).start()
     srv = Server((BIND, PORT), Handler)
-    print(f"Spark Cockpit {VERSION} on http://{BIND}:{PORT} (repo: {REPO_DIR})"
+    print(f"Alzeo cockpit {VERSION} on http://{BIND}:{PORT} (repo: {REPO_DIR})"
           + ("  [DRY RUN: nothing is executed]" if DRY_RUN else ""))
     if BIND not in ("127.0.0.1", "localhost", "::1"):
         # Say it in the journal too: an action surface that reaches off the box

@@ -3,7 +3,7 @@
 This repo serves SGLang. It has no GGUF lane and this note is not one: it is what the
 reference box measured when it did run llama.cpp on this hardware, so that anyone asking
 "can I serve a GGUF fine-tune on my Spark instead?" can answer it with numbers rather than
-with a weekend. Asked in [issue #12](https://github.com/hasso5703/dgx-spark-qwen38/issues/12).
+with a weekend. Asked in [issue #12](https://github.com/hasso5703/alzeo/issues/12).
 
 **Short answer**: yes, llama.cpp runs well on GB10, and it costs roughly a third of the
 decode rate this repo's default lane gets from the same model. If what you want is a

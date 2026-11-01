@@ -12,7 +12,7 @@ passes it; `--with-video` installs it whole now:
 ```bash
 ./install.sh --with-video
 # or, from nothing at all, with every other lane:
-curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+curl -fsSL https://get.alzeo.ai | bash
 ```
 
 Once installed, a plain `./install.sh` keeps it and updates it. `./install-video.sh`

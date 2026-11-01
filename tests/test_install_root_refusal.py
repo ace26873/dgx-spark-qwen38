@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import installer_wall as wall  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-ONELINER = "https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh"
+ONELINER = "https://get.alzeo.ai"
 
 
 def fake_root_bin():
@@ -127,8 +127,7 @@ class GetShRefusesRootBeforeTheClone(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn('do not pipe this into "sudo bash"', out)
         self.assertIn("alice", out)
-        # the one-liner as the README gives it: raw.githubusercontent.com, which a renamed repository's
-        # old name still serves directly, where the github.com/.../raw/ form takes two redirects
+        # the one-liner as the README gives it (v1.41.0: get.alzeo.ai, which sends curl on to get.sh on GitHub)
         self.assertIn(f"run : curl -fsSL {ONELINER} | bash", out)
 
     def test_plain_root_is_refused_with_the_way_out(self):

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # One-liner bootstrap: first install AND update, same command, any directory:
-#   curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash
+#   curl -fsSL https://get.alzeo.ai | bash
+# (get.alzeo.ai sends curl on to this very file, on GitHub's raw.githubusercontent.com)
 # NO sudo in front, ever: install.sh calls sudo itself for the steps that need
 # it, and under sudo every path it writes moves to /root (refused below).
 # It installs the box: the lane that serves, the proxy and the cockpit, and
 # every other lane on demand (its first Load from the cockpit builds it), and
 # prints the cockpit URL when it is done.
 # Pass install.sh options after `bash -s --`, e.g.:
-#   curl -fsSL .../get.sh | bash -s -- --no-service
+#   curl -fsSL https://get.alzeo.ai | bash -s -- --no-service
 # Env overrides pass through (PORT=, HF_CACHE=, DIR= for a custom clone location).
 # Everything is wrapped in main() so nothing runs on a partial download.
 set -euo pipefail
@@ -27,7 +28,7 @@ main() {
   if [ "$(id -u)" = "0" ]; then
     if [ -n "${SUDO_USER:-}" ]; then
       printf '\n\033[1;31mERROR:\033[0m do not pipe this into "sudo bash" (your login is %s).\n\n' "$SUDO_USER" >&2
-      printf '  run : curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash\n' >&2
+      printf '  run : curl -fsSL https://get.alzeo.ai | bash\n' >&2
       printf '        (no sudo in front: the installer calls sudo itself, for the steps that need it)\n\n' >&2
       printf 'Under sudo, HOME is /root: the clone and the API key land there, the units point\n' >&2
       printf 'at them, and every client reading ~/.config/qwen38/api-key gets 401 from an engine\n' >&2
@@ -42,11 +43,11 @@ main() {
     fi
   fi
 
-  REPO_URL="https://github.com/hasso5703/dgx-spark-qwen38"
+  REPO_URL="https://github.com/hasso5703/alzeo"
   DEFAULT_DIR="$HOME/dgx-spark-qwen38"
-  # Is this origin a clone of THIS repo? The repository is renamed hasso5703/alzeo (planned before
-  # 2026-11-02): every box installed before keeps the old name in its origin, which GitHub
-  # redirects, and a clone made from the new address carries the new one. Both are this repo, for
+  # Is this origin a clone of THIS repo? The repository was renamed hasso5703/alzeo on 2026-11-01:
+  # every box installed before keeps the old name in its origin, which GitHub redirects, and a
+  # clone made from the new address (REPO_URL, since v1.41.0) carries the new one. Both are this repo, for
   # good. The old name keeps the pattern it always had, now whatever the case, which only takes more,
   # so that no box installed before is refused.
   # The new name is matched as the last two parts of the path, HTTPS or SSH, with or without .git,

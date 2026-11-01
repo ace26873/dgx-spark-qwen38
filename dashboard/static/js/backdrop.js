@@ -17,13 +17,13 @@
   if (!gl){ canvas.remove(); return; }
 
   const VERT = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
-  // the ground (#120b36), the violet halo (centre a, strength sa, radius ra) and the blue one
+  // the ground (#170b38), the violet halo (centre a, strength sa, radius ra) and the blue one
   // (b). The centres move here, in double precision: a clock in the shader's mediump float
   // loses its seconds within the hour on a phone, and stops the drawing within the day.
   const FRAG = `
 precision mediump float;
 uniform vec2 res, a, b;
-const vec3 cDeep = vec3(0.070, 0.045, 0.215), cA = vec3(0.40, 0.22, 0.92), cB = vec3(0.22, 0.30, 0.80);
+const vec3 cDeep = vec3(0.090, 0.043, 0.220), cA = vec3(0.46, 0.20, 0.92), cB = vec3(0.40, 0.17, 0.80);
 const float sa = 0.50, sb = 0.26, ra = 0.95, rb = 0.70;
 void main(){
   vec2 uv = gl_FragCoord.xy / res;

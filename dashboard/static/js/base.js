@@ -1,5 +1,5 @@
 "use strict";
-/* Spark cockpit, the base every view stands on.
+/* Alzeo cockpit, the base every view stands on.
 
    One state payload (a server-sent event stream, with polling behind it) drives every
    view through renderers that write text nodes only, never HTML built from data. Each
@@ -431,13 +431,13 @@ function toast(text, kind, ms = 4200){
 function updateCmd(cfg){
   const c = cfg || {};
   return (c.terminal_only || {}).update
-    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash`;
+    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://get.alzeo.ai | bash`;
 }
 // ./install.sh --recommended through the same one command (get.sh hands install.sh what follows -s --)
 function recommendedCmd(cfg){
   const c = cfg || {};
   return (c.terminal_only || {}).recommended
-    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://raw.githubusercontent.com/hasso5703/dgx-spark-qwen38/main/get.sh | bash -s -- --recommended`;
+    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://get.alzeo.ai | bash -s -- --recommended`;
 }
 // The clipboard API exists in a secure context only: on the box's LAN or Tailscale address, plain
 // HTTP, every Copy button said the browser refused (found 2026-10-21, a GX10's cockpit opened by its

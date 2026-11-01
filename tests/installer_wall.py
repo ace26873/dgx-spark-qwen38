@@ -34,7 +34,7 @@ REAL_UNITS = "the box's own units"
 # that ends it. get.sh: the first line after its root refusal.
 BEFORE_STEP_1 = 'step "1/10 Preflight checks"\n'
 AFTER_STEP_1 = 'echo "OK (aarch64, ${TOTAL_GIB} GiB of memory: a ${MEM_CLASS} GB box, ${FREE_DISK_GB} GiB free)"\n'
-GET_PAST_ROOT = '  REPO_URL="https://github.com/hasso5703/dgx-spark-qwen38"\n'
+GET_PAST_ROOT = '  REPO_URL="https://github.com/hasso5703/alzeo"\n'
 
 # Every directory this makes lives under one root, removed when the process ends: the suite
 # runs on the box it tests, and /tmp there held 7,200 directories other tests left behind.
