@@ -116,8 +116,14 @@ extras/chromium-sandbox/setup.sh --uninstall  # back to Ubuntu's stock restricti
 ## Upgrading from an earlier version
 
 ```bash
-cd dgx-spark-qwen38 && git pull && ./install.sh
+cd ~/dgx-spark-qwen38 && curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash
 ```
+
+The command the cockpit gives when a newer release is out. The README's `curl -fsSL
+https://get.alzeo.ai | bash` runs the same file. Before it touches the clone, get.sh checks that the
+folder is a clone of this repository, on main, with no modified tracked file and no local commit,
+and says how to go on when one is not. It fetches main and the release tags, then runs install.sh.
+A `git pull` skips those checks.
 
 **v1.19 -> v1.20 installs the lanes a box does not have yet**: since v1.20 a plain run installs
 every lane, so the first update of a box with one text lane brings the other one (the flash lane
