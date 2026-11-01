@@ -9,7 +9,9 @@ command, and names the cockpit after the project.
 **The command.** `curl -fsSL https://get.alzeo.ai | bash` is the one-liner from now on, for a first install and for an
 update alike. get.alzeo.ai answers with a redirect to get.sh on GitHub, so the file that runs is get.sh itself (byte
 for byte the same file, checked from the reference box). The long forms keep working: the same file at
-https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh, and at its old address.
+https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh, and at its old address. The README gives the first one
+next to the short one, for whoever would rather trust GitHub alone, and SECURITY.md says what the short one trusts:
+whoever controls get.alzeo.ai controls what the one-liner runs, as whoever controls the repository does.
 
 **Where the new name is written.** get.sh clones https://github.com/hasso5703/alzeo on a new box, into
 ~/dgx-spark-qwen38 as before, and its refusal under sudo names the new command, as install.sh does in its own. The
@@ -42,10 +44,10 @@ And a real update by the command the cockpit of v1.40.8 gives, under the old nam
 **Tests.** The tests that hold the one-liner, the update command, the refusal under sudo, the installer's lines and
 the clone get.sh makes expect the new ones. The whole suite passes locally, with no step skipped.
 
-**What an update does.** get.sh, install.sh, the cockpit's pages and code, the README, the docs, CITATION.cff, the
-issue form and the tests change. The cockpit restarts once, which drops its open pages and the Agent tab's connection,
-and comes back as the Alzeo cockpit. No engine, no proxy and no unit file changes. A box keeps its clone in
-~/dgx-spark-qwen38 and its origin under the old name, which GitHub sends on.
+**What an update does.** get.sh, install.sh, the cockpit's pages and code, the README, SECURITY.md, the docs,
+CITATION.cff, the issue form and the tests change. The cockpit restarts once, which drops its open pages and the Agent
+tab's connection, and comes back as the Alzeo cockpit. No engine, no proxy and no unit file changes. A box keeps its
+clone in ~/dgx-spark-qwen38 and its origin under the old name, which GitHub sends on.
 
 ## v1.40.8 (2026-11-01): get.sh takes a clone of hasso5703/alzeo for this repo, before the repository is renamed, and an update no longer stops in silence on a clone with thousands of untracked files
 
