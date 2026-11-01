@@ -1,5 +1,51 @@
 # Changelog
 
+## v1.41.0 (2026-11-01): the project is Alzeo, at github.com/hasso5703/alzeo, its command is get.alzeo.ai, and the cockpit is the Alzeo cockpit
+
+**Why.** The repository was renamed hasso5703/alzeo on 2026-11-01, once v1.40.8 had made get.sh take a clone of either
+name. GitHub sends the old addresses on, and this release writes the new name where a user reads it, gives the shorter
+command, and names the cockpit after the project.
+
+**The command.** `curl -fsSL https://get.alzeo.ai | bash` is the one-liner from now on, for a first install and for an
+update alike. get.alzeo.ai answers with a redirect to get.sh on GitHub, so the file that runs is get.sh itself (byte
+for byte the same file, checked from the reference box). The long forms keep working: the same file at
+https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh, and at its old address.
+
+**Where the new name is written.** get.sh clones https://github.com/hasso5703/alzeo on a new box, into
+~/dgx-spark-qwen38 as before, and its refusal under sudo names the new command, as install.sh does in its own. The
+cockpit asks GitHub's API for the newest release under the new name, and gives `cd <the clone> && curl -fsSL
+https://get.alzeo.ai | bash` as the update (and the same with `-s -- --recommended`). The README, the docs,
+CITATION.cff and the issue form link the new name, and the README's manual clone goes into ~/dgx-spark-qwen38, the
+folder the box keeps.
+
+**What keeps the old name, on purpose.** The folder ~/dgx-spark-qwen38, the qwen38 units, files and launchers, and the
+name the installer writes into what it owns, by which an update tells its own files from a user's. get.sh still takes
+a clone whose origin names the old repository, which GitHub sends on, so a box installed before goes on as it did. The
+Agent tab's opencode-web unit keeps its description and documentation link, which a change would have restarted on
+every box, and the past sections of this changelog keep the links they were written with.
+
+**The Alzeo cockpit.** The page, its sign-in page, the Agent relay's page, the installer's step 10/10 and its closing
+line, and the cockpit's journal say Alzeo cockpit. Its violet is warmer, as chosen on screenshots on 2026-10-31: the
+ground #170b38 (was #120b36), the brand #9a6bff, #ccb5ff and #6a3fe0 (were #8c6cff, #c4b5ff and #5b3fd9), what floats
+#22164f and #2c1d66 (were #1d164d and #271e62), the halos of the background, painted and drawn, moved the same way.
+The 27B lane keeps its own hue.
+
+**Checked after the rename.** From the reference box, once the repository had its new name: the API answers the old
+name with a 301 to the repository's id and the new one with the repository, and the cockpit's release check, which
+still asks under the old name in v1.40.8, found the newest release. get.sh at the old raw address, at the new one, at
+github.com's /raw/ form and at get.alzeo.ai was, byte for byte, main's. git ls-remote gave the same commit by either
+name, and the box's clone fetched through its origin under the old name. In a browser, the repository's page, its
+newest release, a discussion, a pull request, an issue and the CI badge, at their old addresses, led to the new ones.
+And a real update by the command the cockpit of v1.40.8 gives, under the old name, ended whole in 89 s.
+
+**Tests.** The tests that hold the one-liner, the update command, the refusal under sudo, the installer's lines and
+the clone get.sh makes expect the new ones. The whole suite passes, locally and on GitHub, with no step skipped.
+
+**What an update does.** get.sh, install.sh, the cockpit's pages and code, the README, the docs, CITATION.cff, the
+issue form and the tests change. The cockpit restarts once, which drops its open pages and the Agent tab's connection,
+and comes back as the Alzeo cockpit. No engine, no proxy and no unit file changes. A box keeps its clone in
+~/dgx-spark-qwen38 and its origin under the old name, which GitHub sends on.
+
 ## v1.40.8 (2026-11-01): get.sh takes a clone of hasso5703/alzeo for this repo, before the repository is renamed, and an update no longer stops in silence on a clone with thousands of untracked files
 
 **Why.** The repository is to be renamed hasso5703/alzeo. GitHub then sends the old address on to the new one, for
