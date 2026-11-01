@@ -37,7 +37,8 @@
   --ink-0:#170b38; --ink-1:rgba(255,255,255,.055); --ink-2:rgba(255,255,255,.085); --ink-3:rgba(255,255,255,.13); --ink-4:rgba(255,255,255,.18);
   --rule-1:rgba(255,255,255,.10); --rule-2:rgba(255,255,255,.16); --rule-3:rgba(255,255,255,.28);
   /* text: white, then two quieter tones, each still 4.5:1 over the brightest of the panels
-     where the halos pass (measured on every view, desktop and phone, 2026-10-11) */
+     where the halos pass (measured on every view, desktop and phone, 2026-10-11, and again
+     for the warmer violet, 2026-11-01) */
   --fg-1:#ffffff; --fg-2:rgba(255,255,255,.88); --fg-3:rgba(255,255,255,.80);
   /* violet: the brand, on the controls */
   --brand:#9a6bff; --brand-hi:#ccb5ff; --brand-lo:#6a3fe0; --brand-ink:#1a0f42;
@@ -306,7 +307,7 @@ img,svg,video,canvas{display:block; max-width:100%}
 .tag:empty{display:none}
 .tag{display:inline-flex; align-items:center; padding:2px 9px; border-radius:var(--r-chip); background:var(--ink-3);
   color:var(--fg-2); font-size:var(--t-12); font-weight:520; white-space:nowrap}
-.tag.gold{background:color-mix(in srgb, var(--brand) 22%, rgba(8,4,28,.55)); color:#ddd3ff}
+.tag.gold{background:color-mix(in srgb, var(--brand) 22%, rgba(8,4,28,.55)); color:#ebe5ff}
 .tag.cool{background:color-mix(in srgb, var(--mem) 20%, rgba(8,4,28,.55)); color:#dbe4ff}
 .tag.warn{background:color-mix(in srgb, var(--warn) 20%, rgba(8,4,28,.55)); color:#ffe2a3}
 .tag.err{background:color-mix(in srgb, var(--bad) 20%, rgba(8,4,28,.55)); color:#ffd0cc}
@@ -322,7 +323,7 @@ img,svg,video,canvas{display:block; max-width:100%}
 .btn svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round}
 .btn.primary{border-color:#fff; color:var(--brand-ink); background:#fff; font-weight:640}
 .btn.primary:hover:not(:disabled){background:#efeaff; border-color:#efeaff}
-.btn.danger{border-color:color-mix(in srgb, var(--bad) 55%, transparent); color:#ffd9d4; background:color-mix(in srgb, var(--bad) 10%, var(--ink-2))}
+.btn.danger{border-color:color-mix(in srgb, var(--bad) 55%, transparent); color:#ffe1dc; background:color-mix(in srgb, var(--bad) 10%, var(--ink-2))}
 .btn.danger:hover:not(:disabled){background:color-mix(in srgb, var(--bad) 16%, transparent); border-color:var(--bad)}
 .btn.danger.solid{background:linear-gradient(180deg, #ef8277, var(--bad)); color:#2a0b08; border-color:transparent}
 .btn.ghost{background:transparent; border-color:transparent; color:var(--fg-2)}
