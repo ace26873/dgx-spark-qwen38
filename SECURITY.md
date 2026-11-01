@@ -164,6 +164,13 @@ sources, Ubuntu's signed archive, installed by sudo at the versions its package 
 0600 and handed to it through SGLang's `--config`, so it is in no process's command line and the chat template and launcher are regenerated from the
 repo on every install.
 
+**The one-liner (`get.sh`)** is fetched, not pinned: what runs is main's get.sh at that moment, for
+a first install and for the update command the cockpit shows alike. Since v1.41.0 it asks
+`get.alzeo.ai`, a redirect the project keeps at Cloudflare, which sends curl on to
+`https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh`. Whoever controls that domain
+controls what the one-liner runs, as whoever controls the repository does. The long form the README
+gives next to it fetches the same file from GitHub alone.
+
 ## Assumptions that are design choices, not vulnerabilities
 
 Read these before reporting; a report against one of them is a design
