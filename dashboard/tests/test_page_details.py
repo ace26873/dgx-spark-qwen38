@@ -587,6 +587,17 @@ class TheUpdateCommandsNameThisCheckout(unittest.TestCase):
         """ % self.UPDATE)
         self.assertEqual(r, self.UPDATE)
 
+    def test_a_server_that_sends_none_gets_the_same_from_the_page(self):
+        # a page newer than the process that serves it builds the commands itself: the same
+        # long form as the server's, get.sh from GitHub itself (v1.41.0)
+        r = run(self, r"""
+        feed({config: Object.assign({}, CONFIG, {repo_dir: '/opt/qwen', terminal_only: undefined})});
+        report({update: updateCmd(F.config), settings: txt('st-update'), rec: recommendedCmd(F.config)});
+        """)
+        self.assertEqual(r["update"], self.UPDATE)
+        self.assertEqual(r["settings"], self.UPDATE)
+        self.assertEqual(r["rec"], self.UPDATE + " -s -- --recommended")
+
 
 class TheReleaseLineSaysWhichWay(unittest.TestCase):
     """Library's release line compared the two tags as strings: a box ahead of the newest
