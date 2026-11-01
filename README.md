@@ -1,7 +1,7 @@
 # Alzeo: one command turns a DGX Spark into a private AI server
 
 <p align="center">
-  <img src="docs/img/tour.webp" width="270" alt="The Alzeo cockpit in ten seconds: a laptop and a phone driving the box, the live memory, a coding agent whose test passes, an image and a video made on the box, the seven lanes">
+  <img src="docs/img/tour.webp" width="270" alt="The cockpit in ten seconds: a laptop and a phone driving the box, the live memory, a coding agent whose test passes, an image and a video made on the box, the seven lanes">
 </p>
 <p align="center"><a href="#see-it-in-49-seconds">Watch the 49-second tour, with sound</a></p>
 <p align="center"><a href="https://hasso5703.github.io/">The website: every model measured, guides, every GB10 machine</a></p>
@@ -61,7 +61,7 @@ builds on its published config,
 takes its measurements as its DGX Spark reference, and it is listed in
 [awesome-dgx-spark](https://github.com/bidual/awesome-dgx-spark).
 
-![The Alzeo cockpit's Now view: one pool of unified memory and what holds it, and the eight lanes in their rack with their makers' marks, the serving one edged in green](docs/img/cockpit-now.png)
+![The cockpit's Now view: one pool of unified memory and what holds it, and the eight lanes in their rack with their makers' marks, the serving one edged in green](docs/img/cockpit-now.png)
 
 *The cockpit, installed by default: one pool of unified memory, lanes that take turns in it, and the whole box run from a browser, on a laptop or a phone.*
 
@@ -804,7 +804,7 @@ together: switching targets flips which unit starts at boot, the API surface
 and the keepalive proxy stay put.
 
 - Fresh install: `MODEL_CHOICE=uncensored ./install.sh` or
-  `MODEL_CHOICE=flash ./install.sh` (one-liner: `curl -fsSL .../get.sh |
+  `MODEL_CHOICE=flash ./install.sh` (one-liner: `curl -fsSL https://get.alzeo.ai |
   MODEL_CHOICE=flash bash`). Upgrades keep the installed choice.
 - Existing install, within the 27B lane (`stock`, `uncensored`, `fp8`,
   `uncensored-fp8`, in any direction): `./switch-model.sh uncensored` (or

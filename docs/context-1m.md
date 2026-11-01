@@ -7,8 +7,8 @@ env var until then, which meant the window this whole stack is built around was
 off for anybody who had not read this page.
 
 ```bash
-curl -fsSL .../get.sh | bash        # 1M, and combines freely with MODEL_CHOICE=uncensored
-CONTEXT_MODE=native ./install.sh    # the 262144 window instead
+curl -fsSL https://get.alzeo.ai | bash  # 1M, and combines freely with MODEL_CHOICE=uncensored
+CONTEXT_MODE=native ./install.sh        # the 262144 window instead
 ```
 
 The flash lane and `--no-service` cannot serve it and stay native with no

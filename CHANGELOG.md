@@ -20,15 +20,16 @@ folder the box keeps.
 
 **What keeps the old name, on purpose.** The folder ~/dgx-spark-qwen38, the qwen38 units, files and launchers, and the
 name the installer writes into what it owns, by which an update tells its own files from a user's. get.sh still takes
-a clone whose origin names the old repository, which GitHub sends on, so a box installed before goes on as it did. The
-Agent tab's opencode-web unit keeps its description and documentation link, which a change would have restarted on
-every box, and the past sections of this changelog keep the links they were written with.
+a clone whose origin names the old repository, which GitHub sends on, so a box installed before goes on as it did. No
+unit file changes, so the cockpit's unit and the Agent tab's opencode-web unit keep their descriptions, which say Spark
+Cockpit, and opencode-web its documentation link: a change to that unit would have restarted opencode-web on every
+box. The past sections of this changelog keep the links they were written with.
 
 **The Alzeo cockpit.** The page, its sign-in page, the Agent relay's page, the installer's step 10/10 and its closing
-line, and the cockpit's journal say Alzeo cockpit. Its violet is warmer, as chosen on screenshots on 2026-10-31: the
-ground #170b38 (was #120b36), the brand #9a6bff, #ccb5ff and #6a3fe0 (were #8c6cff, #c4b5ff and #5b3fd9), what floats
-#22164f and #2c1d66 (were #1d164d and #271e62), the halos of the background, painted and drawn, moved the same way.
-The 27B lane keeps its own hue.
+line, and the line the cockpit writes to its journal when it starts say Alzeo cockpit. Its violet is warmer, as chosen
+on screenshots on 2026-10-31: the ground #170b38 (was #120b36), the brand #9a6bff, #ccb5ff and #6a3fe0 (were #8c6cff,
+#c4b5ff and #5b3fd9), what floats #22164f and #2c1d66 (were #1d164d and #271e62), the halos of the background, painted
+and drawn, moved the same way. The 27B lane keeps its own hue.
 
 **Checked after the rename.** From the reference box, once the repository had its new name: the API answers the old
 name with a 301 to the repository's id and the new one with the repository, and the cockpit's release check, which
@@ -39,7 +40,7 @@ newest release, a discussion, a pull request, an issue and the CI badge, at thei
 And a real update by the command the cockpit of v1.40.8 gives, under the old name, ended whole in 89 s.
 
 **Tests.** The tests that hold the one-liner, the update command, the refusal under sudo, the installer's lines and
-the clone get.sh makes expect the new ones. The whole suite passes, locally and on GitHub, with no step skipped.
+the clone get.sh makes expect the new ones. The whole suite passes locally, with no step skipped.
 
 **What an update does.** get.sh, install.sh, the cockpit's pages and code, the README, the docs, CITATION.cff, the
 issue form and the tests change. The cockpit restarts once, which drops its open pages and the Agent tab's connection,

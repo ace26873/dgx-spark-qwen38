@@ -1,7 +1,7 @@
 // The cockpit's backdrop: deep indigo, and two soft halos of light breathing behind every view.
 //
 // One full-window canvas under the page, drawn by a small WebGL shader: a violet halo low in
-// the middle and a blue one high on the right, each a wide gaussian of light drifting a little,
+// the middle and a deeper violet one high on the right, each a wide gaussian of light drifting a little,
 // slowly, over the indigo ground. It is decoration and is treated as such: drawn at a quarter
 // of the window's width and height and stretched (the light is smooth, nothing is lost), 8
 // frames a second at most (the halos move a few pixels a second), paused in a hidden tab and
@@ -17,7 +17,7 @@
   if (!gl){ canvas.remove(); return; }
 
   const VERT = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
-  // the ground (#170b38), the violet halo (centre a, strength sa, radius ra) and the blue one
+  // the ground (#170b38), the violet halo (centre a, strength sa, radius ra) and the deeper one
   // (b). The centres move here, in double precision: a clock in the shader's mediump float
   // loses its seconds within the hour on a phone, and stops the drawing within the day.
   const FRAG = `
