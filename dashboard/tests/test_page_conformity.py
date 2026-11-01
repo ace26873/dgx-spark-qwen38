@@ -168,7 +168,7 @@ class SettingsGivesTheWayToTheRecommendedState(unittest.TestCase):
             with self.subTest(items=[i["knob"] for i in items]):
                 r = page(self, js(items))
                 self.assertFalse(r["rec"]["hidden"])
-                self.assertTrue(r["rec"]["cmd"].endswith("curl -fsSL https://get.alzeo.ai | bash -s -- --recommended"), r["rec"]["cmd"])
+                self.assertTrue(r["rec"]["cmd"].endswith("curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash -s -- --recommended"), r["rec"]["cmd"])
 
     def test_not_offered_as_recommended_nor_for_the_sites_settings_alone(self):
         for items in ([], [SITE]):

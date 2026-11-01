@@ -2922,12 +2922,18 @@ STATE["config"] = {"data": {"usable_frac": USABLE_FRAC, "version": VERSION, "dry
                             # update_stack runs the installer again (the Agent view's hint);
                             # update is the README's one command, run from this checkout so that
                             # get.sh updates this clone: install.sh alone fetches nothing, and
-                            # Settings gave it as the update (found in review, 2026-10-14)
+                            # Settings gave it as the update (found in review, 2026-10-14). It is
+                            # the long form, get.sh from GitHub itself (v1.41.0): get.alzeo.ai
+                            # redirects to that file, and a box already installed trusts no new
+                            # party for its updates, nor fails behind a network that lets only
+                            # GitHub through
                             "terminal_only": {"update_stack": f"cd {REPO_DIR} && ./install.sh",
-                                              "update": f"cd {REPO_DIR} && curl -fsSL https://get.alzeo.ai | bash",
+                                              "update": f"cd {REPO_DIR} && curl -fsSL https://raw."
+                                                        "githubusercontent.com/hasso5703/alzeo/main/get.sh | bash",
                                               # every setting but the site's to the recommended one,
                                               # the operator's choices too (v1.36.0, 2026-10-17)
-                                              "recommended": f"cd {REPO_DIR} && curl -fsSL https://get.alzeo.ai"
+                                              "recommended": f"cd {REPO_DIR} && curl -fsSL https://raw."
+                                                             "githubusercontent.com/hasso5703/alzeo/main/get.sh"
                                                              " | bash -s -- --recommended",
                                               "install_agent": f"cd {REPO_DIR} && dashboard/install-agent.sh"}},
                    "ts": time.time()}

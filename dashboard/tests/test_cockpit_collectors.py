@@ -126,9 +126,13 @@ class TheUpdateCommand(Base):
         # Settings gave cd <repo> && ./install.sh as the update, and install.sh fetches
         # nothing: it installed again the release the box already ran (found in review,
         # 2026-10-14). The update is the README's one command; run from the checkout, get.sh
-        # updates that clone, wherever it is, and no other.
-        one = "curl -fsSL https://get.alzeo.ai | bash"
-        self.assertIn(f"\n{one}\n", (REPO / "README.md").read_text())
+        # updates that clone, wherever it is, and no other. Since v1.41.0 the README's command is
+        # get.alzeo.ai, a redirect to get.sh on GitHub, and the cockpit gives the long form the
+        # README gives next to it: a box already installed trusts no new party for its updates.
+        readme = (REPO / "README.md").read_text()
+        self.assertIn("\ncurl -fsSL https://get.alzeo.ai | bash\n", readme)
+        one = "curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash"
+        self.assertIn(f"`{one}`", readme)
         t = self.cp.STATE["config"]["data"]["terminal_only"]
         self.assertEqual(t["update"], f"cd {REPO} && {one}")
         # the Agent view's hint stays the installer again, which is what it asks for

@@ -426,18 +426,19 @@ function toast(text, kind, ms = 4200){
   while (box.children.length > 3) box.firstChild.remove();
   setTimeout(() => t.remove(), ms);
 }
-// The update: the README's one command, run from this checkout so that get.sh updates this
-// clone. The server sends it; a page newer than the process that serves it builds it.
+// The update: the README's one command in its long form, get.sh from GitHub itself (v1.41.0),
+// run from this checkout so that get.sh updates this clone. The server sends it; a page newer
+// than the process that serves it builds it.
 function updateCmd(cfg){
   const c = cfg || {};
   return (c.terminal_only || {}).update
-    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://get.alzeo.ai | bash`;
+    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash`;
 }
 // ./install.sh --recommended through the same one command (get.sh hands install.sh what follows -s --)
 function recommendedCmd(cfg){
   const c = cfg || {};
   return (c.terminal_only || {}).recommended
-    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://get.alzeo.ai | bash -s -- --recommended`;
+    || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash -s -- --recommended`;
 }
 // The clipboard API exists in a secure context only: on the box's LAN or Tailscale address, plain
 // HTTP, every Copy button said the browser refused (found 2026-10-21, a GX10's cockpit opened by its

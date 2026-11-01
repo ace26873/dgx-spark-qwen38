@@ -225,7 +225,9 @@ suspected there was news. Since v1.15.2 the cockpit volunteers it: every six hou
 asks GitHub whether a newer release is published, and if there is one the banner strip
 says so with the command that installs it, and a button that copies it. The Settings view
 carries the same line permanently, next to the repo's own version, and the command with its
-button: the one command of the README, run from the checkout so that it updates that clone
+button: the one command of the README in its long form, get.sh from GitHub itself (get.alzeo.ai
+redirects to that file, and a box already installed trusts no new party for its updates), run
+from the checkout so that it updates that clone
 (`./install.sh` alone fetches nothing: it installs the release already there again).
 
 Two details decide whether this is useful or irritating. It compares version **numbers**,
