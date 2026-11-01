@@ -66,6 +66,16 @@ CITATION.cff, the issue form and the tests change. The cockpit restarts once, wh
 tab's connection, and comes back as the Alzeo cockpit. No engine, no proxy and no unit file changes. A box keeps its
 clone in ~/dgx-spark-qwen38 and its origin under the old name, which GitHub sends on.
 
+**After the push.** The reference box updated at 214593a on 2026-11-01 with the command of this release,
+`cd ~/dgx-spark-qwen38 && curl -fsSL https://get.alzeo.ai | bash`, once get.alzeo.ai served this release's get.sh byte
+for byte. Its clone, whose origin still names the old repository, took the new commit through GitHub's redirect, and
+the run ended whole in 96 s. The cockpit restarted once and came back as the Alzeo cockpit v1.41.0, with the Server
+headers AlzeoCockpit/1.41.0 and AlzeoCockpitRelay/1.1. The proxy and Flash FP4-Local, the lane that served, kept
+running, and no unit file changed. The 8 real clients (Claude Code, opencode, Hermes, pi, the OpenAI and Anthropic
+SDKs, fetch under Node and Bun, LiteLLM) answered through the proxy on Flash FP4-Local, the production checks passed,
+and the cockpit showed no banner on any of its 5 views, with no JavaScript error. GitHub's CI passed its 7 jobs, 89
+steps, with no step skipped.
+
 ## v1.40.8 (2026-11-01): get.sh takes a clone of hasso5703/alzeo for this repo, before the repository is renamed, and an update no longer stops in silence on a clone with thousands of untracked files
 
 **Why.** The repository is to be renamed hasso5703/alzeo. GitHub then sends the old address on to the new one, for
