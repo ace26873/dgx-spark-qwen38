@@ -14,10 +14,10 @@ GB10 box such as the ASUS Ascent GX10. No prompt, image or video leaves the box.
 curl -fsSL https://get.alzeo.ai | bash
 ```
 
-Prefer to read it before it runs? Clone the repo and run `./install.sh`: that is all the
-one-liner does ([Quickstart](#quickstart)). get.alzeo.ai is only a redirect to get.sh on GitHub:
-to trust GitHub alone, run the same file from there with
-`curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash`.
+Prefer to read it before it runs? Clone the repo into `~/dgx-spark-qwen38`, the folder the one-liner
+uses, and run `./install.sh` there: that is all the one-liner does ([Quickstart](#quickstart)).
+get.alzeo.ai is only a redirect to get.sh on GitHub: to trust GitHub alone, run the same file from
+there with `curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash`.
 
 Alzeo was named dgx-spark-qwen38 until 2026-11-01. A box installed before updates as it always did,
 its folder and services keep their names, and every old address of the repository leads here.

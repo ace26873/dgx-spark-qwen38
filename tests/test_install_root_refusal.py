@@ -90,7 +90,7 @@ class InstallRefusesSudo(unittest.TestCase):
     def test_the_message_gives_the_command_that_works(self):
         _, out, _ = run("install.sh", sudo_user="alice")
         self.assertIn("./install.sh", out)
-        self.assertIn(ONELINER, out)
+        self.assertIn(f"run instead : curl -fsSL {ONELINER} | bash", out)
 
     def test_allow_root_does_not_excuse_sudo(self):
         # ALLOW_ROOT is for a box with no other user. Under sudo there IS
