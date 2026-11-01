@@ -18,6 +18,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve()
 DASH = HERE.parents[1]
@@ -50,7 +51,16 @@ class TheVersion(unittest.TestCase):
         spec.loader.exec_module(cp)
         first = re.search(r"^## v(\d+\.\d+(?:\.\d+)?)\b", (DASH.parent / "CHANGELOG.md").read_text(), re.M).group(1)
         self.assertEqual(cp.VERSION, first)
-        self.assertEqual(cp.Handler.server_version, "SparkCockpit/" + first)
+        self.assertEqual(cp.Handler.server_version, "AlzeoCockpit/" + first)
+        # and the release check names it the same way to GitHub (v1.41.0, the Alzeo cockpit)
+        sent = []
+
+        def urlopen(req, timeout=None):
+            sent.append(req.get_header("User-agent"))
+            raise OSError("no network in this test")
+        with mock.patch.object(cp.urllib.request, "urlopen", urlopen), self.assertRaises(OSError):
+            cp._get_json("https://api.github.com/repos/hasso5703/alzeo/releases/latest")
+        self.assertEqual(sent, ["alzeo-cockpit/" + first])
 
 
 HEAD = "f" * 40

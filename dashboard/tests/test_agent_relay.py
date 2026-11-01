@@ -518,7 +518,7 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(hdr["Content-Security-Policy"], "frame-ancestors 'self' http://127.0.0.1:30090")
         self.assertEqual(hdr["X-Content-Type-Options"], "nosniff")
         self.assertEqual(hdr["Referrer-Policy"], "no-referrer")
-        self.assertTrue(hdr["Server"].startswith("SparkCockpitRelay/"))
+        self.assertTrue(hdr["Server"].startswith("AlzeoCockpitRelay/"))
 
     # ---- bodies and framing ----
     def test_post_body_is_forwarded_byte_exact(self):

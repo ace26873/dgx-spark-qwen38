@@ -318,7 +318,7 @@ main{{max-width:44ch;padding:32px;text-align:center}}a{{color:#d9b45e}}</style>
 def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
     class Relay(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
-        server_version = "SparkCockpitRelay/" + RELAY_VERSION
+        server_version = "AlzeoCockpitRelay/" + RELAY_VERSION
         sys_version = ""
         timeout = CLIENT_TIMEOUT
 

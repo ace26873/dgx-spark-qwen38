@@ -5153,7 +5153,7 @@ UPSTREAM_LOCK = threading.Lock()
 
 def _get_json(url: str, timeout: float = 5.0):
     req = urllib.request.Request(url, headers={
-        "User-Agent": "spark-cockpit/" + VERSION, "Accept": "application/json"})
+        "User-Agent": "alzeo-cockpit/" + VERSION, "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 
@@ -5480,7 +5480,7 @@ def local_log_stamp(line, at):
 
 # ── HTTP layer ───────────────────────────────────────────────────────────────
 class Handler(http.server.BaseHTTPRequestHandler):
-    server_version = "SparkCockpit/" + VERSION
+    server_version = "AlzeoCockpit/" + VERSION
     protocol_version = "HTTP/1.1"
     # a client silent this long is let go, as on the relay (see ar.CLIENT_TIMEOUT); the
     # event stream writes every 2 s, so only a reader that stopped reading reaches it
