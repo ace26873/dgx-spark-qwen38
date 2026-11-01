@@ -11,14 +11,20 @@ update alike. get.alzeo.ai answers with a redirect to get.sh on GitHub, so the f
 for byte the same file, checked from the reference box). The long forms keep working: the same file at
 https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh, and at its old address. The README gives the first one
 next to the short one, for whoever would rather trust GitHub alone, and SECURITY.md says what the short one trusts:
-whoever controls get.alzeo.ai controls what the one-liner runs, as whoever controls the repository does.
+whoever controls get.alzeo.ai controls what the one-liner runs, as whoever controls the repository does. The cockpit
+gives that first long form as its update, so that a box already installed trusts no new party for its updates, and
+still updates behind a network that lets only GitHub through.
 
 **Where the new name is written.** get.sh clones https://github.com/hasso5703/alzeo on a new box, into
 ~/dgx-spark-qwen38 as before, and its refusal under sudo names the new command, as install.sh does in its own. The
-cockpit asks GitHub's API for the newest release under the new name, and gives `cd <the clone> && curl -fsSL
-https://get.alzeo.ai | bash` as the update (and the same with `-s -- --recommended`). The README, the docs,
-CITATION.cff and the issue form link the new name, and the README's manual clone goes into ~/dgx-spark-qwen38, the
-folder the box keeps.
+cockpit asks GitHub's API for the newest release under the new name, and gives
+`cd <the clone> && curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash` as the update (and
+the same with `-s -- --recommended`), the page too when the process that serves it sends none. The README, the docs,
+CITATION.cff and the issue form link the new name. The README's manual clone, and the sentence that sends a reader to
+clone before running anything, go into ~/dgx-spark-qwen38, the folder the box keeps: a plain clone of the new name
+makes ~/alzeo, which the one-liner does not look for, and run later from outside it, the one-liner made a second clone.
+docs/operations.md gives the cockpit's command to upgrade, where it gave a `git pull` that skips get.sh's checks and
+worked from the home folder only.
 
 **What keeps the old name, on purpose.** The folder ~/dgx-spark-qwen38, the qwen38 units, files and launchers, and the
 name the installer writes into what it owns, by which an update tells its own files from a user's. get.sh still takes
@@ -28,10 +34,13 @@ Cockpit, and opencode-web its documentation link: a change to that unit would ha
 box. The past sections of this changelog keep the links they were written with.
 
 **The Alzeo cockpit.** The page, its sign-in page, the Agent relay's page, the installer's step 10/10 and its closing
-line, and the line the cockpit writes to its journal when it starts say Alzeo cockpit. Its violet is warmer, as chosen
-on screenshots on 2026-10-31: the ground #170b38 (was #120b36), the brand #9a6bff, #ccb5ff and #6a3fe0 (were #8c6cff,
-#c4b5ff and #5b3fd9), what floats #22164f and #2c1d66 (were #1d164d and #271e62), the halos of the background, painted
-and drawn, moved the same way. The 27B lane keeps its own hue.
+line, and the line the cockpit writes to its journal when it starts say Alzeo cockpit, and so do its HTTP Server
+headers (AlzeoCockpit/ and AlzeoCockpitRelay/, were SparkCockpit/ and SparkCockpitRelay/) and the User-Agent of its
+release check (alzeo-cockpit/, was spark-cockpit/): nothing on the box reads them, searched in the repository, the
+box's tools and its other projects. Its violet is warmer, as chosen on screenshots on 2026-10-31: the ground #170b38
+(was #120b36), the brand #9a6bff, #ccb5ff and #6a3fe0 (were #8c6cff, #c4b5ff and #5b3fd9), what floats #22164f and
+#2c1d66 (were #1d164d and #271e62), the halos of the background, painted and drawn, moved the same way. The 27B lane
+keeps its own hue.
 
 **Checked after the rename.** From the reference box, once the repository had its new name: the API answers the old
 name with a 301 to the repository's id and the new one with the repository, and the cockpit's release check, which
@@ -41,8 +50,10 @@ name, and the box's clone fetched through its origin under the old name. In a br
 newest release, a discussion, a pull request, an issue and the CI badge, at their old addresses, led to the new ones.
 And a real update by the command the cockpit of v1.40.8 gives, under the old name, ended whole in 89 s.
 
-**Tests.** The tests that hold the one-liner, the update command, the refusal under sudo, the installer's lines and
-the clone get.sh makes expect the new ones. The whole suite passes locally, with no step skipped.
+**Tests.** The tests that hold the one-liner, the update command, the refusal under sudo, the installer's lines and the
+clone get.sh makes, the headers and the User-Agent expect the new ones. A test of install.sh's refusal held the host
+only, and holds the whole command again. The page's own update commands, which no test held, are held too. The whole
+suite passes locally, with no step skipped.
 
 **What an update does.** get.sh, install.sh, the cockpit's pages and code, the README, SECURITY.md, the docs,
 CITATION.cff, the issue form and the tests change. The cockpit restarts once, which drops its open pages and the Agent
