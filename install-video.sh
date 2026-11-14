@@ -440,6 +440,7 @@ else ALLOW="";
 fi
 # Said out loud, because a silent empty here refetches the other partition.
 echo "fetching with allow: ${ALLOW:-(whole repo)} (variant $VARIANT, model $MODEL)"
+echo "MiniMax-H3: its licence, the MiniMax H3 Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE)."
 # The same two lessons the LLM lane learned the hard way: the Hub's Xet backend stalls
 # silently on this box (0-8 MB/s against 89 on the classic CDN), and an unauthenticated
 # pull gets throttled, so HF_TOKEN is passed through when it is set.

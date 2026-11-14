@@ -3,6 +3,9 @@
 `MiniMaxAI/MiniMax-H3`, text to video **with sound**, served by SGLang Diffusion 0.5.21 in its own venv on
 the same box as your text lanes, with none of the offload flags.
 
+Its licence, the MiniMax H3 Community License, is not granted in the European Union, the United
+Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE).
+
 ## One command
 
 ```bash

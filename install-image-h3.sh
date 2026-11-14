@@ -147,6 +147,8 @@ case "$IMAGE_H3_BIND" in
   127.*) case "$IMAGE_H3_BIND" in *[!0-9.]*|*..*) die "IMAGE_H3_BIND takes an IPv4 loopback address, got: $IMAGE_H3_BIND" ;; esac ;;
   *) die "IMAGE_H3_BIND=$IMAGE_H3_BIND: this lane binds loopback only (127.0.0.1 or localhost). It has no API key, and at its SGLang commit its scheduler's unauthenticated socket would follow the address. The cockpit is the door to it." ;;
 esac
+# Its licence's Excluded Territories, said as its weights come and as its unit goes in (docs/image-h3-lane.md).
+LICENCE='Its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE).'
 WEIGHTS_GB=64; ENCODER_GB=63; RUNTIME_GB=14   # 68.65 GB in 34 files (63.94 GiB) and 66.73 GB in 23 (62.15
 # GiB), from the Hub's listing of the two pinned revisions; the runtime the video lane's 11 (the venv, the
 # checkout and the wheel, 8.6 to 8.8 GiB measured, and the pip build tree) and FlashInfer's cubins (1.56 GB).
@@ -222,7 +224,7 @@ install_service(){
   echo "installed as a lane of its own. Switch to it like any lane:"
   echo "  the cockpit: Load on MiniMax-H3-Image in the Lanes view (it switches, stops the serving lane, starts this one)"
   echo "  a terminal : ./switch-model.sh image-h3, then the two commands it prints"
-  echo "Its licence is not granted in the European Union, the United Kingdom, South Korea or the United States: read it before use (docs/image-h3-lane.md)."
+  echo "MiniMax-H3-Image: ${LICENCE/Its licence/its licence}"
 }
 
 step "1/6 Preflight"
@@ -402,6 +404,7 @@ step "4/6 Weights ($MODEL at ${MODEL_REV:0:12} and its text encoder, one-time, r
 # checkpoint by name with HF_HUB_OFFLINE=1, which resolves refs/main, and a download by commit
 # writes no ref: --refs-main pin points main at the pinned commit. The text encoder is named in
 # the unit by its folder at its revision, and its refs/main is the video lane's: left as it is.
+echo "MiniMax-H3-Image: ${LICENCE/Its licence/its licence}"
 echo "fetching with allow: $ALLOW"
 HF_HOME="$HF_CACHE" HF_HUB_DOWNLOAD_TIMEOUT=30 HF_HUB_DISABLE_XET=1 \
   "$VENV/bin/python" "$HERE/ckpt-fetch.py" "$MODEL" "$MODEL_REV" --allow "$ALLOW" --refs-main pin \

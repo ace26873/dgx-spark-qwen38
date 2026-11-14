@@ -1066,6 +1066,7 @@ if [ "$CHOICE" = "video" ]; then
   VID_MODEL="${VID_MODEL:-MiniMaxAI/MiniMax-H3}"
   VID_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$VIDEO_UNIT" | cut -d= -f3- || true)"
   printf '\n\033[1;36m── Verifying %s in the cache (resumable)\033[0m\n' "$VID_MODEL"
+  echo "MiniMax-H3: its licence, the MiniMax H3 Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE)."
   # Only the partition the installed unit serves is verified and fetched, by the same
   # allowlist as install-video.sh: a complete fl2va cache answers without touching the
   # network, and without it a switch re-downloaded the whole repo (Ref2VA included)
@@ -1233,6 +1234,7 @@ PY
   [ "${H3_FREE:-0}" -ge "$H3_NEED" ] \
     || die "not enough room for $H3_MODEL and its text encoder under HF_HOME=${H3_HF:-$HF_CACHE}: ${H3_FREE:-?} GiB free, about $H3_NEED GiB needed (nothing was changed). Free some space first, or point HF_HOME at a bigger disk."
   printf '\n\033[1;36m── Verifying %s @ %s and its text encoder in the cache (resumable)\033[0m\n' "$H3_MODEL" "${H3_REV:0:12}"
+  echo "MiniMax-H3-Image: its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE)."
   # ckpt-fetch.py, the one fetch of every lane: the cache first, then what is missing, Xet off.
   HF_HOME="${H3_HF:-$HF_CACHE}" HF_HUB_DOWNLOAD_TIMEOUT=30 HF_HUB_DISABLE_XET=1 \
     HF_HUB_DISABLE_PROGRESS_BARS="$DL_NO_BARS" \
@@ -1270,7 +1272,7 @@ PY
     echo "Effective after:  sudo systemctl start $IMAGE_H3_UNIT_NAME   (or next reboot; ready in about 8 min)"
   fi
   echo "The proxy on :30001 and opencode are text clients and were left as they are."
-  echo "Its licence is not granted in the European Union, the United Kingdom, South Korea or the United States (docs/image-h3-lane.md)."
+  echo "MiniMax-H3-Image: its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE)."
   echo "Switch back:      ./switch-model.sh stock   (or any text target, or image)"
   exit 0
 fi

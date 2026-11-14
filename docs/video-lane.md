@@ -170,7 +170,7 @@ watcher is done: the lane reads those files when the job starts, not when the PO
 arrived (found in review, 2026-09-28). The same two hours is why an interrupted or long
 request never lets a second generation start beside the first.
 
-Licence: MiniMax-H3 ships under its own licence. Read it before commercial use.
+Its licence, the MiniMax H3 Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE).
 
 ## The Turbo switch
 

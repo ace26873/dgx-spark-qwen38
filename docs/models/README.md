@@ -17,6 +17,7 @@ from [BENCHMARKS.md](../../BENCHMARKS.md) and the lane pages it links, nothing h
 | Qwen3.8 Flash-Next UD-Q4_K_XL GGUF · Unsloth | llama.cpp b12316 | [qwen38-flash-next-unsloth-gguf.md](qwen38-flash-next-unsloth-gguf.md) | `./switch-model.sh flash-unsloth` | 51.8 tok/s on code and 123.7 on a rewrite of code at the card's sampling |
 | Qwen-Image 2.1 · Qwen | SGLang Diffusion 0.5.21 | [qwen-image-21.md](qwen-image-21.md) | `./switch-model.sh image` | 1024x1024 in 7.5 s with its Turbo |
 | MiniMax-H3 · MiniMax, video with sound | SGLang Diffusion 0.5.21 | [minimax-h3.md](minimax-h3.md) | `./switch-model.sh video` | 4 s of 480P in about 127 s with its Turbo |
+| MiniMax-H3-Image · MiniMax | SGLang Diffusion main 49f1a44 | [minimax-h3-image.md](minimax-h3-image.md) | `./switch-model.sh image-h3` | 2048x2048 in 15.6 s, 4736x3552 in 81 s |
 
 Each engine is the version the lane's pinned image reads on the reference box (the cockpit says the same, and the
 version its engine reports for the lane that serves).
