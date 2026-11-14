@@ -28,6 +28,7 @@ LANES = {
     "qwen38-flash-local.service": ("qwen38-flash-local.service.template",),
     "qwen38-ornith-122b.service": ("qwen38-ornith-122b.service.template",),
     "qwen38-flash-unsloth.service": ("qwen38-flash-unsloth.service.template",),
+    "qwen38-image-h3.service": ("qwen38-image-h3.service.template",),
 }
 ALL = set(LANES)
 

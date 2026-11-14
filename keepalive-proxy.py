@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.57). No content logging, and the only
+"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.58). No content logging, and the only
 rewriting is the tool-schema guard (role 4); two routes, POST /v1/systemone (role 5) and the
 operator's POST /proxy/stop (role 7), are answered here instead of relayed.
 
@@ -67,6 +67,10 @@ other was no change of checkpoint (decision 1041). llama-server's -m names a fil
 the SHA-1 of the revision and that file's path, 40 hexadecimal characters as the pair carries a revision. A box on
 v6.56 or older serving that lane says the revision alone, and shares nothing with this one: two boxes of one pair
 update together. The other engines' --revision is read as before.
+v6.58: a client is told the box serves images while either image lane serves: the MiniMax-H3-Image lane, a second
+one beside Qwen-Image 2.1, holds the GPU instead of a text engine the same way, and a text request then read "It is
+stopped, restarting or still loading (about 9 minutes)" of an engine that comes back only by a switch. The message
+names the image lane's unit that serves.
 
 v6.56: a client's bearer reaches every engine spelled the way the engine spells it. The door reads the scheme in any
 case, as SGLang's own check does (measured 2026-10-08: "bearer <key>" admitted) and v6.38 only stripped the whitespace
@@ -542,9 +546,9 @@ class EngineUnreachable(Exception):
 # The image and video lanes hold the GPU instead of a text engine once the box is
 # switched to one of them, and a text engine does not come back from that by itself.
 # Asked only on the error path, where the answer changes what the client is told,
-# and at most every 5 s per lane.
-IMAGE_UNIT = "qwen38-image.service"
-_IMAGE_SEEN = {"ts": -1e9, "active": False}
+# and at most every 5 s per lane. Two image lanes (v6.58): Qwen-Image 2.1 and MiniMax-H3-Image.
+IMAGE_UNITS = ("qwen38-image.service", "qwen38-image-h3.service")
+_IMAGE_SEEN = {u: {"ts": -1e9, "active": False} for u in IMAGE_UNITS}
 VIDEO_UNIT = "qwen38-video.service"
 _VIDEO_SEEN = {"ts": -1e9, "active": False}
 
@@ -562,7 +566,8 @@ def _lane_active(unit: str, seen: dict) -> bool:
 
 
 def image_lane_serving():
-    return _lane_active(IMAGE_UNIT, _IMAGE_SEEN)
+    """The unit of the image lane that serves, or None."""
+    return next((u for u in IMAGE_UNITS if _lane_active(u, _IMAGE_SEEN[u])), None)
 
 
 def video_lane_serving():
@@ -760,8 +765,9 @@ def unit_start_texts(unit):
 
 def engine_gone_reason():
     """What an unanswering engine means on this box, and what brings it back."""
-    if image_lane_serving():
-        return ("This box is serving images right now (qwen38-image.service), and a text engine "
+    image = image_lane_serving()
+    if image:
+        return (f"This box is serving images right now ({image}), and a text engine "
                 "does not come back by itself: switch back to a text lane from the cockpit's "
                 "switcher, or run ./switch-model.sh with a text target")
     if video_lane_serving():
@@ -9326,7 +9332,7 @@ if __name__ == "__main__":
     holds = (f"holds requests up to {HOLD_MAX_S:.0f}s while {' or '.join(HOLD_UNITS)} comes back"
              if HOLD_UNITS and HOLD_MAX_S > 0 else "holds nothing")
     # one f-string: the cockpit's tests render this line from the source
-    log(f"v6.57 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
+    log(f"v6.58 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
     # v6.47: what the memory floor's refusal reads, read once here, so the journal shows it works where
     # the unit runs this proxy (its sandbox leaves /proc/meminfo readable)
     avail = mem_available_gib()

@@ -29,8 +29,8 @@ BARE = re.compile(r"\bqwen38-[a-z0-9-]+(?![a-z0-9.:/-])")
 # the lines whose bare names are no lanes: the repositories of the images this repo built or tagged,
 # named like the lanes that built them (uninstall.sh's inventory)
 NOT_LANES = re.compile(r"^\s*LOCAL_IMAGE_REPOS=")
-# the two lanes that serve images and video rather than text
-DIFFUSION = {"qwen38-image.service", "qwen38-video.service"}
+# the lanes that serve images and video rather than text
+DIFFUSION = {"qwen38-image.service", "qwen38-video.service", "qwen38-image-h3.service"}
 
 
 def engine_lanes() -> set:
@@ -74,7 +74,8 @@ CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kol
                "flash-local": "qwen38-flash-local.service", "ornith-122b": "qwen38-ornith-122b.service",
                "flash-unsloth": "qwen38-flash-unsloth.service", "flash-unsloth-iq3": "qwen38-flash-unsloth.service",
                "image": "qwen38-image.service",
-               "image-turbo": "qwen38-image.service", "video": "qwen38-video.service"}
+               "image-turbo": "qwen38-image.service", "video": "qwen38-video.service",
+               "image-h3": "qwen38-image-h3.service"}
 
 
 # The two families one lane apart (the vLLM lanes less Kolibri are the b12x lanes) are told by the
@@ -370,7 +371,7 @@ class EveryListNamesThemAll(unittest.TestCase):
                         if isinstance(t, ast.Name):
                             self.assertEqual(consts.setdefault(t.id, node.value.value), node.value.value, t.id)
         self.assertLessEqual({"IMAGE_UNIT", "VIDEO_UNIT", "KOLIBRI_UNIT", "NEMOTRON_UNIT", "NEMOTRON_SUPER_UNIT",
-                              "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT"}, set(consts), consts)
+                              "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT"}, set(consts), consts)
 
         def unit_of(e):
             if isinstance(e, ast.Constant):

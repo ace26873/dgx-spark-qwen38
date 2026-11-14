@@ -546,6 +546,8 @@ WITH_ORNITH_122B=0
 NO_ORNITH_122B=0
 WITH_FLASH_UNSLOTH=0
 NO_FLASH_UNSLOTH=0
+WITH_IMAGE_H3=0
+NO_IMAGE_H3=0
 ALL_WEIGHTS=0
 PLAN_ONLY=0
 # --recommended (v1.36.0): every setting the list before step 1 compares, but the site's (the
@@ -584,6 +586,8 @@ for arg in "$@"; do
     --no-ornith-122b) NO_ORNITH_122B=1 ;;
     --with-flash-unsloth) WITH_FLASH_UNSLOTH=1 ;;
     --no-flash-unsloth) NO_FLASH_UNSLOTH=1 ;;
+    --with-image-h3) WITH_IMAGE_H3=1 ;;
+    --no-image-h3) NO_IMAGE_H3=1 ;;
     --all-weights) ALL_WEIGHTS=1 ;;
     --with-claude-warmup)
       echo "NOTE: --with-claude-warmup was removed in v1.3 (the repo's client story moved to opencode)."
@@ -599,6 +603,7 @@ Usage: ./install.sh [--no-start] [--no-service] [--no-opencode | --with-opencode
                    [--no-flash-local | --with-flash-local]
                    [--no-ornith-122b | --with-ornith-122b]
                    [--no-flash-unsloth | --with-flash-unsloth]
+                   [--no-image-h3 | --with-image-h3]
                    [--all-weights] [--plan] [--recommended]
 
 Run it as yourself. Never with sudo in front: it calls sudo itself for the
@@ -619,9 +624,11 @@ on vLLM, in the Nemotron lane's image: 77 beside it, else 102), the Flash
 FP4-Local lane (NVIDIA's FP4 build of the flash model, on vLLM, 121; 33 more
 when the HF cache is on another disk than the home directory's, for the copy
 of its n-gram table), the Ornith 122B lane (Ornith AI's Ornith 1.5 122B,
-on vLLM, in the Qwen3.8 Flash-Next FP4-Local lane's image: 78 beside it, else 96)
-and the Qwen3.8 Flash-Next Unsloth GGUF lane (Unsloth's GGUF of the flash
-model, on llama.cpp, 90). The lane that serves proves it serves before the run ends; on a new box the 27B takes 58 GB
+on vLLM, in the Qwen3.8 Flash-Next FP4-Local lane's image: 78 beside it, else 96),
+the Qwen3.8 Flash-Next Unsloth GGUF lane (Unsloth's GGUF of the flash
+model, on llama.cpp, 90) and the MiniMax-H3-Image lane (MiniMax's image
+model, up to 16.9 megapixels, its text encoder the video lane's: 84 beside
+it, else 151). The lane that serves proves it serves before the run ends; on a new box the 27B takes 58 GB
 of disk, about 39 GB of
 downloads (about 6 to 7 minutes at 100 MB/s). A lane installed whole (--all-weights, --with-<lane>)
 that does not fit on the disk is left out and named at the end, with the
@@ -677,11 +684,16 @@ without a terminal.
   --no-flash-unsloth    leave the Qwen3.8 Flash-Next Unsloth GGUF lane (llama.cpp, 90 GB)
                         out of this run, the same way (./install-flash-unsloth.sh --uninstall)
   --with-flash-unsloth  install it whole now and prove it
+  --no-image-h3         leave the MiniMax-H3-Image lane out of this run (151 GB), the
+                        same way (./install-image-h3.sh --uninstall). Its licence is
+                        not granted in the EU, the UK, South Korea or the US
+  --with-image-h3       install it whole now and prove it
   --all-weights         install every lane whole now (the flash beside the 27B,
                         the image, video, Kolibri, both Nemotron, the Flash
-                        FP4-Local, the Ornith and the Unsloth GGUF lanes), runtime
-                        and weights, about 1047 GB of disk (1080 with the cache on
-                        another disk), and prove each new one
+                        FP4-Local, the Ornith, the Unsloth GGUF and the
+                        MiniMax-H3-Image lanes), runtime and weights, about 1131
+                        GB of disk (1164 with the cache on another disk), and
+                        prove each new one
                         (without it, each is prepared at its first Load from
                         the cockpit; --with-<lane> does the same for that one
                         lane)
@@ -1005,7 +1017,21 @@ if [ -z "$SECONDARY" ] && systemctl is-enabled --quiet qwen38-flash-unsloth.serv
     echo "without making one of them the boot lane again. Switch from the cockpit when you want another."
   fi
 fi
-SIDE_BOOT=$((IMAGE_BOOT + VIDEO_BOOT + KOLIBRI_BOOT + NEMOTRON_BOOT + NEMOTRON_SUPER_BOOT + FLASH_LOCAL_BOOT + ORNITH_122B_BOOT + FLASH_UNSLOTH_BOOT))
+# And the MiniMax-H3-Image lane, the second image lane, under the same promise.
+IMAGE_H3_BOOT=0
+if [ -z "$SECONDARY" ] && systemctl is-enabled --quiet qwen38-image-h3.service 2>/dev/null \
+   && [ "$SGL_ENABLED" -eq 0 ] && [ "$FLASH_ENABLED" -eq 0 ]; then
+  if [ -n "$_ENV_MODEL_CHOICE" ]; then
+    echo "MODEL_CHOICE=$_ENV_MODEL_CHOICE given on a box booting the MiniMax-H3-Image lane: making that text lane the boot lane again."
+  elif [ "$RECOMMENDED" -eq 1 ]; then
+    echo "--recommended on a box booting the MiniMax-H3-Image lane: the 27B lane becomes the boot lane again, as on a new box."
+  else
+    IMAGE_H3_BOOT=1
+    echo "The MiniMax-H3-Image lane is this box's boot lane: this run brings the text lane up to date"
+    echo "without making it the boot lane again. Switch back to text from the cockpit when you want it."
+  fi
+fi
+SIDE_BOOT=$((IMAGE_BOOT + VIDEO_BOOT + KOLIBRI_BOOT + NEMOTRON_BOOT + NEMOTRON_SUPER_BOOT + FLASH_LOCAL_BOOT + ORNITH_122B_BOOT + FLASH_UNSLOTH_BOOT + IMAGE_H3_BOOT))
 # Which text lane to bring up to date on that path. Both text units can be on disk with
 # neither enabled, since a switch to a side lane disables both, so enablement cannot say which
 # one was in use; switch-model.sh writes it down instead (lanes.sh: one record since v1.30, the
@@ -1384,6 +1410,9 @@ fi
 if [ "$NO_FLASH_UNSLOTH" -eq 1 ] && [ "$WITH_FLASH_UNSLOTH" -eq 1 ]; then
   printf -- '--no-flash-unsloth and --with-flash-unsloth contradict each other (drop one flag)\n' >&2; exit 1
 fi
+if [ "$NO_IMAGE_H3" -eq 1 ] && [ "$WITH_IMAGE_H3" -eq 1 ]; then
+  printf -- '--no-image-h3 and --with-image-h3 contradict each other (drop one flag)\n' >&2; exit 1
+fi
 
 # --no-start and --no-service both return before the image step, so the flag would be
 # accepted and silently do nothing. Say so here rather than at the end of a long install.
@@ -1425,6 +1454,11 @@ fi
 if [ "$WITH_FLASH_UNSLOTH" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
   printf -- '--with-flash-unsloth needs the full install: it installs a systemd unit and proves it serves.\n' >&2
   printf -- 'Run ./install.sh without --no-start/--no-service, or ./install-flash-unsloth.sh on its own.\n' >&2
+  exit 1
+fi
+if [ "$WITH_IMAGE_H3" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
+  printf -- '--with-image-h3 needs the full install: it installs a systemd unit and proves it serves.\n' >&2
+  printf -- 'Run ./install.sh without --no-start/--no-service, or ./install-image-h3.sh on its own.\n' >&2
   exit 1
 fi
 # the same for the whole box: --no-service did none of it, --no-start the other text lane alone
@@ -1471,7 +1505,8 @@ lane_title(){  # $1 a lane, by its flag's name: the name a run says
     27b) echo "Qwen3.8 27B" ;; flash) echo "Qwen3.8 Flash-Next" ;; image) echo "image (Qwen-Image 2.1)" ;;
     video) echo "video (MiniMax-H3)" ;; kolibri) echo "Kolibri-1" ;; nemotron) echo "Nemotron 3.5 Bolt" ;;
     nemotron-super) echo "Nemotron 3.5 Super VL" ;; flash-local) echo "Qwen3.8 Flash-Next FP4-Local" ;;
-    ornith-122b) echo "Ornith 1.5 122B" ;; flash-unsloth) echo "Qwen3.8 Flash-Next Unsloth GGUF" ;; *) echo "$1" ;;
+    ornith-122b) echo "Ornith 1.5 122B" ;; flash-unsloth) echo "Qwen3.8 Flash-Next Unsloth GGUF" ;;
+    image-h3) echo "MiniMax-H3-Image" ;; *) echo "$1" ;;
   esac
 }
 lane_wanted(){  # $1 lane (image, video, flash, 27b), $2 --no-$1 given, $3 --with-$1 given: sets WANT
@@ -1500,7 +1535,7 @@ serves_anyway(){ [ "$1" = "$LANE" ] && [ "$SIDE_BOOT" -eq 0 ]; }   # $1 a lane l
 # Said of it, without "brought up to date": on a GPU outside its ATS mode the flash lane that serves
 # gets its units only, and the run then says so (issue #54; both said, found in review, 2026-10-21).
 serves_said(){ echo "The ${1/27b/27B} lane is the one this run serves: --no-$1 leaves nothing out of it."; }
-WANT_IMAGE=0; WANT_VIDEO=0; WANT_FLASH=0; WANT_27B=0; WANT_KOLIBRI=0; WANT_NEMOTRON=0; WANT_NEMOTRON_SUPER=0; WANT_FLASH_LOCAL=0; WANT_ORNITH_122B=0; WANT_FLASH_UNSLOTH=0
+WANT_IMAGE=0; WANT_VIDEO=0; WANT_FLASH=0; WANT_27B=0; WANT_KOLIBRI=0; WANT_NEMOTRON=0; WANT_NEMOTRON_SUPER=0; WANT_FLASH_LOCAL=0; WANT_ORNITH_122B=0; WANT_FLASH_UNSLOTH=0; WANT_IMAGE_H3=0
 TOO_BIG=()
 if [ -z "$SECONDARY" ]; then
   lane_wanted image "$NO_IMAGE" "$WITH_IMAGE"; WANT_IMAGE="$WANT"
@@ -1513,6 +1548,7 @@ if [ -z "$SECONDARY" ]; then
   lane_wanted flash-local "$NO_FLASH_LOCAL" "$WITH_FLASH_LOCAL"; WANT_FLASH_LOCAL="$WANT"
   lane_wanted ornith-122b "$NO_ORNITH_122B" "$WITH_ORNITH_122B"; WANT_ORNITH_122B="$WANT"
   lane_wanted flash-unsloth "$NO_FLASH_UNSLOTH" "$WITH_FLASH_UNSLOTH"; WANT_FLASH_UNSLOTH="$WANT"
+  lane_wanted image-h3 "$NO_IMAGE_H3" "$WITH_IMAGE_H3"; WANT_IMAGE_H3="$WANT"
 fi
 # The Unsloth GGUF lane's target: its installer keeps the one its unit serves, and UD-Q4_K_XL (flash-unsloth) is what
 # v1.48 installed by default. Such a unit moves to the default since v1.49.0, UD-IQ3_XXS (decision 1376), as an old
@@ -1571,7 +1607,7 @@ fi
 # only, its runtime left as it was (found in review, 2026-10-15); a first Load that stopped
 # on the way is finished by the update. The cockpit reads the note, which the installer writes
 # once the whole runtime is in, to build what a Load needs first (dashboard/cockpit.py).
-side_lane_dir(){  # $1 image|video: the folder its unit runs in
+side_lane_dir(){  # $1 image|video|image-h3: the folder its unit runs in
   local unit="/etc/systemd/system/qwen38-$1.service" dir
   dir="$({ grep -m1 -E '^WorkingDirectory=' "$unit" 2>/dev/null || true; } | cut -d= -f2-)"
   echo "${dir:-$HOME/.local/share/qwen38-$1}"
@@ -1617,9 +1653,9 @@ side_gguf_begun(){  # $1 the lane's unit
   hf="$(unit_hf_cache "$1")"
   [ -n "$dir" ] && [ -n "$hf" ] && [ -d "$hf/hub/$dir" ]
 }
-side_begun(){  # $1 lane (image, video, kolibri, nemotron, nemotron-super, flash-local, ornith-122b, flash-unsloth)
+side_begun(){  # $1 lane (image, video, kolibri, nemotron, nemotron-super, flash-local, ornith-122b, flash-unsloth, image-h3)
   case "$1" in
-    image|video) [ -x "$(side_lane_dir "$1")/venv/bin/python" ] ;;
+    image|video|image-h3) [ -x "$(side_lane_dir "$1")/venv/bin/python" ] ;;
     kolibri) side_kolibri_image ;;
     nemotron) side_nemotron_begun "$NEMOTRON_UNIT_PATH" ;;
     nemotron-super) side_nemotron_begun "$NEMOTRON_SUPER_UNIT_PATH" ;;
@@ -1943,7 +1979,7 @@ HOST_PKGS=()
 # --no-start and --no-service return before those lanes, and need neither (nor sudo for them)
 if [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; then
   :
-elif [ "$WANT_IMAGE" -eq 1 ] || [ "$WANT_VIDEO" -eq 1 ]; then
+elif [ "$WANT_IMAGE" -eq 1 ] || [ "$WANT_VIDEO" -eq 1 ] || [ "$WANT_IMAGE_H3" -eq 1 ]; then
   python3 -c 'import venv, ensurepip' 2>/dev/null || HOST_PKGS+=(python3-venv)
   [ -f "$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["include"])' 2>/dev/null)/Python.h" ] || HOST_PKGS+=(python3-dev)
 fi
@@ -3356,6 +3392,10 @@ if [ -z "$SECONDARY" ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && systemctl is-enable
   echo "disabling the Qwen3.8 Flash-Next Unsloth GGUF lane at boot (unit kept, switch back anytime from the cockpit)"
   sudo systemctl disable qwen38-flash-unsloth.service
 fi
+if [ -z "$SECONDARY" ] && [ "$IMAGE_H3_BOOT" -eq 0 ] && systemctl is-enabled --quiet qwen38-image-h3.service 2>/dev/null; then
+  echo "disabling the MiniMax-H3-Image lane at boot (unit kept, switch back anytime from the cockpit)"
+  sudo systemctl disable qwen38-image-h3.service
+fi
 KEEPALIVE_UNIT="qwen38-keepalive.service"
 KA_CHANGED=0      # whether this run changed what the proxy runs (see its restart below)
 # The proxy, its code and its unit are the serving run's (see the secondary run above).
@@ -3441,7 +3481,7 @@ if [ -n "$SECONDARY" ]; then
   fi
   exit 0
 fi
-if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ]; then
+if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then
   sudo systemctl enable "$UNIT_NAME"
   text_lane_note "$UNIT_NAME"
 else
@@ -3509,6 +3549,10 @@ else
       echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install or update; retry with ./install-flash-unsloth.sh --no-smoke"
     fi
   fi
+  if [ "$WANT_IMAGE_H3" -eq 1 ]; then
+    "$REPO_DIR/install-image-h3.sh" "$(side_mode image-h3 "$WITH_IMAGE_H3")" \
+      || echo "NOTE: the MiniMax-H3-Image lane did not install or update; retry with ./install-image-h3.sh --no-smoke"
+  fi
   SERVING_LANE=""
   [ "$IMAGE_BOOT" -eq 1 ] && SERVING_LANE="image"
   [ "$VIDEO_BOOT" -eq 1 ] && SERVING_LANE="video"
@@ -3518,6 +3562,7 @@ else
   [ "$FLASH_LOCAL_BOOT" -eq 1 ] && SERVING_LANE="Qwen3.8 Flash-Next FP4-Local"
   [ "$ORNITH_122B_BOOT" -eq 1 ] && SERVING_LANE="Ornith 1.5 122B"
   [ "$FLASH_UNSLOTH_BOOT" -eq 1 ] && SERVING_LANE="Qwen3.8 Flash-Next Unsloth GGUF"
+  [ "$IMAGE_H3_BOOT" -eq 1 ] && SERVING_LANE="MiniMax-H3-Image"
   if [ -n "$ATS_CANNOT" ]; then
     step "Done: this box is up to date, and its flash lane, which this GPU cannot start, was not started"
     echo "  why       : $ATS_CANNOT"
@@ -3851,7 +3896,7 @@ except Exception as e:
     # New here, and proved when this run builds it whole: a lane with no unit yet, or one whose
     # runtime is not on the box (installed on demand, its units only: --all-weights on such a
     # box built every lane and proved none, found in review, 2026-10-15).
-    IMAGE_FRESH=0; VIDEO_FRESH=0; KOLIBRI_FRESH=0; NEMOTRON_FRESH=0; NEMOTRON_SUPER_FRESH=0; FLASH_LOCAL_FRESH=0; ORNITH_122B_FRESH=0; FLASH_UNSLOTH_FRESH=0
+    IMAGE_FRESH=0; VIDEO_FRESH=0; KOLIBRI_FRESH=0; NEMOTRON_FRESH=0; NEMOTRON_SUPER_FRESH=0; FLASH_LOCAL_FRESH=0; ORNITH_122B_FRESH=0; FLASH_UNSLOTH_FRESH=0; IMAGE_H3_FRESH=0
     { [ -f /etc/systemd/system/qwen38-image.service ] && side_begun image; } || IMAGE_FRESH=1
     { [ -f /etc/systemd/system/qwen38-video.service ] && side_begun video; } || VIDEO_FRESH=1
     { [ -f "$KOLIBRI_UNIT_PATH" ] && side_begun kolibri; } || KOLIBRI_FRESH=1
@@ -3860,7 +3905,8 @@ except Exception as e:
     { [ -f "$FLASH_LOCAL_UNIT_PATH" ] && side_begun flash-local; } || FLASH_LOCAL_FRESH=1
     { [ -f "$ORNITH_122B_UNIT_PATH" ] && side_begun ornith-122b; } || ORNITH_122B_FRESH=1
     { [ -f "$FLASH_UNSLOTH_UNIT_PATH" ] && side_begun flash-unsloth; } || FLASH_UNSLOTH_FRESH=1
-    IMAGE_STATE=off; VIDEO_STATE=off; KOLIBRI_STATE=off; NEMOTRON_STATE=off; NEMOTRON_SUPER_STATE=off; FLASH_LOCAL_STATE=off; ORNITH_122B_STATE=off; FLASH_UNSLOTH_STATE=off
+    { [ -f /etc/systemd/system/qwen38-image-h3.service ] && side_begun image-h3; } || IMAGE_H3_FRESH=1
+    IMAGE_STATE=off; VIDEO_STATE=off; KOLIBRI_STATE=off; NEMOTRON_STATE=off; NEMOTRON_SUPER_STATE=off; FLASH_LOCAL_STATE=off; ORNITH_122B_STATE=off; FLASH_UNSLOTH_STATE=off; IMAGE_H3_STATE=off
     if [ "$WANT_IMAGE" -eq 1 ]; then
       step "Qwen-Image 2.1 lane (text-to-image, editing, native RGBA)"
       IMAGE_MODE="$(side_mode image "$WITH_IMAGE")"
@@ -3925,12 +3971,20 @@ except Exception as e:
         echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install (the lines above say why); the rest goes on."
       fi
     fi
+    if [ "$WANT_IMAGE_H3" -eq 1 ]; then
+      step "MiniMax-H3-Image lane (text-to-image and editing up to 16.9 megapixels, on SGLang's main)"
+      IMAGE_H3_MODE="$(side_mode image-h3 "$WITH_IMAGE_H3")"
+      if "$REPO_DIR/install-image-h3.sh" "$IMAGE_H3_MODE"; then IMAGE_H3_STATE=installed; [ "$IMAGE_H3_MODE" = --units-only ] && IMAGE_H3_STATE=units; else
+        IMAGE_H3_STATE=failed
+        echo "NOTE: the MiniMax-H3-Image lane did not install (the lines above say why); the rest goes on."
+      fi
+    fi
     # What to prove: what this run installed for the first time, or what was asked for
     # by name (--with-<lane>, which also proves a lane already there).
     SECOND_WITH=0
     { [ "$SECOND_LANE" = flash ] && [ "$WITH_FLASH" -eq 1 ]; } && SECOND_WITH=1
     { [ "$SECOND_LANE" = 27b ] && [ "$WITH_27B" -eq 1 ]; } && SECOND_WITH=1
-    PROVE_SECOND=0; PROVE_IMAGE=0; PROVE_VIDEO=0; PROVE_KOLIBRI=0; PROVE_NEMOTRON=0; PROVE_NEMOTRON_SUPER=0; PROVE_FLASH_LOCAL=0; PROVE_ORNITH_122B=0; PROVE_FLASH_UNSLOTH=0
+    PROVE_SECOND=0; PROVE_IMAGE=0; PROVE_VIDEO=0; PROVE_KOLIBRI=0; PROVE_NEMOTRON=0; PROVE_NEMOTRON_SUPER=0; PROVE_FLASH_LOCAL=0; PROVE_ORNITH_122B=0; PROVE_FLASH_UNSLOTH=0; PROVE_IMAGE_H3=0
     { [ "$SECOND_STATE" = installed ] && { [ "$SECOND_NEW" -eq 1 ] || [ "$SECOND_WITH" -eq 1 ]; }; } && PROVE_SECOND=1
     { [ "$IMAGE_STATE" = installed ] && { [ "$IMAGE_FRESH" -eq 1 ] || [ "$WITH_IMAGE" -eq 1 ]; }; } && PROVE_IMAGE=1
     { [ "$VIDEO_STATE" = installed ] && { [ "$VIDEO_FRESH" -eq 1 ] || [ "$WITH_VIDEO" -eq 1 ]; }; } && PROVE_VIDEO=1
@@ -3940,7 +3994,8 @@ except Exception as e:
     { [ "$FLASH_LOCAL_STATE" = installed ] && { [ "$FLASH_LOCAL_FRESH" -eq 1 ] || [ "$WITH_FLASH_LOCAL" -eq 1 ]; }; } && PROVE_FLASH_LOCAL=1
     { [ "$ORNITH_122B_STATE" = installed ] && { [ "$ORNITH_122B_FRESH" -eq 1 ] || [ "$WITH_ORNITH_122B" -eq 1 ]; }; } && PROVE_ORNITH_122B=1
     { [ "$FLASH_UNSLOTH_STATE" = installed ] && { [ "$FLASH_UNSLOTH_FRESH" -eq 1 ] || [ "$WITH_FLASH_UNSLOTH" -eq 1 ]; }; } && PROVE_FLASH_UNSLOTH=1
-    if [ $((PROVE_SECOND + PROVE_IMAGE + PROVE_VIDEO + PROVE_KOLIBRI + PROVE_NEMOTRON + PROVE_NEMOTRON_SUPER + PROVE_FLASH_LOCAL + PROVE_ORNITH_122B + PROVE_FLASH_UNSLOTH)) -gt 0 ]; then
+    { [ "$IMAGE_H3_STATE" = installed ] && { [ "$IMAGE_H3_FRESH" -eq 1 ] || [ "$WITH_IMAGE_H3" -eq 1 ]; }; } && PROVE_IMAGE_H3=1
+    if [ $((PROVE_SECOND + PROVE_IMAGE + PROVE_VIDEO + PROVE_KOLIBRI + PROVE_NEMOTRON + PROVE_NEMOTRON_SUPER + PROVE_FLASH_LOCAL + PROVE_ORNITH_122B + PROVE_FLASH_UNSLOTH + PROVE_IMAGE_H3)) -gt 0 ]; then
       step "Proving the new lanes serve: the ${LANE/27b/27B} lane stops meanwhile, then comes back"
       sudo systemctl stop "$UNIT_NAME"
       if [ "$PROVE_SECOND" -eq 1 ]; then
@@ -3972,6 +4027,9 @@ except Exception as e:
       fi
       if [ "$PROVE_FLASH_UNSLOTH" -eq 1 ]; then
         if "$REPO_DIR/install-flash-unsloth.sh"; then FLASH_UNSLOTH_STATE=proved; else FLASH_UNSLOTH_STATE=unproved; fi
+      fi
+      if [ "$PROVE_IMAGE_H3" -eq 1 ]; then
+        if "$REPO_DIR/install-image-h3.sh"; then IMAGE_H3_STATE=proved; else IMAGE_H3_STATE=unproved; fi
       fi
       step "The ${LANE/27b/27B} lane again"
       prove_text_lane "$UNIT_NAME" "$SMOKE_MODEL" \
@@ -4092,6 +4150,7 @@ except Exception as e:
     lane_line "FP4-Local  " "$FLASH_LOCAL_STATE" flash-local flash-local "121 GB" "$FLASH_LOCAL_UNIT_PATH"
     lane_line "Ornith 122B" "$ORNITH_122B_STATE" ornith-122b ornith-122b "96 GB" "$ORNITH_122B_UNIT_PATH"
     lane_line "Unsloth    " "$FLASH_UNSLOTH_STATE" flash-unsloth flash-unsloth "90 GB" "$FLASH_UNSLOTH_UNIT_PATH"
+    lane_line "H3-Image   " "$IMAGE_H3_STATE" image-h3 image-h3 "151 GB" /etc/systemd/system/qwen38-image-h3.service
     [ "$LANE" = "27b" ] && echo "  Benchmark  : ./bench.sh"
     # A 64 GB DGX Spark serves Nemotron 3.5 Bolt (Hasan, 2026-10-24): there the 27B gets two requests
     # and a pool of 59,625 tokens (measured on a 64 GB budget, 2026-10-24, its Mamba cache taking much

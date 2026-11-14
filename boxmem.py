@@ -28,17 +28,19 @@ MIN_64_GIB = 48
 # and drafter on disk), Nemotron 3.5 Bolt (24.1 GiB in memory) and the speech lane, on the CPU.
 # The text lanes left out weigh 45.8 GB (Kolibri) to 135.3 GB (the flash); the video lane peaks
 # at 75 to 80 GiB (docs/video-lane.md); the image lane waits for its own measurement on a 64 GB
-# budget.
+# budget; MiniMax-H3-Image peaked at 92.3 GB and its recipe asks 106 GiB free at its start
+# (docs/image-h3-lane.md).
 FITS_64 = ("27b", "nemotron", "speech")
 LANES = ("27b", "flash", "image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local",
-         "ornith-122b", "flash-unsloth", "speech")
+         "ornith-122b", "flash-unsloth", "image-h3", "speech")
 # Each target switch-model.sh and MODEL_CHOICE name, and its lane.
 TARGETS = {"stock": "27b", "uncensored": "27b", "fp8": "27b", "uncensored-fp8": "27b", "arete": "27b",
            "flash": "flash", "flash-nvda": "flash", "flash-uncensored": "flash",
            "image": "image", "image-turbo": "image", "video": "video",
            "kolibri": "kolibri", "kolibri-nvfp4": "kolibri", "nemotron": "nemotron",
            "nemotron-super": "nemotron-super", "flash-local": "flash-local", "ornith-122b": "ornith-122b",
-           "flash-unsloth": "flash-unsloth", "flash-unsloth-iq3": "flash-unsloth"}
+           "flash-unsloth": "flash-unsloth", "flash-unsloth-iq3": "flash-unsloth",
+           "image-h3": "image-h3"}
 # Targets of a lane that fits, which a 64 GB box still does not take: Qwen's FP8 weights of the 27B
 # (30.9 GB against 21.9 GB for NVFP4) leave its KV pool too little, and no 64 GB run measured them.
 # Arete's NVFP4 (21.1 GB) weighs less than RadixArk's and takes the same KV cache: it goes where that one goes.

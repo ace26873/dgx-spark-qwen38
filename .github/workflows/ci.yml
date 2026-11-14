@@ -488,15 +488,15 @@ jobs:
           # Nemotron Super lane's (--with-nemotron-super), `flash-local`, the Flash
           # FP4-Local lane's (--with-flash-local), `ornith-122b`, the Ornith lane's
           # (--with-ornith-122b), and `flash-unsloth` and `flash-unsloth-iq3`, the Qwen3.8
-          # Flash-Next Unsloth GGUF lane's two quantizations (--with-flash-unsloth), each
-          # switched to like any other, and none a
+          # Flash-Next Unsloth GGUF lane's two quantizations (--with-flash-unsloth), and the MiniMax-H3-Image
+          # lane's `image-h3` (--with-image-h3), each switched to like any other, and none a
           # MODEL_CHOICE (none has a recipe; Kolibri, the Nemotron lanes, Flash FP4-Local and
           # Ornith serve text from vLLM, the Unsloth GGUF lane from llama.cpp, under their own
           # installers). Both sets are asserted, so a
           # target added to the switcher and forgotten in the cockpit's enum is
           # still caught.
           FLAG_LANES = ["image", "image-turbo", "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-local",
-                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3"]
+                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3"]
           ref = choices
           switch_ref = sorted(ref + FLAG_LANES)
           text_lists = {"install.sh MODEL_CHOICE": choices, "recipes BUILTIN_IDS": sorted(builtins)}
@@ -851,9 +851,12 @@ jobs:
           # 2026-09-10. This lane grew from an experiment into the one in production,
           # so the flag is a gate now, not a habit.
           for f in qwen38-sglang.service.template qwen38-sglang-1m.service.template \
-                   qwen38-flash-launch.sh.template run.sh; do
+                   qwen38-flash-launch.sh.template run.sh qwen38-image-h3.service.template; do
             grep -q -- '--sleep-on-idle' "$f" || { echo "$f does not park its scheduler when idle"; exit 1; }
           done
+          # The image and video lanes' runtime (v0.5.21) has no such flag: their scheduler-idle-poll
+          # patch is their gate, in the step that checks each patch against its pin. The
+          # MiniMax-H3-Image lane's runtime has it (SGLang main, PR 46007), off by default.
 
       - name: Every serving lane exports its Prometheus metrics
         run: |
@@ -1014,7 +1017,7 @@ jobs:
           units = {"qwen38-sglang.service", "qwen38-flash.service"}
           engines = units | {"qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                              "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                             "qwen38-flash-unsloth.service"}
+                             "qwen38-flash-unsloth.service", "qwen38-image-h3.service"}
           values = {
               "TEXT_UNIT_NAME": engines, "TARGET_UNIT_NAME": units, "OTHER_UNIT_NAME": engines,
               "IMAGE_UNIT_NAME": {"qwen38-image.service"},
@@ -1025,6 +1028,7 @@ jobs:
               "FLASH_LOCAL_UNIT_NAME": {"qwen38-flash-local.service"},
               "ORNITH_122B_UNIT_NAME": {"qwen38-ornith-122b.service"},
               "FLASH_UNSLOTH_UNIT_NAME": {"qwen38-flash-unsloth.service"},
+              "IMAGE_H3_UNIT_NAME": {"qwen38-image-h3.service"},
               "TARGET_UNIT": {re.search(r'^SGL_UNIT="([^"]+)"', script, re.M).group(1)},
               "IMAGE_UNIT": {re.search(r'^IMAGE_UNIT="([^"]+)"', script, re.M).group(1)},
               "KOLIBRI_UNIT": {re.search(r'^KOLIBRI_UNIT="([^"]+)"', script, re.M).group(1)},
@@ -1180,6 +1184,10 @@ jobs:
           m = re.search(r'^IMAGE_TURBO_PIN="([^"]+)"', pathlib.Path("install-image.sh").read_text(), re.M)
           if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
               bad.append("install-image.sh IMAGE_TURBO_PIN")
+          # and the MiniMax-H3-Image lane's (its text encoder is MiniMax-H3's, the video lane's, above)
+          m = re.search(r'^IMAGE_H3_MODEL_PIN="([^"]+)"', pathlib.Path("install-image-h3.sh").read_text(), re.M)
+          if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
+              bad.append("install-image-h3.sh IMAGE_H3_MODEL_PIN")
           if bad:
               print("install.sh pins missing from uninstall.sh inventory:")
               print("\n".join("  " + b for b in bad)); sys.exit(1)
@@ -1336,7 +1344,7 @@ jobs:
           probe="$(mktemp -d)"
           # tests/run_suite.py loads the same hook into every python it starts (its sitecustomize.py),
           # beside the one that compares each file's environment at its start and at its exit.
-          export QWEN38_CONTACT_LOG="$probe/contacts" QWEN38_SERVING_PORTS=30000,30001,30002,30020,30022,30024,30025,30090,30091,4096
+          export QWEN38_CONTACT_LOG="$probe/contacts" QWEN38_SERVING_PORTS=30000,30001,30002,30020,30022,30024,30025,30026,30090,30091,4096
           before="$(find "$witness" -type f -exec sha256sum {} + | sort)"
           ports_before="$(ss -Htln 2>/dev/null | awk '{print $4}' | sort || true)"
           # The suite runs under tests/suite_reaper.py, a child subreaper: every process it

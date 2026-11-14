@@ -676,7 +676,7 @@ class TheOneLinerReachesIt(unittest.TestCase):
     def test_the_help_says_what_it_costs_before_someone_spends_it(self):
         self.assertIn("--no-image            leave the Qwen-Image 2.1 lane out of this run (46 GB).", self.text)
         self.assertIn("about 39 GB of\ndownloads", self.text)   # a plain run: the lane that serves
-        self.assertIn("about 1047 GB of disk", self.text)   # --all-weights: the whole box
+        self.assertIn("about 1131\n                        GB of disk", self.text)   # --all-weights: the whole box
 
 
 class AnUpdateKeepsTheImageLaneAsTheBootLane(unittest.TestCase):
@@ -694,14 +694,14 @@ class AnUpdateKeepsTheImageLaneAsTheBootLane(unittest.TestCase):
         self.assertIn('[ "$SGL_ENABLED" -eq 0 ] && [ "$FLASH_ENABLED" -eq 0 ]', self.text)
 
     def test_the_text_unit_is_not_enabled_on_that_path(self):
-        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ]; then')
+        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         # the condition's line and the one after it, however many lanes the condition names
         self.assertIn('sudo systemctl enable "$UNIT_NAME"', self.text[i:self.text.index("\n", self.text.index("\n", i) + 1)])
         # and that is the ONLY enable of the serving unit: an unguarded one would undo it
         self.assertEqual(self.text.count('sudo systemctl enable "$UNIT_NAME"'), 1)
 
     def test_that_path_ends_before_any_text_engine_is_started(self):
-        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ]; then')
+        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         early = self.text[i:self.text.index("exit 0", i)]
         self.assertNotIn("systemctl start", early)
         self.assertIn("--no-smoke", early, "the smoke test stops and starts the serving lane")
@@ -729,12 +729,12 @@ class TheBootLaneConvergenceHoldsEveryWay(unittest.TestCase):
         self.assertIn("sudo systemctl disable qwen38-image.service", self.text)
 
     def test_the_image_boot_path_restarts_the_proxy_it_rewrote(self):
-        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ]; then')
+        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         early = self.text[i:self.text.index("exit 0", i)]
         self.assertIn('sudo systemctl restart "$KEEPALIVE_UNIT"', early)
 
     def test_the_image_boot_path_respects_a_left_out_image_lane(self):
-        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ]; then')
+        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         early = self.text[i:self.text.index("exit 0", i)]
         call = early.index('"$REPO_DIR/install-image.sh" "$(side_mode image')
         self.assertIn('if [ "$WANT_IMAGE" -eq 1 ]', early[:call])
@@ -751,7 +751,7 @@ class TheBootLaneConvergenceHoldsEveryWay(unittest.TestCase):
 
     def test_it_never_points_at_a_switch_target_that_does_not_exist(self):
         """A kept custom model is MODEL_CHOICE=custom, which switch-model.sh rejects."""
-        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ]; then')
+        i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         early = self.text[i:self.text.index("exit 0", i)]
         # the case names custom before the line that names ./switch-model.sh $MODEL_CHOICE
         case = early.index('case "$MODEL_CHOICE" in')
@@ -771,7 +771,7 @@ class ThePageNeverShowsAStaleOrRacingState(unittest.TestCase):
         self.assertIn("unit === VIDEO_UNIT) return null", self.js)
         # the image lane's served target is its own engine's answer (cockpit.py, /model_info),
         # returned before the text engine's is ever read
-        image = self.js.index("if (unit === IMAGE_UNIT) return s[1].served_target || null;")
+        image = self.js.index("if (isImageLane(unit)) return s[1].served_target || null;")
         self.assertLess(image, self.js.index("? ownTarget(unit) : null;"))
         self.assertIn("return servedTarget(unit) || (engines()[unit] || {}).target || null", self.js)
         self.assertIn("F.target && TARGET_UNIT(F.target) === unit", self.js)
@@ -789,7 +789,7 @@ class ThePageNeverShowsAStaleOrRacingState(unittest.TestCase):
 
     def test_nothing_is_claimed_before_the_first_lifecycle_snapshot(self):
         render = self.js[self.js.index("function imgRenderLane(){"):]
-        self.assertLess(render.index("!F.life ? 'wait'"), render.index("!e ? (laneFits(IMAGE_UNIT) ? 'absent'"))
+        self.assertLess(render.index("!F.life ? 'wait'"), render.index("!e ? (laneFits(unit) ? 'absent'"))
 
 
 class AGenerationCanBeCancelled(unittest.TestCase):
@@ -812,7 +812,7 @@ class AGenerationCanBeCancelled(unittest.TestCase):
         self.assertIn("$('img-cancel').addEventListener('click', imgCancel);", self.js)
 
     def test_only_a_stop_or_restart_of_the_image_lane_marks_a_request_cancelled(self):
-        self.assertIn("if (name === 'unit' && params.unit === IMAGE_UNIT && params.verb !== 'start') "
+        self.assertIn("if (name === 'unit' && isImageLane(params.unit) && params.verb !== 'start') "
                       "IMG_INTERRUPTED_AT.t = Date.now();", self.js)
 
     def test_a_cut_request_reads_as_cancelled_before_it_reads_as_refused(self):
@@ -841,7 +841,7 @@ class TheImageLaneIsALaneLikeTheOthers(unittest.TestCase):
         self.assertIn("'image-turbo': 'Qwen-Image 2.1 Turbo · Qwen'", names)
         # reached through the one journey, never its own start path, on the checkpoint
         # the unit names (the base or the Turbo)
-        self.assertIn("askJourney(laneTarget(IMAGE_UNIT) || 'image')", js)
+        self.assertIn("askJourney(laneTarget(u) || LANE_TARGETS[u][0])", js)
 
     def test_the_journey_keeps_the_order_the_readme_gives(self):
         """Stopped first, the boot still points at the old lane and the card offers a
@@ -882,7 +882,7 @@ class TheImageLaneIsALaneLikeTheOthers(unittest.TestCase):
         # the one journey, and stopping is the Lanes card's.
         calls = re.findall(r"askAction\('unit', \{verb: '(\w+)'", tab)
         self.assertEqual(calls, ["restart"], "the Image view starts or stops a lane again")
-        self.assertIn("askJourney(laneTarget(IMAGE_UNIT) || 'image')", tab)
+        self.assertIn("askJourney(laneTarget(u) || LANE_TARGETS[u][0])", tab)
         self.assertIn("show('img-cancel', !!(IS.inflight || IS.busy));", tab)
         self.assertNotIn("function imgUnitButton", tab)
 

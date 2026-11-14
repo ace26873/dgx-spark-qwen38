@@ -62,7 +62,7 @@ GGUF_LANES = {
     "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_IQ3_PART1", {"LEAN_DEFAULT": "1"}),
 }
 # switch-model.sh's targets that serve no chat template
-NOT_TEXT = {"image", "image-turbo", "video"}
+NOT_TEXT = {"image", "image-turbo", "video", "image-h3"}
 
 
 def pin(text, prefix):

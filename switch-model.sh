@@ -20,6 +20,7 @@
 #   ./switch-model.sh ornith-122b     # ornith-ai/Ornith-1.5-122B-NVFP4, Ornith AI's mixture of experts (vLLM + b12x)
 #   ./switch-model.sh flash-unsloth   # unsloth/Qwen3.8-Flash-Next-GGUF, Unsloth's GGUF of the flash model (llama.cpp)
 #   ./switch-model.sh flash-unsloth-iq3 # the same lane on its UD-IQ3_XXS quantization, its experts in 3-bit
+#   ./switch-model.sh image-h3        # MiniMaxAI/MiniMax-H3-Image (SGLang Diffusion at SGLang's main, own venv)
 #   ./switch-model.sh <target> --fetch  # that target's checkpoint only, into the cache; nothing else changes
 #   ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients
 #                                     # that lane's clients for its unit's window; nothing else
@@ -63,7 +64,7 @@ _ENV_HF_CACHE="${HF_CACHE:-}"      # before the pins below give it install.sh's 
 # 27B lane and restarting what follows it, where the usage was all anyone wanted (found
 # in review, 2026-09-24). MODEL_CHOICE= still names one, as install.sh takes it.
 CHOICE="${1:-${MODEL_CHOICE:-}}"
-case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
+case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3|image-h3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
 # --fetch: the target's checkpoint only, fetched as a switch fetches it (the cache first,
 # resumable, its room checked), and nothing else: no unit, no boot, no engine, no record.
 # Library's Download runs it, and a lane installed without its weights gets them so.
@@ -108,6 +109,8 @@ IMAGE_UNIT_NAME="qwen38-image.service"
 IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
 VIDEO_UNIT="/etc/systemd/system/qwen38-video.service"
 VIDEO_UNIT_NAME="qwen38-video.service"
+IMAGE_H3_UNIT="/etc/systemd/system/qwen38-image-h3.service"
+IMAGE_H3_UNIT_NAME="qwen38-image-h3.service"
 
 # The one fetch of every lane's checkpoint, run in the lane's image or venv. Checked here,
 # before any branch mounts it: docker -v of a host file that is not there makes a
@@ -210,7 +213,7 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   done
   # The loop variable ends in UNIT_NAME on purpose: CI checks every
   # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist.
-  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
       echo "disabling $TEXT_UNIT_NAME at boot (unit file kept for switching back)"
       sudo systemctl disable "$TEXT_UNIT_NAME"
@@ -219,7 +222,7 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   sudo systemctl enable "$KOLIBRI_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$KOLIBRI_UNIT_NAME"
   sudo systemctl daemon-reload
   RUNNING=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
   done
   printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$KOL_MODEL" "$KOLIBRI_UNIT_NAME"
@@ -416,7 +419,7 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
   done
   # The loop variable ends in UNIT_NAME on purpose: CI checks every
   # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist.
-  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     [ "$TEXT_UNIT_NAME" = "$NEM_UNIT_NAME" ] && continue
     if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
       echo "disabling $TEXT_UNIT_NAME at boot (unit file kept for switching back)"
@@ -430,7 +433,7 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
   fi
   sudo systemctl daemon-reload
   RUNNING=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     [ "$u" = "$NEM_UNIT_NAME" ] && continue
     systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
   done
@@ -557,7 +560,7 @@ if [ "$CHOICE" = "flash-local" ]; then
     done
     # The loop variable ends in UNIT_NAME on purpose: CI checks every
     # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist.
-    for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+    for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
       if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
         echo "disabling $TEXT_UNIT_NAME at boot (unit file kept for switching back)"
         sudo systemctl disable "$TEXT_UNIT_NAME"
@@ -566,7 +569,7 @@ if [ "$CHOICE" = "flash-local" ]; then
     sudo systemctl enable "$FLASH_LOCAL_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$FLASH_LOCAL_UNIT_NAME"
     sudo systemctl daemon-reload
     RUNNING=""
-    for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+    for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
       systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
     done
     printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$FLASH_LOCAL_REPO" "$FLASH_LOCAL_UNIT_NAME"
@@ -703,7 +706,7 @@ if [ "$CHOICE" = "ornith-122b" ]; then
   done
   # The loop variable ends in UNIT_NAME on purpose: CI checks every
   # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist.
-  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-flash-unsloth.service; do
+  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
       echo "disabling $TEXT_UNIT_NAME at boot (unit file kept for switching back)"
       sudo systemctl disable "$TEXT_UNIT_NAME"
@@ -712,7 +715,7 @@ if [ "$CHOICE" = "ornith-122b" ]; then
   sudo systemctl enable "$ORNITH_122B_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$ORNITH_122B_UNIT_NAME"
   sudo systemctl daemon-reload
   RUNNING=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-flash-unsloth.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
   done
   printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$ORNITH_122B_REPO" "$ORNITH_122B_UNIT_NAME"
@@ -823,7 +826,7 @@ if [ "$CHOICE" = "flash-unsloth" ] || [ "$CHOICE" = "flash-unsloth-iq3" ]; then
     done
     # The loop variable ends in UNIT_NAME on purpose: CI checks every
     # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist.
-    for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service; do
+    for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-image-h3.service; do
       if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
         echo "disabling $TEXT_UNIT_NAME at boot (unit file kept for switching back)"
         sudo systemctl disable "$TEXT_UNIT_NAME"
@@ -832,7 +835,7 @@ if [ "$CHOICE" = "flash-unsloth" ] || [ "$CHOICE" = "flash-unsloth-iq3" ]; then
     sudo systemctl enable "$FLASH_UNSLOTH_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$FLASH_UNSLOTH_UNIT_NAME"
     sudo systemctl daemon-reload
     RUNNING=""
-    for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service; do
+    for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-image-h3.service; do
       systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
     done
     printf '\n\033[1;32mSwitch queued: %s, %s (%s)\033[0m\n' "$FLASH_UNSLOTH_REPO" "$CHOICE" "$FLASH_UNSLOTH_UNIT_NAME"
@@ -1014,7 +1017,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   # The loop variable ends in UNIT_NAME on purpose: CI checks every
   # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist,
   # and a variable called $u would have walked straight past it.
-  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
       echo "disabling $TEXT_UNIT_NAME at boot (unit file kept for switching back)"
       sudo systemctl disable "$TEXT_UNIT_NAME"
@@ -1023,7 +1026,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   sudo systemctl enable "$IMAGE_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$IMAGE_UNIT_NAME"
   sudo systemctl daemon-reload
   RUNNING=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
   done
   printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$IMG_MODEL" "$IMAGE_UNIT_NAME"
@@ -1153,7 +1156,7 @@ if [ "$CHOICE" = "video" ]; then
   # The loop variable ends in UNIT_NAME on purpose: CI checks every
   # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist,
   # and a variable called $u would have walked straight past it.
-  for OTHER_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for OTHER_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     if systemctl is-enabled --quiet "$OTHER_UNIT_NAME" 2>/dev/null; then
       echo "disabling $OTHER_UNIT_NAME at boot (unit file kept for switching back)"
       sudo systemctl disable "$OTHER_UNIT_NAME"
@@ -1162,7 +1165,7 @@ if [ "$CHOICE" = "video" ]; then
   sudo systemctl enable "$VIDEO_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$VIDEO_UNIT_NAME"
   sudo systemctl daemon-reload
   RUNNING=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
     systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
   done
   printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$VID_MODEL" "$VIDEO_UNIT_NAME"
@@ -1172,6 +1175,102 @@ if [ "$CHOICE" = "video" ]; then
     echo "Effective after:  sudo systemctl start $VIDEO_UNIT_NAME   (or next reboot; ready in about 12 min)"
   fi
   echo "The proxy on :30001 and opencode are text clients and were left as they are."
+  echo "Switch back:      ./switch-model.sh stock   (or any text target, or image)"
+  exit 0
+fi
+
+# ── The MiniMax-H3-Image lane: a second image lane, switched to the same way ──────
+# The image and video lanes' contract: verify the weights, make it the one unit enabled at boot,
+# never start or stop anything, print the exact commands. One checkpoint and one target: no unit
+# to rewrite, no prompt ceiling on the proxy and no opencode default (text clients both).
+# Its weights are two: the checkpoint, served by name (refs/main, pinned as the installer pins
+# it), and the text encoder it loads from MiniMax-H3's text_encoder/ folder, which its unit names
+# by its path at the revision the installer pins: on a box whose video lane has its weights, the
+# same files, and nothing is downloaded for it. Handled here, whole, and exits.
+if [ "$CHOICE" = "image-h3" ]; then
+  [ -f "$IMAGE_H3_UNIT" ] || die "the MiniMax-H3-Image lane is not installed on this box (no $IMAGE_H3_UNIT). Install it once: ./install.sh --with-image-h3 (about 151 GB of headroom, 84 beside the video lane)"
+  H3_WD="$(grep -m1 -E '^WorkingDirectory=' "$IMAGE_H3_UNIT" | cut -d= -f2- || true)"
+  H3_PY="${H3_WD:-$HOME/.local/share/qwen38-image-h3}/venv/bin/python"
+  [ -x "$H3_PY" ] || die "the MiniMax-H3-Image lane's runtime is missing ($H3_PY): ./prepare-lane.sh image-h3 builds it (no sudo; its first Load from the cockpit runs it), then switch again"
+  # The pins, the allowlist and the sizes, from install-image-h3.sh, the one place they are declared.
+  eval "$(grep -E '^(IMAGE_H3_MODEL_PIN|IMAGE_H3_MODEL_PIN_REV|IMAGE_H3_ENCODER_PIN|IMAGE_H3_ENCODER_PIN_REV|ALLOW|WEIGHTS_GB)=' "$REPO_DIR/install-image-h3.sh" || true)"
+  for _v in IMAGE_H3_MODEL_PIN IMAGE_H3_MODEL_PIN_REV IMAGE_H3_ENCODER_PIN IMAGE_H3_ENCODER_PIN_REV ALLOW WEIGHTS_GB ENCODER_GB; do
+    eval "[ -n \"\${$_v:-}\" ]" || die "install-image-h3.sh no longer defines $_v (repo layout changed?)"
+  done
+  unset _v
+  H3_MODEL="$(grep -oE -- '--model-path [^ ]+' "$IMAGE_H3_UNIT" | head -1 | cut -d' ' -f2 || true)"
+  H3_MODEL="${H3_MODEL:-$IMAGE_H3_MODEL_PIN}"
+  H3_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$IMAGE_H3_UNIT" | cut -d= -f3- || true)"
+  # The revision this box serves, as for the image lane: refs/main, which the offline unit
+  # resolves; the installer's pin when it is missing or holds no commit.
+  H3_MODEL_DIR="${H3_HF:-$HF_CACHE}/hub/models--${H3_MODEL//\//--}"
+  H3_REV=""
+  if [ -f "$H3_MODEL_DIR/refs/main" ]; then H3_REV="$(cat "$H3_MODEL_DIR/refs/main")"; fi
+  [[ "$H3_REV" =~ ^[0-9a-f]{40}$ ]] || H3_REV=""
+  if [ -z "$H3_REV" ]; then
+    if [ "$H3_MODEL" = "$IMAGE_H3_MODEL_PIN" ]; then H3_REV="$IMAGE_H3_MODEL_PIN_REV"; else H3_REV=main; fi
+  fi
+  # Room first, for the two at once, on the cache's disk: what the cache holds of the checkpoint
+  # comes off its share, and the text encoder counts nothing when the folder the unit names, or
+  # one of its partitions' copies of it, is whole (install-image-h3.sh, the same rule).
+  H3_HAVE_B="$({ du -s --apparent-size -B1 "$H3_MODEL_DIR/blobs" 2>/dev/null || true; } | cut -f1)"
+  H3_NEED=$((WEIGHTS_GB - ${H3_HAVE_B:-0} / 1073741824)); [ "$H3_NEED" -ge 10 ] || H3_NEED=10
+  H3_ENC_SNAP="${H3_HF:-$HF_CACHE}/hub/models--${IMAGE_H3_ENCODER_PIN//\//--}/snapshots/$IMAGE_H3_ENCODER_PIN_REV"
+  if ! python3 -I - "$H3_ENC_SNAP" <<'PY'
+import json, pathlib, sys
+snap = pathlib.Path(sys.argv[1])
+for d in (snap / "text_encoder", snap / "FL2VA" / "text_encoder", snap / "Ref2VA" / "text_encoder"):
+    try:
+        shards = set(json.loads((d / "model.safetensors.index.json").read_text())["weight_map"].values())
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        continue
+    if shards and all((d / s).exists() for s in shards):
+        sys.exit(0)
+sys.exit(1)
+PY
+  then H3_NEED=$((H3_NEED + ENCODER_GB)); fi
+  H3_FREE="$(dl_free_gb "${H3_HF:-$HF_CACHE}")"
+  [ "${H3_FREE:-0}" -ge "$H3_NEED" ] \
+    || die "not enough room for $H3_MODEL and its text encoder under HF_HOME=${H3_HF:-$HF_CACHE}: ${H3_FREE:-?} GiB free, about $H3_NEED GiB needed (nothing was changed). Free some space first, or point HF_HOME at a bigger disk."
+  printf '\n\033[1;36m── Verifying %s @ %s and its text encoder in the cache (resumable)\033[0m\n' "$H3_MODEL" "${H3_REV:0:12}"
+  # ckpt-fetch.py, the one fetch of every lane: the cache first, then what is missing, Xet off.
+  HF_HOME="${H3_HF:-$HF_CACHE}" HF_HUB_DOWNLOAD_TIMEOUT=30 HF_HUB_DISABLE_XET=1 \
+    HF_HUB_DISABLE_PROGRESS_BARS="$DL_NO_BARS" \
+    "$H3_PY" "$REPO_DIR/ckpt-fetch.py" "$H3_MODEL" "$H3_REV" --allow "$ALLOW" --offline-first --refs-main pin \
+    || die "the MiniMax-H3-Image checkpoint could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
+  HF_HOME="${H3_HF:-$HF_CACHE}" HF_HUB_DOWNLOAD_TIMEOUT=30 HF_HUB_DISABLE_XET=1 \
+    HF_HUB_DISABLE_PROGRESS_BARS="$DL_NO_BARS" \
+    "$H3_PY" "$REPO_DIR/ckpt-fetch.py" "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" --allow "text_encoder/*" --offline-first \
+    || die "the MiniMax-H3-Image text encoder could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
+  fetched "$H3_MODEL @ ${H3_REV:0:12} and its text encoder"
+  # Which text lane this box served, written down before it is disabled.
+  for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service; do
+    if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then
+      text_lane_note "$TEXT_UNIT_NAME"; break   # both enabled: the 27B, as install.sh follows it
+    fi
+  done
+  # The loop variable ends in UNIT_NAME on purpose: CI checks every
+  # `sudo systemctl <verb> "$..UNIT_NAME"` against the cockpit's sudoers allowlist.
+  for OTHER_UNIT_NAME in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+    if systemctl is-enabled --quiet "$OTHER_UNIT_NAME" 2>/dev/null; then
+      echo "disabling $OTHER_UNIT_NAME at boot (unit file kept for switching back)"
+      sudo systemctl disable "$OTHER_UNIT_NAME"
+    fi
+  done
+  sudo systemctl enable "$IMAGE_H3_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$IMAGE_H3_UNIT_NAME"
+  sudo systemctl daemon-reload
+  RUNNING=""
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+    systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
+  done
+  printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$H3_MODEL" "$IMAGE_H3_UNIT_NAME"
+  if [ -n "$RUNNING" ]; then
+    echo "Effective after:  sudo systemctl stop $RUNNING && sudo systemctl start $IMAGE_H3_UNIT_NAME   (or next reboot)"
+  else
+    echo "Effective after:  sudo systemctl start $IMAGE_H3_UNIT_NAME   (or next reboot; ready in about 8 min)"
+  fi
+  echo "The proxy on :30001 and opencode are text clients and were left as they are."
+  echo "Its licence is not granted in the European Union, the United Kingdom, South Korea or the United States (docs/image-h3-lane.md)."
   echo "Switch back:      ./switch-model.sh stock   (or any text target, or image)"
   exit 0
 fi
@@ -1537,6 +1636,11 @@ if [ -f "$FLASH_UNSLOTH_UNIT" ] && systemctl is-enabled --quiet "$FLASH_UNSLOTH_
   echo "disabling $FLASH_UNSLOTH_UNIT_NAME at boot (unit file kept for switching back)"
   sudo systemctl disable "$FLASH_UNSLOTH_UNIT_NAME"
 fi
+# The MiniMax-H3-Image lane is the eleventh: the same reason.
+if [ -f "$IMAGE_H3_UNIT" ] && systemctl is-enabled --quiet "$IMAGE_H3_UNIT_NAME" 2>/dev/null; then
+  echo "disabling $IMAGE_H3_UNIT_NAME at boot (unit file kept for switching back)"
+  sudo systemctl disable "$IMAGE_H3_UNIT_NAME"
+fi
 sudo systemctl enable "$TARGET_UNIT_NAME" >/dev/null 2>&1 || sudo systemctl enable "$TARGET_UNIT_NAME"
 text_lane_note "$TARGET_UNIT_NAME"
 sudo systemctl daemon-reload
@@ -1672,6 +1776,7 @@ systemctl is-active --quiet "$NEMOTRON_SUPER_UNIT_NAME" 2>/dev/null && RUNNING="
 systemctl is-active --quiet "$FLASH_LOCAL_UNIT_NAME" 2>/dev/null && RUNNING="$FLASH_LOCAL_UNIT_NAME"
 systemctl is-active --quiet "$ORNITH_122B_UNIT_NAME" 2>/dev/null && RUNNING="$ORNITH_122B_UNIT_NAME"
 systemctl is-active --quiet "$FLASH_UNSLOTH_UNIT_NAME" 2>/dev/null && RUNNING="$FLASH_UNSLOTH_UNIT_NAME"
+systemctl is-active --quiet "$IMAGE_H3_UNIT_NAME" 2>/dev/null && RUNNING="$IMAGE_H3_UNIT_NAME"
 printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$TARGET_REPO" "$TARGET_UNIT_NAME"
 # The target is the operator's choice from here (2026-10-17): an installed.json that a run of
 # v1.36.0 or later wrote records it, and a switch back to the recommended target erases the

@@ -99,6 +99,13 @@ LANES = {
                       "targets": ("flash-unsloth", "flash-unsloth-iq3"), "heavy_64": (),
                       "served": "qwen3.8-flash-next-unsloth", "provider": "flash-unsloth", "ports": (TEXT_PORT,),
                       "fits_64": False, "title": "Qwen3.8 Flash-Next Unsloth GGUF"},
+    # install-image-h3.sh: WHEEL sglang[diffusion] under SGLang main at PIN, PORT 30026 (IMAGE_H3_PORT); MiniMax's
+    # image model, beside the Qwen-Image 2.1 lane, its text encoder the video lane's
+    "image-h3": {"unit": "qwen38-image-h3.service", "installer": "install-image-h3.sh", "flags": True, "kind": "image",
+                 "engine": "diffusion", "b12x": False,
+                 "targets": ("image-h3",), "heavy_64": (),
+                 "served": None, "provider": None, "ports": (30026,), "fits_64": False,
+                 "title": "MiniMax-H3-Image"},
     # install-speech.sh: on the CPU beside any lane, PORT 30024 (SPEECH_PORT) and its recognizer on the
     # next one (ASR_PORT); no switch target, no official name of its own (it is "the speech lane")
     "speech": {"unit": "qwen38-speech.service", "installer": "install-speech.sh", "flags": False, "kind": "speech",

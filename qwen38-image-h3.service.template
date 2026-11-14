@@ -1,0 +1,79 @@
+[Unit]
+Description=MiniMax-H3-Image (SGLang Diffusion, native venv), OpenAI images API :__IMAGE_H3_PORT__
+Wants=network-online.target
+# One engine at a time on this box, and systemd is where that is said rather than in a
+# wrapper someone can bypass: this model peaked at 92.3 GB on the reference box and its recipe
+# asks for 106 GiB available in the shared pool at its start (docs/image-h3-lane.md), while any
+# other lane holds its own memory for the life of its process. Starting this stops the other
+# lanes; starting another lane stops this.
+Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service
+# Conflicts= alone orders nothing: the old lane's stop and the new lane's start ran side by side
+# (measured on the reference box's systemd 255: 3.0 s of overlap without After=, 0.02 s after the
+# stop with, 2026-09-24). With the same units named in After=, systemd finishes the stop before
+# the start, in both directions.
+After=network-online.target qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+WorkingDirectory=__IMAGE_H3_LANE_DIR__
+Environment=HF_HOME=__HF_CACHE__
+Environment=HF_HUB_OFFLINE=1
+Environment=PYTHONUNBUFFERED=1
+# The venv's bin first, as an activated venv has it, before the directories a unit gets otherwise
+# (snapd's generator adds /snap/bin to them): SGLang Diffusion compiles kernels at their first use
+# and runs ninja by name, which the venv has and a new box does not (the image lane's first image
+# on an ASUS Ascent GX10 failed on "No such file or directory: 'ninja'", 2026-10-21).
+Environment=PATH=__IMAGE_H3_VENV__/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+# The memory the last engine held has to be back before this one starts: a start piled on
+# memory the driver kept is how sglang#40948 froze a DGX Spark (see engine-preflight.sh).
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-image-h3.service
+# This lane has no key and takes paths from whoever reaches it (dump and output paths), with
+# this user's rights: ~/.config/qwen38 is an empty read-only tmpfs to it with the preflight bound
+# into it, as for the image and video lanes (qwen38-image.service.template says why).
+TemporaryFileSystem=__HOME__/.config/qwen38:ro
+BindReadOnlyPaths=-__HOME__/.config/qwen38/engine-preflight.sh
+InaccessiblePaths=-/etc/qwen38
+# The runtime's own sockets: the bootstrap of its process group on lo and, with the loopback bind
+# this lane takes (install-image-h3.sh), no traffic but loopback's: no fetch of an image by its URL.
+Environment=GLOO_SOCKET_IFNAME=lo
+Environment=NCCL_SOCKET_IFNAME=lo
+IPAddressAllow=localhost
+IPAddressDeny=any
+# The cookbook's DGX Spark recipe (docs.sglang.io, MiniMax-H3-Image), measured on the reference
+# box at this lane's commit on 2026-11-11: one GPU, no placement or AdaLN flag (the runtime keeps
+# every component resident and builds its AdaLN projections online when 106 GiB are available
+# at its start, and offloads otherwise), six steps fixed by the checkpoint, no guidance.
+# --text-encoder-path: the checkpoint loads its text encoder from MiniMaxAI/MiniMax-H3, the
+# video lane's model, and this names the folder of the revision both lanes pin, in the cache
+# (its files are the video lane's own blobs). By name it would resolve MiniMax-H3's refs/main,
+# which the video lane moves.
+# Three flags the image and video lanes' runtime does not have, and for which they carry a patch
+# (image-sglang/): --sleep-on-idle waits on the request socket while idle (upstream's own fix of
+# the loop scheduler-idle-poll.patch fixes there: without it the lane held one CPU core at rest,
+# 104 % on the reference box); --http-graceful-shutdown-timeout 5 cancels a generation in flight
+# 5 s into a stop (http-graceful-timeout.patch there); the scheduler's socket stays on 127.0.0.1
+# for the loopback bind on its own (scheduler-loopback.patch there).
+# NO --api-key: the diffusion runtime has none, and the loopback bind is all that stands in front
+# of it. The cockpit is the authenticated door.
+# --output-path "" and --input-save-path "": by default the server writes every image it makes
+# and every reference it is sent under its working directory, forever (12.6 MB each at 2048 x
+# 2048, 50.5 MB at 4736 x 3552); the answer carries the pixels.
+ExecStart=__IMAGE_H3_VENV__/bin/sglang serve \
+  --model-path __IMAGE_H3_MODEL__ \
+  --text-encoder-path __IMAGE_H3_ENCODER__ \
+  --sleep-on-idle \
+  --http-graceful-shutdown-timeout 5 \
+  --output-path "" \
+  --input-save-path "" \
+  --host __IMAGE_H3_BIND__ --port __IMAGE_H3_PORT__
+Restart=on-failure
+RestartSec=15
+# No TimeoutStartSec: systemd counts a Type=simple unit started once its process runs, so the
+# setting never bounded the minutes it takes to load the checkpoint and the text encoder (451 s
+# from the external SSD on the reference box). install-image-h3.sh and the cockpit wait on /health.
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

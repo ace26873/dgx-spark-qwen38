@@ -458,14 +458,15 @@ class ProxyOnABoxSwitchedToImages(unittest.TestCase):
     """v6.22: with the image lane serving, the text engine is stopped on purpose and does not
     come back by itself. "Stopped, restarting or still loading (about 9 minutes)" sent a
     client to wait for it; the answer now names the image lane and the way back. systemd is
-    asked through PATH, so a fake systemctl stands in for it here, in both directions."""
+    asked through PATH, so a fake systemctl stands in for it here, in both directions. v6.58: the
+    MiniMax-H3-Image lane, a second image lane, is said the same way, by its own unit."""
 
-    def spawn(self, image_active):
+    def spawn(self, image_active, unit="qwen38-image.service"):
         import subprocess, sys, tempfile
         fake = Path(tempfile.mkdtemp(prefix="fake-systemctl-"))
         (fake / "systemctl").write_text(
             "#!/bin/sh\n"
-            f'[ "$*" = "is-active --quiet qwen38-image.service" ] && exit {0 if image_active else 3}\n'
+            f'[ "$*" = "is-active --quiet {unit}" ] && exit {0 if image_active else 3}\n'
             "exit 3\n")
         (fake / "systemctl").chmod(0o755)
         dead = localports.held(self)                 # a port nothing listens on: the engine is gone
@@ -497,6 +498,14 @@ class ProxyOnABoxSwitchedToImages(unittest.TestCase):
         self.assertIn("serving images right now", err["message"])
         self.assertIn("switch back to a text lane", err["message"])
         self.assertNotIn("about 9 on a DGX Spark", err["message"])
+
+    def test_the_minimax_h3_image_lane_is_named_the_same_way(self):
+        status, raw = self.ask(self.spawn(image_active=True, unit="qwen38-image-h3.service"))
+        self.assertEqual(status, 503)
+        msg = json.loads(raw)["error"]["message"]
+        self.assertIn("serving images right now (qwen38-image-h3.service)", msg)
+        self.assertIn("switch back to a text lane", msg)
+        self.assertNotIn("about 9 on a DGX Spark", msg)
 
     def test_without_it_the_answer_is_the_one_it_always_was(self):
         status, raw = self.ask(self.spawn(image_active=False))

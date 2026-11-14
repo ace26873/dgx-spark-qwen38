@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The heavy half of a lane installed on demand, as the user, with no sudo: what the cockpit's
-# first Load of the lane runs before its switch. The image and video lanes' runtime (a venv and
+# first Load of the lane runs before its switch. The image, video and MiniMax-H3-Image lanes' runtime (a venv and
 # SGLang Diffusion, the video lane's Turbo adapter) and the Kolibri, Nemotron, Qwen3.8 Flash-Next FP4-Local and Ornith
 # lanes' images (one image for the two Nemotron lanes, one for Qwen3.8 Flash-Next FP4-Local and Ornith), each by its own
 # installer's --prepare; their
@@ -12,7 +12,7 @@
 # draft, its config set for the window the unit serves. Each download is refused before its
 # first byte when its room is not there.
 #
-#   ./prepare-lane.sh image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth
+#   ./prepare-lane.sh image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3
 #   ./prepare-lane.sh flash|27b [<target>]
 #
 # The target is the one the Load loads, for the two lanes whose preparation fetches a
@@ -27,11 +27,11 @@ set -euo pipefail
 # exact-argv sudoers is rendered from it and has to match the cockpit's own calls (2026-10-22).
 while [ -n "${HOME:-}" ] && [ "$HOME" != / ] && [ "${HOME%/}" != "$HOME" ]; do HOME="${HOME%/}"; done; export HOME
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage(){ echo "usage: ./prepare-lane.sh <image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth> | <flash|27b> [<target>]" >&2; exit 2; }
+usage(){ echo "usage: ./prepare-lane.sh <image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3> | <flash|27b> [<target>]" >&2; exit 2; }
 die(){ printf '\n\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 section(){ printf '\n\033[1;36m── %s\033[0m\n' "$*"; }
 case "${1:-}" in
-  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth) [ "$#" -eq 1 ] || usage ;;
+  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3) [ "$#" -eq 1 ] || usage ;;
   flash|27b) [ "$#" -le 2 ] || usage ;;
   *) usage ;;
 esac
@@ -180,7 +180,7 @@ prepare_27b(){
 }
 
 case "$1" in
-  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth)
+  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3)
     # its checkpoint comes with its switch, as for any Load: no target here
     CONFIG_DIR="$HOME/.config/qwen38"; REPO_DIR="$HERE"
     # shellcheck source=lanes.sh

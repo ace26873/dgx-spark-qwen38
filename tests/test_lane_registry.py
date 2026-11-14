@@ -1228,10 +1228,12 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
         for rel in (proxy, "oc-fit-limits.py"):
             got, where = py_at(rel, "FLASH_SERVED_NAMES")
             p.same(f"{where} FLASH_SERVED_NAMES", got, flash)
-        # the lanes the proxy asks systemd about by their unit, to say the box serves images or video
-        for kind in ("image", "video"):
-            got, where = py_at(proxy, f"{kind.upper()}_UNIT")
-            p.same(f"{where} {kind.upper()}_UNIT", [got], units_of(family(kind=kind)))
+        # the lanes the proxy asks systemd about by their unit, to say the box serves images or video: the image
+        # lanes in a tuple (v6.58), the video lane by its one unit
+        got, where = py_at(proxy, "IMAGE_UNITS")
+        p.same(f"{where} IMAGE_UNITS", got, units_of(family(kind="image")))
+        got, where = py_at(proxy, "VIDEO_UNIT")
+        p.same(f"{where} VIDEO_UNIT", [got], units_of(family(kind="video")))
         # "The Qwen lanes vLLM serves (v6.43)", named one by one
         got, where = py_at(proxy, "QWEN_VLLM_NAMES")
         p.same(f"{where} QWEN_VLLM_NAMES", got, [LANES[x]["served"] for x in VLLM if LANES[x]["title"].startswith("Qwen")])
@@ -1293,7 +1295,7 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
             if f["ports"] == (reg.TEXT_PORT,):
                 continue
             rel, src = f["installer"], text_of(f["installer"])
-            m, where = one(rel, src, r'^PORT="\$\{[A-Z]+_PORT:-\$\([a-z_]+ --port\)\}"; PORT="\$\{PORT:-(\d+)\}"$')
+            m, where = one(rel, src, r'^PORT="\$\{[A-Z][A-Z0-9_]*_PORT:-\$\([a-z_]+ --port\)\}"; PORT="\$\{PORT:-(\d+)\}"$')
             p.same(f"{where} its PORT", [int(m.group(1))], f["ports"][:1])
             got, where = finds(rel, src, r"^ASR_PORT=\$\(\(PORT \+ (\d+)\)\)$")
             p.same(f"{where} its ASR_PORT", [f["ports"][0] + int(x) for x in got], f["ports"][1:])
@@ -1301,10 +1303,13 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
                        r'add_argument\("--port", type=int, default=(\d+)\)\n\s*ap\.add_argument\("--asr-url", default="http://127\.0\.0\.1:(\d+)"\)')
         p.same(f"{where} its --port and --asr-url", [int(x) for x in m.groups()], LANES["speech"]["ports"])
         cockpit = text_of("dashboard/cockpit.py")
-        for kind, fn in (("image", "image_port"), ("video", "video_port")):
+        # each image and video lane's port, read from its unit with its own fallback: image_port(), video_port(),
+        # image_h3_port() (the MiniMax-H3-Image lane's)
+        for lane in family(kind="image") + family(kind="video"):
+            fn = f"{lane.replace('-', '_')}_port"
             node = py_function("dashboard/cockpit.py", fn)
             got = sorted({int(x) for x in re.findall(r"\b(\d{4,5})\b", ast.get_source_segment(cockpit, node) or "")})
-            p.same(f"dashboard/cockpit.py:{node.lineno} {fn}()", floor(got, f"dashboard/cockpit.py {fn}()"), LANES[family(kind=kind)[0]]["ports"])
+            p.same(f"dashboard/cockpit.py:{node.lineno} {fn}()", floor(got, f"dashboard/cockpit.py {fn}()"), LANES[lane]["ports"])
         for rel, pattern, kind in (("dashboard/static/js/image.js", r"\bconst IS = \{[^;]*?\bport: (\d+)", "image"),
                                    ("dashboard/static/js/image.js", r"\bIS\.port = d\.port \|\| (\d+);", "image"),
                                    ("dashboard/static/js/video.js", r"\bconst VS = \{[^;]*?\bport: (\d+)", "video"),
