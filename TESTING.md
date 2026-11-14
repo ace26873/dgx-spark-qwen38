@@ -172,6 +172,7 @@ And the root modules, which had no floor at all until 2026-09-10:
 |---|---|---|
 | `keepalive-proxy.py` | 85% | the production serving path; the rest is socket teardown |
 | `patch-yarn.py` | 90% | it rewrites the config the engine reads |
+| `patch-kv.py` | 90% | it writes the KV cache declaration into the config the engine reads |
 | `oc-fit-limits.py` | 37% | the arithmetic is property-tested, the CLI plumbing is not |
 | `build-token-map.py` | 35% | the ranking is tested; loading a real tokenizer is not offline work |
 

@@ -90,7 +90,7 @@ jobs:
           py=$(git ls-files '*.py' ':!flash-sglang/')
           [ "$(echo "$py" | wc -l)" -ge 100 ] || { echo "found only: $py"; exit 1; }
           ruff check --select F,E9 $py
-          python3 -m py_compile patch-template.py patch-yarn.py keepalive-proxy.py engine-inputs.py oc-merge-limits.py oc-point-default.py oc-fit-limits.py bench-agent.py conc-check.py build-token-map.py tools-check.py systemone-check.py bench-systemone.py evals/mmlu.py evals/humaneval.py flash-sglang/qwen4_exp.py flash-sglang/qwen_sparse_attn_backend.py flash-sglang/sm121_varlen.py dashboard/cockpit.py dashboard/lifecycle.py dashboard/recipes.py dashboard/registry.py dashboard/agent_relay.py
+          python3 -m py_compile patch-template.py patch-yarn.py patch-kv.py keepalive-proxy.py engine-inputs.py oc-merge-limits.py oc-point-default.py oc-fit-limits.py bench-agent.py conc-check.py build-token-map.py tools-check.py systemone-check.py bench-systemone.py evals/mmlu.py evals/humaneval.py flash-sglang/qwen4_exp.py flash-sglang/qwen_sparse_attn_backend.py flash-sglang/sm121_varlen.py dashboard/cockpit.py dashboard/lifecycle.py dashboard/recipes.py dashboard/registry.py dashboard/agent_relay.py
 
       - name: Pin contracts (every consumer's own block runs against install.sh)
         run: |
@@ -1462,7 +1462,7 @@ jobs:
                  tests/test_proxy_unknown_vocab.py tests/test_proxy_video_guard.py \
                  tests/test_proxy_override_headers.py tests/test_proxy_floor_stop.py \
                  tests/test_proxy_tool_targets.py tests/test_tools.py tests/test_oc_fit_limits.py \
-                 tests/test_oc_merge_limits.py"
+                 tests/test_oc_merge_limits.py tests/test_patch_kv.py"
           echo $files | tr ' ' '\n' | xargs -P 4 -n 1 sh -c \
             '"$0" -m coverage run --branch --parallel-mode --source=. --omit="dashboard/*,tests/*,.venv-test/*" "$1" >/dev/null 2>&1 || true' "$PY"
           "$PY" -m coverage combine -q
@@ -1486,7 +1486,9 @@ jobs:
           # 2026-11-02: role 10 (v6.50, the pair) read as untested, 80%, until test_proxy_pair.py ran its
           # entry in-process too and joined the list (its in-process cases are two files of their own
           # since 2026-11-10: test_proxy_pair_inprocess.py and test_proxy_pair_one_model_inprocess.py).
-          FLOORS = {"keepalive-proxy.py": 85, "patch-yarn.py": 90,
+          # 2026-11-14: patch-kv.py, which writes the Arete target's fp8 KV declaration into the
+          # config the engine reads, gets patch-yarn.py's floor for patch-yarn.py's reason (98% measured).
+          FLOORS = {"keepalive-proxy.py": 85, "patch-yarn.py": 90, "patch-kv.py": 90,
                     "oc-fit-limits.py": 37, "build-token-map.py": 35}
           got, bad = {}, []
           for line in open(sys.argv[1]):
