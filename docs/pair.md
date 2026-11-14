@@ -65,7 +65,7 @@ one its SSH server sees, give that one: `--back 192.168.100.1`.
 When both boxes load the same lane, from the same checkpoint, they share its requests, and the box they were sent
 to decides where each one goes. Each box says in the list it gives the other the checkpoint its engine serves, the
 revision (`--revision`) of the command its engine was started with: `switch-model.sh` serves the 27B's stock,
-uncensored, fp8 and uncensored-fp8 checkpoints, and Flash's three, under one name each, and two boxes that serve two
+uncensored, fp8, uncensored-fp8 and arete checkpoints, and Flash's three, under one name each, and two boxes that serve two
 of them, or a box that says none, keep their own requests. A unit `switch-model.sh` rewrote names the checkpoint of
 its engine's next start, which the box says once its engine restarted. A request the entry sends on for a model both
 serve carries the entry's checkpoint, and the other box refuses it if it serves another one now (a switch since its

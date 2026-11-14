@@ -7,7 +7,7 @@ DGX Spark or one ASUS Ascent GX10, with a window of 1,010,000 tokens.
 ## One command
 
 ```bash
-./switch-model.sh stock        # or: uncensored | fp8 | uncensored-fp8
+./switch-model.sh stock        # or: uncensored | fp8 | uncensored-fp8 | arete
 ```
 
 The one-line install of the [README](../../README.md) sets it up, and the [cockpit](../cockpit.md)
@@ -34,10 +34,24 @@ target verifies every drafted token, so speed costs no quality
 ## What it is good at
 
 General text work with long context: agent loops in Claude Code or opencode, code with files open,
-summaries of whole repositories. The four targets share one serving path: `stock` for general use,
-the two abliterated targets for fewer refusals, and Qwen's own FP8 release as the quantization
-reference. Free prose is the slow case on any drafter, [BENCHMARKS.md](../../BENCHMARKS.md) says
-by how much.
+summaries of whole repositories. The five targets share one serving path: `stock` for general use,
+the two abliterated targets for fewer refusals, Qwen's own FP8 release as the quantization
+reference, and `arete`, Nous Research's fine-tune. Free prose is the slow case on any drafter,
+[BENCHMARKS.md](../../BENCHMARKS.md) says by how much.
+
+## Arete 27B
+
+`arete` serves [Arete 27B](https://huggingface.co/NousResearch/Arete-27B), Nous Research's
+fine-tune of Qwen3.8 27B (Apache-2.0), in atakans's NVFP4 (`atakans/Arete-27B-NVFP4`, Arete 27B
+NVFP4 · atakans in the cockpit, 21.1 GB), with the lane's unit, image and DFlash2 draft as they
+are. Its checkpoint declares no KV cache: its switch writes the one RadixArk's NVFP4 declares into
+its config (`patch-kv.py`), so its target's cache is fp8 and its draft's bf16, as for `stock`.
+Measured on our box on 2026-11-14 under the lane's unit:
+
+- **69 to 72 tok/s** alone on `./bench.sh`'s code and reasoning prompts, two runs.
+- **GSM8K 99.2%** on 250 questions, **MMLU 88.0%** on 500, **HumanEval 96.3%**.
+- A KL divergence of **0.030** to Nous's BF16 over 30 texts, the needle exact at 120,000 and
+  300,000 tokens, a KV pool of **905,941 and 902,974 tokens** on its two boots.
 
 ## In the repo
 
