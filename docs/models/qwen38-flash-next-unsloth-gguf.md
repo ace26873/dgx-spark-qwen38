@@ -2,14 +2,15 @@
 
 `unsloth/Qwen3.8-Flash-Next-GGUF`, Unsloth's GGUF of Qwen3.8-Flash-Next, in its dynamic 4-bit quantization UD-Q4_K_XL:
 76.9 GiB of weights and the model's n-gram (PLE) table in IQ4_NL, 26.8 GiB, which stays on the disk and is read as the
-tokens need it. This stack serves it with llama.cpp's own server (the project's arm64 CUDA image, b12316), its n-gram
-lookup and ggml-org's GGUF of the DFlash2 draft, as a lane of its own beside the [flash lane](qwen38-flash-next.md) (SGLang) and the
+tokens need it; or in its 3-bit UD-IQ3_XXS, the lane's second target (below). This stack serves it with llama.cpp's
+own server (the project's arm64 CUDA image, b12316), its n-gram lookup and ggml-org's GGUF of the DFlash2 draft, as a
+lane of its own beside the [flash lane](qwen38-flash-next.md) (SGLang) and the
 [FP4-Local lane](qwen38-flash-next-fp4-local.md) (vLLM), which serve the same model.
 
 ## One command
 
 ```bash
-./switch-model.sh flash-unsloth
+./switch-model.sh flash-unsloth        # or: flash-unsloth-iq3
 ```
 
 ## Measured on our box (ASUS Ascent GX10, 128 GB)
@@ -33,6 +34,15 @@ lookup and ggml-org's GGUF of the DFlash2 draft, as a lane of its own beside the
 - Ready in 35 to 50 s with its files on the internal disk, 50 to 281 s from a USB SSD.
 - 117 GB on disk: 112 for its GGUF files and their draft, 4.5 for the image.
 - Measures of minutes, run back to back: no continuous load was measured.
+- `flash-unsloth-iq3`, the same lane on Unsloth's **UD-IQ3_XXS** (its experts in 3-bit, 51.1 GiB of weights against
+  76.9, the same n-gram table), serves **four requests at once** with 262,144 tokens each, its KV cache in q8_0, and its
+  1M mode as above. One request at temperature 0, each text's first pass, both quantizations with two windows
+  (2026-11-14, one measure each): **69.4 / 76.4 / 37.7 / 171.7 tok/s** in code, reasoning, prose and a rewrite of code,
+  against 55.6 / 60.5 / 32.0 / 129.8 for UD-Q4_K_XL; with its four windows, 66.2 tok/s for one request and 71.5 in all
+  with four, 39 GiB left to the box at ready; with eight windows, the box's memory guard stopped the engine under
+  GSM8K's eight requests.
+  TODO(measure): its quality (GSM8K, HumanEval, MMLU) against UD-Q4_K_XL, its lowest memory under load, and `bench.sh`'s
+  median; until then UD-Q4_K_XL stays the lane's default. 85 GB of files, 55 beside UD-Q4_K_XL's.
 
 ## What it is good at
 

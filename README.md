@@ -264,7 +264,7 @@ Everything below is optional and combinable. Variables ride on the `bash` side o
 | Nemotron Super lane | default, or `--no-nemotron-super` | on demand: its units, built at its first Load | NVIDIA's Nemotron 3.5 Super VL on vLLM, in the Nemotron lane's image: 77 GB of checkpoint and drafter, 102 with the image when the Nemotron lane is not there; `--with-nemotron-super` installs it whole now and proves it |
 | Qwen3.8 Flash-Next FP4-Local lane | default, or `--no-flash-local` | on demand: its units, built at its first Load | NVIDIA's FP4-Local build of Qwen3.8-Flash-Next on vLLM, 121 GB (102.3 checkpoint, 18.2 image, rounded up), 33 more for the copy of its n-gram table when the cache is on another disk. `--with-flash-local` installs it whole now and proves it |
 | Ornith 122B lane | default, or `--no-ornith-122b` | on demand: its units, built at its first Load | Ornith AI's Ornith 1.5 122B on vLLM, in the Qwen3.8 Flash-Next FP4-Local lane's image: 78 GB of checkpoint, 96 with the image when the Qwen3.8 Flash-Next FP4-Local lane is not there; `--with-ornith-122b` installs it whole now and proves it |
-| Qwen3.8 Flash-Next Unsloth GGUF lane | default, or `--no-flash-unsloth` | on demand: its units, built at its first Load | Unsloth's UD-Q4_K_XL GGUF of Qwen3.8-Flash-Next on llama.cpp, with an n-gram lookup and ggml-org's DFlash2 draft: 117 GB (112 GGUF files and draft, 4.5 image, rounded up); `--with-flash-unsloth` installs it whole now and proves it |
+| Qwen3.8 Flash-Next Unsloth GGUF lane | default, or `--no-flash-unsloth` | on demand: its units, built at its first Load | Unsloth's UD-Q4_K_XL GGUF of Qwen3.8-Flash-Next on llama.cpp, with an n-gram lookup and ggml-org's DFlash2 draft: 117 GB (112 GGUF files and draft, 4.5 image, rounded up), and 55 more for its UD-IQ3_XXS when it is loaded; `--with-flash-unsloth` installs it whole now and proves it |
 | opencode integration | default, or `--no-opencode` | on | on = ready config + `oc` launcher + default model following every switch; off = none of that, your own opencode config is never touched. `--with-opencode` turns it back on |
 | Ports | `PORT=`, `PROXY_PORT=` | 30000, 30001 | agent clients use the proxy port |
 | Storage | `HF_CACHE=`, `PLE_DIR=`, `FLASH_LOCAL_PLE_DIR=` | `~/.cache/huggingface`, `~/flashnext-ple`, `~/flash-local-ple` when the cache is on another disk | checkpoints, the 52 GB flash PLE backing file, and the copies of the Qwen3.8 Flash-Next FP4-Local lane's n-gram table (32 GB, none with `none`, which reads it where the cache is), and each choice holds for the runs after |
@@ -671,6 +671,13 @@ alone); MMLU not measured; in its 1M mode, GSM8K 98.0 % (250 questions) and Huma
 the box's hottest zone at 88 to 95.5 °C; 75 min of continuous load through the proxy took it to 94.4 °C (2026-11-13). Every number and the settings measured:
 **[docs/flash-unsloth-lane.md](docs/flash-unsloth-lane.md)**.
 
+Two quantizations, one lane, as Kolibri's two checkpoints (v1.49): `./switch-model.sh flash-unsloth-iq3` serves
+Unsloth's UD-IQ3_XXS instead, its experts in 3-bit (51.1 GiB of weights, the same n-gram table), under the same model
+name, four requests at once with 262,144 tokens each (its KV cache in q8_0) and the same 1M mode; 85 GB of files, 55
+beside UD-Q4_K_XL's. One request at temperature 0, each text's first pass: 69.4 / 76.4 / 37.7 / 171.7 tok/s in code,
+reasoning, prose and a rewrite of code, against 55.6 / 60.5 / 32.0 / 129.8 for UD-Q4_K_XL (2026-11-14, one measure
+each). TODO(measure): its quality against UD-Q4_K_XL; until then `flash-unsloth`, UD-Q4_K_XL, stays the lane's default.
+
 ## Speech: Qwen3-ASR and Kokoro, on the CPU, beside any lane
 
 Opt-in, and not in the one command yet: speech recognition in 30 languages (Qwen3-ASR) and
@@ -731,7 +738,7 @@ The same generated config is also the single source for **[pi](https://pi.dev)**
 The ids in the first column are what `MODEL_CHOICE`, `./switch-model.sh` and the cockpit's API take; they did not change
 when the cockpit took the official names (v1.45.0).
 
-`./switch-model.sh` also takes `image`, `image-turbo`, `video`, `kolibri`, `kolibri-nvfp4`, `nemotron`, `nemotron-super`, `flash-local` and `ornith-122b`: each lane's section above says what it serves.
+`./switch-model.sh` also takes `image`, `image-turbo`, `video`, `kolibri`, `kolibri-nvfp4`, `nemotron`, `nemotron-super`, `flash-local`, `ornith-122b`, `flash-unsloth` and `flash-unsloth-iq3`: each lane's section above says what it serves.
 
 `flash-uncensored` is the abliterated build of the tree this lane already
 serves, and it was chosen on evidence rather than on downloads: of the

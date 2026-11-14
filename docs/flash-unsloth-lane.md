@@ -1,7 +1,8 @@
 # The Qwen3.8 Flash-Next Unsloth GGUF lane: the flash model on llama.cpp
 
 `unsloth/Qwen3.8-Flash-Next-GGUF` is Unsloth's GGUF of Qwen3.8-Flash-Next, every quantization of the model in one
-repository. This lane serves its dynamic 4-bit one, UD-Q4_K_XL, with llama.cpp's own server, `llama-server`, from the
+repository. This lane serves its dynamic 4-bit one, UD-Q4_K_XL, by default, and its 3-bit UD-IQ3_XXS as a second
+target ([below](#its-second-target-ud-iq3_xxs-flash-unsloth-iq3)), with llama.cpp's own server, `llama-server`, from the
 image the llama.cpp project publishes for arm64 with CUDA, pinned by digest, with llama.cpp's n-gram lookup and then
 ggml-org's GGUF of the DFlash2 draft of the model (Q8_0) proposing tokens. It serves on the text lanes' port, behind the same proxy and key, as model
 `qwen3.8-flash-next-unsloth`, OpenAI or Anthropic dialect alike, and, as on the other Qwen lanes, `lean` is the reasoning
@@ -37,6 +38,47 @@ link in `snapshots/<revision>/`), so a file `huggingface_hub` fetched before is 
 again; it resumes a cut download, checks every file against its sha256 before it takes its name, refuses before the
 first byte when the disk lacks the room, takes `huggingface_hub`'s own lock of each blob, and sends `HF_TOKEN`, read from
 its environment, to the Hub only, never past its redirect to the CDN.
+
+## Its second target: UD-IQ3_XXS (flash-unsloth-iq3)
+
+The same repository at the same revision holds UD-IQ3_XXS, the model's experts in 3-bit, which the lane serves as a
+second target (decisions 1359, 1366 and 1374), the way the Kolibri lane serves two checkpoints: one unit, one served
+name, `qwen3.8-flash-next-unsloth`, and the Lanes view and opencode's entry name the one that serves
+(`Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2`). Its four files, pinned the same way:
+
+| file | what it holds | size |
+|---|---|---|
+| `UD-IQ3_XXS/...-00001-of-00004.gguf` | the header and its chat template, patched as UD-Q4_K_XL's | 10.9 MB |
+| `UD-IQ3_XXS/...-00002-of-00004.gguf` and `-00003-` | the weights, 51.1 GiB (76.9 on UD-Q4_K_XL) | 49.9 GB and 4.9 GB |
+| `UD-IQ3_XXS/...-00004-of-00004.gguf` | the n-gram table, UD-Q4_K_XL's very file (one blob in the cache) | 28.8 GB |
+
+85 GB of files with the draft, 55 more on a box that holds UD-Q4_K_XL. The room its smaller weights leave goes to more
+requests at once (decision 1366: the most requests and context first, then the speed): four windows of 262,144 tokens,
+its KV cache in q8_0 (`-c 1048576 -np 4 -ctk q8_0 -ctv q8_0`), 39 GiB available at ready, 66.2 tok/s for one request and
+71.5 in all with four (2026-11-14, the pinned image b12316, the GPU capped at 2,000 MHz). Eight windows were ready with
+17 to 18 GiB available and did not hold: under GSM8K's eight requests the memory available fell from 26 to 15 GiB in the
+first minute, then about 1 GiB a minute, and the box's guard stopped the engine at 5 GiB, 14 min in. Its 1M mode is
+UD-Q4_K_XL's, one request at a time (below). One request at temperature 0, each text's first pass, both quantizations
+with two windows of 262,144 (2026-11-14, one measure each, the GPU capped at 2,400 MHz):
+
+| text | UD-IQ3_XXS | UD-Q4_K_XL |
+|---|---|---|
+| code | 69.4 tok/s | 55.6 |
+| reasoning (medium effort) | 76.4 | 60.5 |
+| prose | 37.7 | 32.0 |
+| a rewrite of code | 171.7 | 129.8 |
+
+TODO(measure): its quality against UD-Q4_K_XL (GSM8K, HumanEval, MMLU), its lowest memory under load at four requests
+and `bench.sh`'s median on freshly started engines. The lane's default stays UD-Q4_K_XL until then: it is one line of
+the installer, `FLASH_UNSLOTH_DEFAULT`, which a new install serves (an update keeps the target the unit serves, and
+`./install.sh --recommended` brings the default back). Its forms are `FLASH_UNSLOTH_IQ3_SLOTS` and
+`FLASH_UNSLOTH_IQ3_KV` beside it.
+
+```bash
+./switch-model.sh flash-unsloth-iq3          # UD-IQ3_XXS; its first switch fetches what it lacks
+./switch-model.sh flash-unsloth              # back to UD-Q4_K_XL
+./switch-model.sh flash-unsloth-iq3 --fetch  # its files alone
+```
 
 ## The n-gram table stays on the disk
 
@@ -320,7 +362,8 @@ session of the proof's own clients each took their second request from the cache
 
 One request at a time with a window of 1,048,576 tokens, YaRN at four times and the KV cache in q8_0, `-c 1048576 -np
 1`: the mode chosen beside the default on 2026-11-12 (decisions 1316 and 1318), as `FLASH_LOCAL_CONTEXT=1m` is the
-FP4-Local lane's. Measured that day before 12:23, with no clock cap (b12291 built on the box, the DFlash2 draft alone):
+FP4-Local lane's, on either target (UD-IQ3_XXS with 25.8 GiB less of weights beside it). Measured that day before
+12:23, with no clock cap (b12291 built on the box, the DFlash2 draft alone):
 
 | | measured |
 |---|---|
@@ -335,7 +378,8 @@ cd ~/dgx-spark-qwen38 && FLASH_UNSLOTH_CONTEXT=native ./install-flash-unsloth.sh
 ```
 
 `--units-only` writes the choice and the lane's unit, and downloads and starts nothing: the next Load of the lane, from
-the cockpit or `./switch-model.sh flash-unsloth`, starts it with the window chosen and sets the clients' limits for it.
+the cockpit or `./switch-model.sh flash-unsloth` (or `flash-unsloth-iq3`), starts it with the window chosen and sets
+the clients' limits for it.
 A Load of the lane while it serves without being the boot lane sets those limits alone (`./switch-model.sh flash-unsloth
 --clients`): the boot, and opencode's default model with its compaction, stay with the lane the boot names.
 The choice is kept for the Loads after (a Load from the cockpit stages the unit with none of your environment), in
@@ -362,8 +406,9 @@ the Quality section).
 ## Installing, loading, removing
 
 A plain install puts the lane's unit in, and its first Load from the cockpit pulls its image (4.5 GB, 2.7 to download)
-and fetches its files (112 GB), then starts it; `--with-flash-unsloth` or `--all-weights` does all of it at install and
-proves it serves, `--no-flash-unsloth` leaves it out of that run. From a terminal: `./prepare-lane.sh flash-unsloth`, then
-`./switch-model.sh flash-unsloth`; `./switch-model.sh flash-unsloth --fetch` fetches its files alone. A 64 GB DGX Spark
+and fetches its files (112 GB; 85 for UD-IQ3_XXS), then starts it; `--with-flash-unsloth` or `--all-weights` does all
+of it at install and proves it serves, `--no-flash-unsloth` leaves it out of that run. From a terminal:
+`./prepare-lane.sh flash-unsloth`, then `./switch-model.sh flash-unsloth` (or `flash-unsloth-iq3`);
+`./switch-model.sh flash-unsloth --fetch` fetches its files alone. A 64 GB DGX Spark
 does not hold it, and refuses it. `./install-flash-unsloth.sh --uninstall` removes its unit and its container, gives the
 boot back to the text lane it took it from, and keeps its files and its image, said, for you to delete.
