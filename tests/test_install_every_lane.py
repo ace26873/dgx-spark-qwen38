@@ -590,14 +590,22 @@ class TheOtherTextLaneOnDemand(unittest.TestCase):
         fn = between("apply_context_configs(){", "\n}\n") + "\n}\n"
         t = tmp("ctx-")
         stub(t / "python3", f'echo "python3 $*" >> "{t}/calls"')
-        for units_only, patched in ((1, False), (0, True)):
-            with self.subTest(units_only=units_only):
+        for units_only, patched, choice in ((1, False, "stock"), (0, True, "stock"), (1, False, "arete"), (0, True, "arete")):
+            with self.subTest(units_only=units_only, choice=choice):
                 (t / "calls").unlink(missing_ok=True)
                 script = (f"set -euo pipefail\nRECOMMENDED=0\ndie(){{ echo DIE; exit 1; }}\nUNITS_ONLY={units_only}; LANE=27b; CONTEXT_MODE=1m; KEEP_MODEL_VERBATIM=0\n"
-                          f'REPO_DIR=/r; HF_CACHE=/hf; MODEL_REPO=m; MODEL_REV=1; DRAFT2_REPO=d; DRAFT2_REV=2\n{fn}apply_context_configs\n')
+                          f'MODEL_CHOICE={choice}; REPO_DIR=/r; HF_CACHE=/hf; MODEL_REPO=m; MODEL_REV=1; DRAFT2_REPO=d; DRAFT2_REV=2\n{fn}apply_context_configs\n')
                 r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30, env={"PATH": f"{t}:/usr/bin:/bin"})
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 self.assertEqual((t / "calls").exists(), patched, r.stdout)
+                if patched:
+                    # Arete's fp8 KV declaration after the window's configs (a YaRN restore puts back a config saved
+                    # before it), on its target only; no other target's
+                    calls = (t / "calls").read_text().splitlines()
+                    kv = [c for c in calls if "patch-kv.py" in c]
+                    self.assertEqual(kv, ["python3 /r/patch-kv.py /hf m 1"] if choice == "arete" else [], calls)
+                    if kv:
+                        self.assertEqual(calls[-1], kv[0], calls)
 
     def test_a_units_only_run_takes_no_room(self):
         # 10 GB free and no image: a whole install of either lane is refused, its units are not
