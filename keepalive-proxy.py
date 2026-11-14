@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.56). No content logging, and the only
+"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.57). No content logging, and the only
 rewriting is the tool-schema guard (role 4); two routes, POST /v1/systemone (role 5) and the
 operator's POST /proxy/stop (role 7), are answered here instead of relayed.
 
@@ -59,6 +59,14 @@ Ten roles, nothing else:
    lists every box's models (see "Two boxes behind one endpoint" below). A model both boxes serve is
    shared: a conversation stays on the box that holds its prefix, a new one goes to the box with the
    fewest requests in flight (v6.52, docs/pair.md).
+
+v6.57: a GGUF lane's checkpoint is its file. One revision of Unsloth's repository holds every quantization of the
+model, and the Unsloth lane serves two of them under one name (v1.49.0): read as the revision alone, a box on
+UD-Q4_K_XL and one on UD-IQ3_XXS shared their requests as one checkpoint (decision 1018), and a Load from one to the
+other was no change of checkpoint (decision 1041). llama-server's -m names a file of the snapshot: its checkpoint is
+the SHA-1 of the revision and that file's path, 40 hexadecimal characters as the pair carries a revision. A box on
+v6.56 or older serving that lane says the revision alone, and shares nothing with this one: two boxes of one pair
+update together. The other engines' --revision is read as before.
 
 v6.56: a client's bearer reaches every engine spelled the way the engine spells it. The door reads the scheme in any
 case, as SGLang's own check does (measured 2026-10-08: "bearer <key>" admitted) and v6.38 only stripped the whitespace
@@ -5243,7 +5251,11 @@ _UNIT_FACTS_LOCK = threading.Lock()
 # with -np, and its checkpoint in the path of its model (-m, a GGUF of the Hugging Face cache's snapshot of the pinned
 # revision; its draft's, -md, is another flag)
 _SLOTS_FLAG = re.compile(r"(?<![\w-])(?:--max-(?:running-requests|num-seqs)|-np)(?:=|[ \t]+)(\d+)(?![\w.])")
-_REVISION_FLAG = re.compile(r"(?<![\w-])(?:--revision(?:=|[ \t]+)|-m[ \t]+\S*?/snapshots/)([0-9a-f]{40})(?![0-9A-Za-z])")
+_REVISION_FLAG = re.compile(r"(?<![\w-])--revision(?:=|[ \t]+)([0-9a-f]{40})(?![0-9A-Za-z])")
+# v6.57: one revision of a GGUF repository holds every quantization of the model, and the Unsloth lane serves two of
+# them under one name (v1.49.0): the checkpoint of llama-server's -m is the file in the snapshot, said as the 40
+# hexadecimal characters the pair carries, the SHA-1 of the revision and the file's path in it
+_GGUF_FLAG = re.compile(r"(?<![\w-])-m[ \t]+\S*?/snapshots/([0-9a-f]{40})/([^\s'\"]+)")
 # What this box says it serves when no unit says it (a proxy run by hand, the tests): a checkpoint's revision, 40
 # hexadecimal characters, or nothing, and a box that says nothing shares no model with the other (decision 1018).
 PAIR_CHECKPOINT = (os.environ.get("PAIR_CHECKPOINT") or "").strip().lower()
@@ -5328,10 +5340,11 @@ def unit_slots():
 
 
 def revision_in(texts):
-    """The checkpoint's revision an engine's command names (--revision, 40 hexadecimal characters, or the snapshot of
-    llama-server's -m; a draft model's --speculative-draft-model-revision is another flag), or None when it names none,
-    or two."""
+    """The checkpoint's revision an engine's command names (--revision, 40 hexadecimal characters, or for llama-server's
+    -m the SHA-1 of its snapshot's revision and the file's path in it, v6.57; a draft model's
+    --speculative-draft-model-revision and llama-server's -md are other flags), or None when it names none, or two."""
     found = {m.group(1) for x in texts for m in _REVISION_FLAG.finditer(x)}
+    found |= {hashlib.sha1(f"{m.group(1)}/{m.group(2)}".encode()).hexdigest() for x in texts for m in _GGUF_FLAG.finditer(x)}
     return found.pop() if len(found) == 1 else None
 
 
@@ -9313,7 +9326,7 @@ if __name__ == "__main__":
     holds = (f"holds requests up to {HOLD_MAX_S:.0f}s while {' or '.join(HOLD_UNITS)} comes back"
              if HOLD_UNITS and HOLD_MAX_S > 0 else "holds nothing")
     # one f-string: the cockpit's tests render this line from the source
-    log(f"v6.56 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
+    log(f"v6.57 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
     # v6.47: what the memory floor's refusal reads, read once here, so the journal shows it works where
     # the unit runs this proxy (its sandbox leaves /proc/meminfo readable)
     avail = mem_available_gib()

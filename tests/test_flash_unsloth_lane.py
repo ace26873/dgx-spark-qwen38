@@ -217,10 +217,29 @@ class TheStagedUnit(unittest.TestCase):
         cmd = exec_command(self.out.read_text())
         kp = proxy()
         self.assertEqual(kp.names_in([cmd]), frozenset({"qwen3.8-flash-next-unsloth"}))
-        self.assertEqual(kp.revision_in([cmd]), PINS["FLASH_UNSLOTH_REV"])
+        part1 = PINS["FLASH_UNSLOTH_PART1"].rsplit("=", 1)[0]
+        self.assertEqual(kp.revision_in([cmd]), hashlib.sha1(f"{PINS['FLASH_UNSLOTH_REV']}/{part1}".encode()).hexdigest())
         self.assertEqual(kp.slots_in([cmd]), int(PINS["FLASH_UNSLOTH_SLOTS"]))
         self.assertIsNone(kp.revision_in([f"-md /x/snapshots/{PINS['FLASH_UNSLOTH_DRAFT_REV']}/d.gguf"]))
         self.assertEqual(kp.names_in(["docker run --network-alias x img --alias-y z"]), frozenset())
+
+    def test_the_two_quantizations_of_one_revision_are_two_checkpoints_to_the_proxy(self):
+        """One revision of Unsloth's repository holds every quantization of the model, and the lane serves two of them
+        under one name (v1.49.0): told apart by the revision alone, a box on UD-Q4_K_XL and one on UD-IQ3_XXS shared their
+        requests as one checkpoint (decision 1018), and a Load from one to the other was no change of checkpoint (decision
+        1041). The checkpoint of llama-server's -m is the file in the snapshot, said in the 40 hexadecimal characters the
+        pair carries; the other engines' --revision is read as it was."""
+        kp = proxy()
+        snap = f"/root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/{PINS['FLASH_UNSLOTH_REV']}"
+        q4, iq3 = (f"-m {snap}/{PINS[v].rsplit('=', 1)[0]} -c 524288" for v in ("FLASH_UNSLOTH_PART1", "FLASH_UNSLOTH_IQ3_PART1"))
+        self.assertNotEqual(kp.revision_in([q4]), kp.revision_in([iq3]))
+        for c in (q4, iq3):
+            self.assertRegex(kp.revision_in([c]), r"^[0-9a-f]{40}$")
+            self.assertEqual(kp.revision_in([c, c]), kp.revision_in([c]))     # one checkpoint said twice is one
+        self.assertIsNone(kp.revision_in([q4, iq3]))                           # two are none
+        rev = "0123456789abcdef0123456789abcdef01234567"
+        self.assertEqual(kp.revision_in([f"python3 -m sglang.launch_server --model-path x/y --revision {rev} --port 1"]), rev)
+        self.assertEqual(kp.revision_in([f"--revision={rev}"]), rev)
 
     def test_the_lane_serves_with_the_values_the_night_measured(self):
         """The defaults, measured on 2026-11-11 and 12: the weights copied into the GPU's memory (--load-mode none: 27.6
