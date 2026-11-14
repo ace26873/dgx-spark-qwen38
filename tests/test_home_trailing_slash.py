@@ -24,7 +24,7 @@ PATH_LINE = 'PATH="$(printf \'%s\' "$PATH" | tr -s /)"; export PATH'
 # the entry points that render a unit, the sudoers or a config from the home, or compare one with it
 ENTRY = ("install.sh", "switch-model.sh", "prepare-lane.sh", "uninstall.sh", "get.sh", "install-image.sh",
          "install-video.sh", "install-kolibri.sh", "install-nemotron.sh", "install-nemotron-super.sh",
-         "install-flash-local.sh", "install-ornith-122b.sh", "install-flash-unsloth.sh", "install-speech.sh",
+         "install-flash-local.sh", "install-ornith-122b.sh", "install-flash-unsloth.sh", "install-speech.sh", "install-image-h3.sh",
          "dashboard/install-dashboard.sh",
          "dashboard/install-agent.sh")
 
@@ -131,7 +131,8 @@ class WhatWasWrittenWithTheSlash(unittest.TestCase):
     def test_the_side_lanes_read_their_folder_and_cache_back_one_slash_at_a_time(self):
         # each installer's own read-back lines, from a unit it rendered from a home with the slash: the
         # unit an update renders is then the one the home says, not the one it found (v1.38.0 kept theirs)
-        for script, lane in (("install-image.sh", "image"), ("install-video.sh", "video"), ("install-speech.sh", "speech")):
+        for script, lane in (("install-image.sh", "image"), ("install-video.sh", "video"), ("install-speech.sh", "speech"),
+                             ("install-image-h3.sh", "image-h3")):
             with self.subTest(script):
                 lines = (REPO / script).read_text().splitlines()
                 take = [ln for ln in lines if re.match(r"(installed|installed_env)\(\)\{|LANE_DIR=|HF_CACHE=\"\$\{HF_CACHE:-\$\(installed_env", ln)]

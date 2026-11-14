@@ -138,7 +138,7 @@ class PinModelsCoversInstaller(unittest.TestCase):
                 self.assertTrue(repo in text, f"{repo} is gone from install.sh")
 
 
-SIDE_INSTALLERS = ("install-image.sh", "install-video.sh", "install-kolibri.sh")
+SIDE_INSTALLERS = ("install-image.sh", "install-video.sh", "install-kolibri.sh", "install-image-h3.sh")
 
 
 def side_pins(text):
@@ -367,7 +367,7 @@ class PinModelsCoversEveryLane(unittest.TestCase):
                 seen += 1
                 with self.subTest(f=f, var=var):
                     self.assertEqual(rg.PIN_MODELS.get(var), repo)
-        self.assertEqual(seen, 6)   # the image and its Turbo, the video and its adapter, Kolibri twice
+        self.assertEqual(seen, 8)   # the image and its Turbo, the video and its adapter, Kolibri twice, MiniMax-H3-Image and its text encoder
 
     def test_the_pins_are_read_where_every_lane_writes_them(self):
         self.assertTrue({"install.sh", "switch-model.sh", *SIDE_INSTALLERS} <= set(rg.PIN_FILES), rg.PIN_FILES)

@@ -14,7 +14,7 @@ import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 INSTALLERS = ("install-image.sh", "install-video.sh", "install-kolibri.sh", "install-nemotron.sh",
-              "install-nemotron-super.sh", "install-speech.sh")
+              "install-nemotron-super.sh", "install-speech.sh", "install-image-h3.sh")
 # What the header's last paragraph opens with. The GPU lanes end on the rule that one engine runs
 # at a time; the speech lane runs on the CPU beside any of them, and ends on why the one command
 # leaves it out.

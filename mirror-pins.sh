@@ -54,6 +54,9 @@ eval "$lane"
 # the video lane's checkpoint, pinned in install-video.sh like the rest
 vline="$(grep -E '^(VIDEO_MODEL_PIN|VIDEO_MODEL_PIN_REV|VIDEO_TURBO_REPO|VIDEO_TURBO_REV|VIDEO_TURBO_FILE)=' "$REPO_DIR/install-video.sh")"
 eval "$vline"
+# the MiniMax-H3-Image lane's checkpoint, pinned in install-image-h3.sh (its text encoder is MiniMax-H3's, above)
+h3line="$(grep -E '^(IMAGE_H3_MODEL_PIN|IMAGE_H3_MODEL_PIN_REV)=' "$REPO_DIR/install-image-h3.sh")"
+eval "$h3line"
 
 # The conclusion MIRROR.md records for a pin, or nothing when its table has no row.
 license_of() {  # $1 label
@@ -180,6 +183,7 @@ if [ "$MODE" != "--images" ]; then
   mirror_model "qwen-image-turbo" "$IMAGE_TURBO_PIN" "$IMAGE_TURBO_PIN_REV"
   mirror_model "minimax-h3" "$VIDEO_MODEL_PIN" "$VIDEO_MODEL_PIN_REV"
   mirror_model "video-turbo" "$VIDEO_TURBO_REPO" "$VIDEO_TURBO_REV" "$VIDEO_TURBO_FILE"
+  mirror_model "minimax-h3-image" "$IMAGE_H3_MODEL_PIN" "$IMAGE_H3_MODEL_PIN_REV"
 fi
 if [ "$MODE" != "--models" ]; then
   echo "Images"

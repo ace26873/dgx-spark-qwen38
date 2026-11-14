@@ -47,10 +47,14 @@ NEMOTRON = (REPO / "install-nemotron.sh").read_text()
 UNSLOTH = dict((path.rsplit("/", 1)[-1], sha) for path, sha in re.findall(
     r'^FLASH_UNSLOTH_(?:PART[1-4]|IQ3_PART[1-4]|DRAFT)="([^"=]+)=([0-9a-f]{64}):\d+"',
     (REPO / "install-flash-unsloth.sh").read_text(), re.M))
+# the MiniMax-H3-Image lane's FlashInfer wheels, each fetched from FlashInfer's release by its name and sha256
+H3 = (REPO / "install-image-h3.sh").read_text()
 # and PyPI publishes the very wheel files the Kolibri and Nemotron builds download, by URL and sha256
 UPSTREAM = {
     "lfs": {**dict(re.findall(r'(?:ASR|MMPROJ)_FILE="([^"]+)"; (?:ASR|MMPROJ)_SHA="([0-9a-f]{64})"', SPEECH)), **UNSLOTH},
-    "assets": {KOKORO_REPO: [{"name": f, "digest": None} for f in KOKORO_FILES]},
+    "assets": {KOKORO_REPO: [{"name": f, "digest": None} for f in KOKORO_FILES],
+               "flashinfer-ai/flashinfer": [{"name": pin(H3, f"FLASHINFER_{k}_FILE"), "digest": "sha256:" + pin(H3, f"FLASHINFER_{k}_SHA256")}
+                                            for k in ("CUBIN", "JIT")]},
     "wheels": {"aleph-alpha-inference": {"url": pin(KOLIBRI, "KOLIBRI_PLUGIN_URL"), "sha256": pin(KOLIBRI, "KOLIBRI_PLUGIN_SHA256")},
                "b12x": {"url": pin(NEMOTRON, "NEMOTRON_B12X_URL"), "sha256": pin(NEMOTRON, "NEMOTRON_B12X_SHA256")}},
     # sglang 0.5.21 requires cuda-tile==1.6.0rc5, a stub on PyPI whose wheels pypi.nvidia.com
@@ -184,7 +188,7 @@ class TheCheckPins(PinsBase):
         rc, out = self.run_pins(None, "hf_secretvalue123")
         self.assertEqual(rc, 0, out)
         hf = [c for c in self.calls() if c["url"].startswith("https://huggingface.co/")]
-        self.assertEqual(len(hf), 35, hf)          # ten checkpoints, the diffusion lanes' three, the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft)
+        self.assertEqual(len(hf), 37, hf)          # ten checkpoints, the diffusion lanes' three, the MiniMax-H3-Image lane's two (its checkpoint and its text encoder), the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft)
         for c in hf:
             self.assertIn("Authorization: Bearer hf_secretvalue123", c["stdin"], c)
             self.assertFalse(any("hf_secretvalue123" in a for a in c["argv"]), c["argv"])
@@ -199,7 +203,7 @@ class TheCheckPins(PinsBase):
         r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gh = [c for c in self.calls() if c["url"].startswith("https://api.github.com/")]
-        self.assertEqual(len(gh), 6, gh)          # the two source commits, the opencode release, llama.cpp's commit and Kokoro's release, once per file
+        self.assertEqual(len(gh), 9, gh)          # the three source commits, the opencode release, llama.cpp's commit, Kokoro's release and FlashInfer's, once per file
         for c in gh:
             self.assertIn(f"Authorization: Bearer {env_tok}", c["stdin"], c)
             self.assertFalse(any(env_tok in a for a in c["argv"]), c["argv"])
@@ -298,6 +302,27 @@ class ThePinsOutsideThePinBlock(PinsBase):
                             for c in self.calls()), "the image checkpoint is asked for at its pinned revision")
         self.assertTrue(any("Qwen/Qwen-Image-2.1-Turbo/raw/d65dbc9a" in c["url"] and c["url"].endswith("/model_index.json")
                             for c in self.calls()), "the Turbo checkpoint is asked for at its pinned revision")
+
+    def test_the_minimax_h3_image_lane_is_checked_too(self):
+        # its checkpoint and its text encoder at their revisions, SGLang's commit and its wheel, the recipe's flash-attn-4
+        # on PyPI and FlashInfer's two wheels by the digest their release publishes (v1.49)
+        rc, out = self.run_pins(None, None, "image-h3")
+        self.assertEqual(rc, 0, out)
+        for label in ("image-h3", "image-h3-encoder", "sglang-source-image-h3", "sglang-wheel-image-h3", "image-h3-fa4",
+                      "image-h3-cubin", "image-h3-jit"):
+            self.assertIn("ok", self.line(out, label), out)
+        urls = [c["url"] for c in self.calls()]
+        self.assertIn("https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/raw/5f90473023975e6271b0ed1dd84c4e88e4bbc6d3/model_index.json", urls)
+        self.assertIn("https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/42ed227ee7df40d41602854ae760620d6eb651fe/text_encoder/config.json", urls)
+        self.assertIn("https://api.github.com/repos/sgl-project/sglang/commits/49f1a44ee348373d29c9292ea36cd45f054ba18a", urls)
+        self.assertIn("https://pypi.org/pypi/sglang/0.5.23/json", urls)
+        self.assertIn("https://pypi.org/pypi/flash-attn-4/4.0.0b38/json", urls)
+        self.assertIn("https://api.github.com/repos/flashinfer-ai/flashinfer/releases/tags/v0.7.2", urls)
+        # a wheel whose digest changed upstream is a pin that no longer resolves
+        rc, out = self.run_pins({"bodies": {"flashinfer-ai/flashinfer/releases/tags/": json.dumps(
+            {"assets": [{"name": pin(H3, "FLASHINFER_CUBIN_FILE"), "digest": "sha256:" + "f" * 64}]})}}, None, "image-h3")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL", self.line(out, "image-h3-cubin"), out)
 
     def test_the_kolibri_lanes_are_checked_too(self):
         # its checkpoints, base image and plugin wheel were checked by nothing: a revision,
@@ -520,7 +545,8 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
     def line(self, out, label):
         return next(ln for ln in out.splitlines() if f" {label} " in ln)
 
-    GITHUB = ("sglang-source", "sglang-source-video", "opencode", "speech-llama-cpp", "speech-kokoro", "speech-voices")
+    GITHUB = ("sglang-source", "sglang-source-video", "opencode", "sglang-source-image-h3", "image-h3-cubin", "image-h3-jit",
+              "speech-llama-cpp", "speech-kokoro", "speech-voices")
 
     def test_a_github_api_that_answers_504_is_not_a_dead_pin(self):
         rc, out = self.run_pins({"api.github.com": [504, ""], "bodies": {"api.github.com": "<html>504 Gateway Time-out</html>"}})
@@ -528,7 +554,7 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
         for label in self.GITHUB:
             self.assertIn("HTTP 504 from the GitHub API, so not checked", self.line(out, label), out)
             self.assertNotIn("no such", self.line(out, label), out)
-        self.assertIn("6 of 53 pins could not be asked about", out)
+        self.assertIn("9 of 60 pins could not be asked about", out)
         self.assertIn("run it again before re-pinning anything", out)
         self.assertNotIn("A removed upstream revision", out)
 

@@ -52,6 +52,11 @@ IMAGE_PIN="$PIN"; IMAGE_WHEEL="$WHEEL"
 vline="$(grep -E '^(VIDEO_MODEL_PIN|VIDEO_MODEL_PIN_REV|VIDEO_TURBO_REPO|VIDEO_TURBO_REV|VIDEO_TURBO_FILE|PIN|WHEEL)=' "$REPO_DIR/install-video.sh")"
 eval "$vline"
 VIDEO_PIN="$PIN"; VIDEO_WHEEL="$WHEEL"
+# The MiniMax-H3-Image lane's: its checkpoint and its text encoder (MiniMax-H3's), SGLang's commit and the wheel under it,
+# the recipe's flash-attn-4 and FlashInfer's two wheels, which its install fetches by URL and checks by sha256.
+h3line="$(grep -E '^(IMAGE_H3_MODEL_PIN|IMAGE_H3_MODEL_PIN_REV|IMAGE_H3_ENCODER_PIN|IMAGE_H3_ENCODER_PIN_REV|PIN|WHEEL|FA4_VERSION|FLASHINFER_RELEASE|FLASHINFER_CUBIN_FILE|FLASHINFER_CUBIN_SHA256|FLASHINFER_JIT_FILE|FLASHINFER_JIT_SHA256)=' "$REPO_DIR/install-image-h3.sh")"
+eval "$h3line"
+IMAGE_H3_PIN="$PIN"; IMAGE_H3_WHEEL="$WHEEL"; FLASHINFER_TAG="${FLASHINFER_RELEASE##*/}"
 # The Kolibri lane's: its two checkpoints, the vLLM image its build starts from and the
 # plugin's wheel, which nothing checked either (found in review, 2026-10-14). The wheel is the
 # very file its build downloads, by URL, and its sha256 (the release alone until the audit of
@@ -414,6 +419,14 @@ check_commit sglang-source-video sgl-project/sglang "$VIDEO_PIN"
 check_wheel  sglang-wheel-video sglang "$VIDEO_WHEEL"
 check_cuda_tile cuda-tile-video "$VIDEO_WHEEL"
 check_asset  opencode       anomalyco/opencode "v$OPENCODE_VERSION" opencode-linux-arm64.tar.gz "$OPENCODE_SHA256"
+echo "MiniMax-H3-Image lane"
+check_model  image-h3       "$IMAGE_H3_MODEL_PIN" "$IMAGE_H3_MODEL_PIN_REV" model_index.json
+check_model  image-h3-encoder "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" text_encoder/config.json
+check_commit sglang-source-image-h3 sgl-project/sglang "$IMAGE_H3_PIN"
+check_wheel  sglang-wheel-image-h3 sglang "$IMAGE_H3_WHEEL"
+check_wheel  image-h3-fa4   flash-attn-4 "$FA4_VERSION"
+check_asset  image-h3-cubin flashinfer-ai/flashinfer "$FLASHINFER_TAG" "$FLASHINFER_CUBIN_FILE" "$FLASHINFER_CUBIN_SHA256"
+check_asset  image-h3-jit   flashinfer-ai/flashinfer "$FLASHINFER_TAG" "$FLASHINFER_JIT_FILE" "$FLASHINFER_JIT_SHA256"
 echo "Kolibri-1 lane"
 check_model  kolibri-fp8    "$KOLIBRI_FP8_REPO"   "$KOLIBRI_FP8_REV"
 check_model  kolibri-nvfp4  "$KOLIBRI_NVFP4_REPO" "$KOLIBRI_NVFP4_REV"

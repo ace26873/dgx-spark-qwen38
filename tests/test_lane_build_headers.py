@@ -16,7 +16,7 @@ import tempfile
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-INSTALLERS = ("install-image.sh", "install-video.sh")
+INSTALLERS = ("install-image.sh", "install-video.sh", "install-image-h3.sh")
 NEEDLE = 'Python.h" ] || die "python3-dev is missing'
 
 
@@ -63,8 +63,9 @@ class TheHeadersAreAskedForFirst(unittest.TestCase):
                 text = (REPO / installer).read_text()
                 self.assertLess(text.index(NEEDLE), text.index('pip" install --quiet --pre "sglang[diffusion]'))
 
-    def test_both_lanes_ask_the_same_way(self):
-        self.assertEqual(*(check_line((REPO / f).read_text()) for f in INSTALLERS))
+    def test_every_lane_asks_the_same_way(self):
+        lines = [check_line((REPO / f).read_text()) for f in INSTALLERS]
+        self.assertEqual(lines, [lines[0]] * len(INSTALLERS))
 
     def test_the_line_reads_the_include_directory_python_itself_reports(self):
         # sysconfig, not a path written down: a box whose python3 is not 3.12 has its own.

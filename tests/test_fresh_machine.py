@@ -588,7 +588,7 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
         return block(self.TEXT, "HOST_PKGS=()\n# --no-start and --no-service",
                      '|| host_packages "the image and video lanes" "${HOST_PKGS[@]}" || true')
 
-    def run_step(self, want_image, want_video, headers, no_start=0, no_service=0):
+    def run_step(self, want_image, want_video, headers, no_start=0, no_service=0, want_image_h3=0):
         box = Box(sudo_n=0)
         inc = box.d / "include"
         inc.mkdir()
@@ -596,7 +596,7 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
             (inc / "Python.h").write_text("/* */\n")
         (box.bin / "python3").write_text(f'#!/bin/bash\ncase "$*" in *sysconfig*) echo "{inc}" ;; esac\nexit 0\n')
         (box.bin / "python3").chmod(0o755)
-        rc, out, err = box.bash(f"WANT_IMAGE={want_image}; WANT_VIDEO={want_video}; "
+        rc, out, err = box.bash(f"WANT_IMAGE={want_image}; WANT_VIDEO={want_video}; WANT_IMAGE_H3={want_image_h3}; "
                                 f"NO_START={no_start}; NO_SERVICE={no_service}\n" + self.step())
         self.assertEqual(rc, 0, err)
         return [c for c in box.called() if "apt-get" in c]
@@ -612,6 +612,12 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
 
     def test_a_box_that_has_them_is_asked_nothing(self):
         self.assertEqual(self.run_step(1, 0, headers=True), [])
+
+    def test_the_minimax_h3_image_lane_alone_needs_the_headers_too(self):
+        # sglang[diffusion] builds xatlas against them at its first Load, as for the Qwen-Image 2.1 lane (v1.49)
+        apt = self.run_step(0, 0, headers=False, want_image_h3=1)
+        self.assertEqual(len(apt), 1, apt)
+        self.assertTrue(apt[0].endswith("install python3-dev"), apt)
 
     def test_no_image_or_video_lane_asks_nothing(self):
         self.assertEqual(self.run_step(0, 0, headers=False), [])
@@ -633,6 +639,7 @@ class TheLanesInstallersPutThemInFromATerminal(unittest.TestCase):
         for f, pkgs, check in (
                 ("install-image.sh", ("python3-venv", "python3-dev"), 'Python.h" ] || die "python3-dev is missing'),
                 ("install-video.sh", ("ffmpeg", "python3-venv", "python3-dev"), 'command -v ffmpeg >/dev/null || die'),
+                ("install-image-h3.sh", ("python3-venv", "python3-dev"), 'Python.h" ] || die "python3-dev is missing'),
                 ("install-speech.sh", ("ffmpeg", "python3-venv", "build-essential"), 'command -v ffmpeg >/dev/null || die')):
             with self.subTest(f):
                 text = (REPO / f).read_text()
@@ -647,7 +654,7 @@ class TheScriptsRunFromATerminalGoOnWithTheGroup(unittest.TestCase):
     def test_each_asks_before_its_first_docker_command(self):
         for f in ("switch-model.sh", "install-image.sh", "install-video.sh", "install-kolibri.sh",
                   "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh",
-                  "install-ornith-122b.sh", "install-flash-unsloth.sh", "uninstall.sh", "install.sh"):
+                  "install-ornith-122b.sh", "install-flash-unsloth.sh", "install-image-h3.sh", "uninstall.sh", "install.sh"):
             with self.subTest(f):
                 text = (REPO / f).read_text()
                 at = text.index('docker_session bash "$')
@@ -659,7 +666,7 @@ class TheScriptsRunFromATerminalGoOnWithTheGroup(unittest.TestCase):
     def test_each_has_the_die_the_library_calls(self):
         for f in ("switch-model.sh", "install-image.sh", "install-video.sh", "install-kolibri.sh",
                   "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh",
-                  "install-ornith-122b.sh", "install-flash-unsloth.sh", "uninstall.sh", "install.sh", "prepare-lane.sh",
+                  "install-ornith-122b.sh", "install-flash-unsloth.sh", "install-image-h3.sh", "uninstall.sh", "install.sh", "prepare-lane.sh",
                   "install-speech.sh"):
             with self.subTest(f):
                 text = (REPO / f).read_text()
@@ -764,7 +771,8 @@ class TheWholeScripts(unittest.TestCase):
         self.assertIn(wall.WALL, out, out[-800:])
         self.assertIn("This box is a 64 GB DGX Spark: the lanes that fit it are the Qwen3.8 27B and Nemotron 3.5 Bolt here", out)
         self.assertIn("Left out, as they need a 128 GB one: image (Qwen-Image 2.1), video (MiniMax-H3), Qwen3.8 Flash-Next, Kolibri-1, "
-                      "Nemotron 3.5 Super VL, Qwen3.8 Flash-Next FP4-Local, Ornith 1.5 122B, Qwen3.8 Flash-Next Unsloth GGUF.", out)
+                      "Nemotron 3.5 Super VL, Qwen3.8 Flash-Next FP4-Local, Ornith 1.5 122B, Qwen3.8 Flash-Next Unsloth GGUF, "
+                      "MiniMax-H3-Image.", out)
         self.assertIn("Context mode: native (262144 tokens), the one a 64 GB DGX Spark holds.", out)
         self.assertNotIn("needs a ~121 GB", out)
 

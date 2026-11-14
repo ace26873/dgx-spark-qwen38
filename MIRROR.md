@@ -35,6 +35,7 @@ happens to exist.
 | qwen-image-turbo | Qwen/Qwen-Image-2.1-Turbo | not yet checked: same Qwen Research licence as the base |
 | minimax-h3 | MiniMaxAI/MiniMax-H3 | not yet checked: own licence, read it before any redistribution |
 | video-turbo | larryvrh/MiniMax-H3-Turbo-Lora | not yet checked: Apache-2.0 on its card |
+| minimax-h3-image | MiniMaxAI/MiniMax-H3-Image | not yet checked: own licence, not granted in the EU, the UK, South Korea or the US |
 | images (2) | lmsysorg/sglang@sha256:... | copied whole by digest: the Apache-2.0 SGLang images carry their license inside; keep it there |
 
 No row is a conclusion until this table says one, with a date.
