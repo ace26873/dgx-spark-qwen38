@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""switch-model.sh <flash-local|flash-unsloth> --clients: the clients of a lane whose clients follow its unit's window
-(opencode, and through its config pi and claude-local) set for the window its installed unit starts with, and nothing
-else: no fetch, no unit rewritten, no boot moved, no engine touched, no record written.
+"""switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients: the clients of a lane whose clients follow its
+unit's window (opencode, and through its config pi and claude-local) set for the window its installed unit starts with,
+and nothing else: no fetch, no unit rewritten, no boot moved, no engine touched, no record written.
 
 A window chosen with FLASH_LOCAL_CONTEXT or FLASH_UNSLOTH_CONTEXT and --units-only reaches the unit and not the clients,
 which switch-model.sh alone sets. The Load of such a lane that serves without being the boot lane, with that update
@@ -79,6 +79,25 @@ class ClientsOnly(unittest.TestCase):
                 self.assertEqual([c for c in calls if c.startswith("sudo ")
                                   or c.split()[0] in ("enable", "disable", "daemon-reload")], [], "the boot moved")
                 self.assertFalse((box.home / ".config/qwen38/text-lane").exists(), "--clients wrote the text-lane record")
+                self.assertNotIn("Switch queued", out)
+
+    def test_the_unsloth_lanes_entry_names_the_target_its_unit_serves(self):
+        # UD-IQ3_XXS (v1.49): its four windows of 262,144 get the native pair, under its own name, whichever of the lane's
+        # two targets --clients is run for: the unit in place says which one it serves
+        for target in ("flash-unsloth-iq3", "flash-unsloth"):
+            with self.subTest(target=target):
+                box = self.box("flash-unsloth")
+                box.target_unit.write_text(
+                    "[Service]\nExecStart=/bin/bash -c '/usr/bin/docker run --rm --name qwen38-flash-unsloth x \\\n"
+                    "    -m /root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/x/UD-IQ3_XXS/q.gguf \\\n"
+                    "    -c 1048576 -np 4 -ctk q8_0 -ctv q8_0 --port 30000'\n")
+                rc, out, runs, calls = box.run(target, "--clients")
+                self.assertEqual(rc, 0, out)
+                for c in box.configs:
+                    entry = json.loads(c.read_text())["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
+                    self.assertEqual(entry["limit"], {"context": 205000, "input": 205000, "output": 32000}, c)
+                    self.assertEqual(entry["name"], "Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2 (local, 262K)", c)
+                self.assertEqual(runs, [], "a docker run: a fetch")
                 self.assertNotIn("Switch queued", out)
 
     def test_another_target_is_refused_and_nothing_changes(self):

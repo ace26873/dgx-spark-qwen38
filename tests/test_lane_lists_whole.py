@@ -72,7 +72,7 @@ HF_UNITS = {("qwen38-flash.service" if t.name == "qwen38-flash-launch.sh.templat
 CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kolibri.service",
                "nemotron": "qwen38-nemotron.service", "nemotron-super": "qwen38-nemotron-super.service",
                "flash-local": "qwen38-flash-local.service", "ornith-122b": "qwen38-ornith-122b.service",
-               "flash-unsloth": "qwen38-flash-unsloth.service",
+               "flash-unsloth": "qwen38-flash-unsloth.service", "flash-unsloth-iq3": "qwen38-flash-unsloth.service",
                "image": "qwen38-image.service",
                "image-turbo": "qwen38-image.service", "video": "qwen38-video.service"}
 

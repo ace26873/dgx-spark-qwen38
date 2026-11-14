@@ -1097,9 +1097,13 @@ def floor_said(done: dict) -> str:
 # the requests it serves and defers and its draft's among them; no gauge of its KV cache, whose size is its window.
 FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
 FLASH_UNSLOTH_UNIT_PATH = Path("/etc/systemd/system/qwen38-flash-unsloth.service")
-# each lane's container, lane, served model and precision, by unit: the family's one table (Unsloth's dynamic GGUF
-# UD-Q4_K_XL, its n-gram table in IQ4_NL)
-LLAMACPP_LANES = {FLASH_UNSLOTH_UNIT: ("qwen38-flash-unsloth", "flash-unsloth", "qwen3.8-flash-next-unsloth", "ud-q4_k_xl")}
+# each lane's container, lane and served model, by unit: the family's one table
+LLAMACPP_LANES = {FLASH_UNSLOTH_UNIT: ("qwen38-flash-unsloth", "flash-unsloth", "qwen3.8-flash-next-unsloth")}
+# each lane's targets and the precision each serves, by the folder of its repository that holds the GGUF its engine
+# loads (its unit's -m, its /props model_path): Unsloth's dynamic GGUF UD-Q4_K_XL and UD-IQ3_XXS, the n-gram table of
+# both in IQ4_NL (v1.49), as install-flash-unsloth.sh pins their parts (FLASH_UNSLOTH_PART1, FLASH_UNSLOTH_IQ3_PART1)
+LLAMACPP_TARGETS = {FLASH_UNSLOTH_UNIT: {"UD-Q4_K_XL": ("flash-unsloth", "ud-q4_k_xl"),
+                                         "UD-IQ3_XXS": ("flash-unsloth-iq3", "ud-iq3_xxs")}}
 # the lane in a sentence, and the draft model its engine loads (-md)
 LLAMACPP_LANE_NAME = {FLASH_UNSLOTH_UNIT: "the Qwen3.8 Flash-Next Unsloth GGUF lane"}
 LLAMACPP_SPEC = {FLASH_UNSLOTH_UNIT: "DFlash2"}
@@ -1117,6 +1121,15 @@ def llamacpp_window(text: str) -> int | None:
     if np_ and int(np_.group(1)) > 1 and not re.search(r"(?<!\S)-kvu(?!\S)", cmd):
         window //= int(np_.group(1))
     return window
+
+
+def llamacpp_target(unit, path) -> tuple:
+    """(target, precision) of a llama.cpp lane for the path of the GGUF its engine loads, by the folder of its
+    repository the GGUF is in (LLAMACPP_TARGETS); (None, None) for a path of no target's: a unit edited by hand."""
+    for folder, said in LLAMACPP_TARGETS.get(unit, {}).items():
+        if f"/{folder}/" in str(path or ""):
+            return said
+    return None, None
 
 
 def llamacpp_spec_algorithm(unit, text: str) -> str | None:
@@ -1258,6 +1271,13 @@ def llamacpp_engine_info(models: list | None = None):
             text = ""
     ctx, kv, draft = (re.search(r" -c (\d+)", text), re.search(r" -ctk (\S+)", text),
                       re.search(r"--spec-draft-n-max (\d+)", text))
+    # which of its targets the engine serves, from the GGUF it loaded (its /props model_path): the unit names what its
+    # NEXT start loads, which a switch rewrites. Its unit's -m when the engine does not say it.
+    loaded = props.get("model_path") if isinstance(props.get("model_path"), str) else None
+    if loaded is None and unit:
+        m = re.search(r"\s-m\s+(\S+)", text)
+        loaded = m.group(1) if m else None
+    target, precision = llamacpp_target(unit, loaded)
     slim = {"model_path": unit_target(unit).get("model") if unit else None,
             "served_model_name": served or None,
             "context_length": window,
@@ -1265,13 +1285,13 @@ def llamacpp_engine_info(models: list | None = None):
             "max_running_requests": props.get("total_slots"),
             # llama.cpp's own type when the unit names none
             "kv_cache_dtype": kv.group(1) if kv else ("f16" if text else None),
-            "quantization": LLAMACPP_LANES[unit][3] if unit else None,
+            "quantization": precision,
             "speculative_algorithm": llamacpp_spec_algorithm(unit, text) if unit else None,
             "speculative_num_draft_tokens": int(draft.group(1)) if draft else None,
             "version": props.get("build_info") or None}
     return {"node_id": "local", "info": slim,
             "prompt_ceiling_tokens": proxy_prompt_ceiling(served or None, int(window or 0)),
-            "served_target": LLAMACPP_LANES[unit][1] if unit else None}
+            "served_target": target}
 
 
 HEALTH = {"ts": 0.0, "ok": False}
@@ -2578,15 +2598,16 @@ def unit_target(unit: str) -> dict:
         model = m.group(1) if m else None
         return {"model": model, "target": NEMOTRON_LANES[unit][1] if model else None}
     if unit in LLAMACPP_LANES:
-        # one checkpoint, named in its unit by the path of its first GGUF part in the cache's snapshot (llama-server
-        # takes files, not a repository and a revision): the repository its folder names
+        # its checkpoint, named in its unit by the path of its first GGUF part in the cache's snapshot (llama-server
+        # takes files, not a repository and a revision): the repository its folder names, and the target the folder
+        # of that repository names (two quantizations of one repository, v1.49)
         try:
             text = FLASH_UNSLOTH_UNIT_PATH.read_text(errors="replace")
         except OSError:
             return {"model": None, "target": None}
-        m = re.search(r"\s-m\s+/root/\.cache/huggingface/hub/models--([^/\s]+)/snapshots/[0-9a-f]{40}/", text)
-        model = m.group(1).replace("--", "/") if m else None
-        return {"model": model, "target": LLAMACPP_LANES[unit][1] if model else None}
+        m = re.search(r"\s-m\s+(/root/\.cache/huggingface/hub/models--([^/\s]+)/snapshots/[0-9a-f]{40}/\S*)", text)
+        model = m.group(2).replace("--", "/") if m else None
+        return {"model": model, "target": llamacpp_target(unit, m.group(1))[0] if m else None}
     if unit == "qwen38-video.service":
         # one checkpoint, one target, same rule as the image lane
         model = _video_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3") \
@@ -3625,7 +3646,7 @@ ACTIONS = {
         "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8", "arete",
                               "flash", "flash-nvda", "flash-uncensored", "flash-local", "image", "image-turbo",
                               "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "ornith-122b",
-                              "flash-unsloth"]},
+                              "flash-unsloth", "flash-unsloth-iq3"]},
         "argv": lambda p: ["bash", str(REPO_DIR / "switch-model.sh"), p["target"]],
         # A switch can download a whole checkpoint: 124 GB for flash take about 23 min at
         # the 89 MB/s the reference box gets, so 30 min failed it on any slower link, and
@@ -3706,7 +3727,7 @@ ACTIONS["fetch"] = {
 # have pointed the boot at it (base.js, laneJourneySteps; review of v1.48.0, 2026-11-13).
 ACTIONS["clients"] = {
     "danger": "low",
-    "params": {"target": ["flash-local", "flash-unsloth"]},
+    "params": {"target": ["flash-local", "flash-unsloth", "flash-unsloth-iq3"]},
     "argv": lambda p: ["bash", str(REPO_DIR / "switch-model.sh"), p["target"], "--clients"],
     "timeout": 300,
 }
@@ -3734,7 +3755,7 @@ def target_lane(target: str) -> str:
         return "flash-local"
     if target == "ornith-122b":
         return "ornith-122b"
-    if target == "flash-unsloth":
+    if target.startswith("flash-unsloth"):
         return "flash-unsloth"
     if target.startswith("flash"):
         return "flash"
@@ -3761,14 +3782,34 @@ TARGET_PIN = {"stock": "STOCK_REV", "uncensored": "UNC_REV", "fp8": "FP8_REV", "
               "image": "IMAGE_MODEL_PIN_REV", "image-turbo": "IMAGE_TURBO_PIN_REV",
               "video": "VIDEO_MODEL_PIN_REV", "kolibri": "KOLIBRI_FP8_REV", "kolibri-nvfp4": "KOLIBRI_NVFP4_REV",
               "nemotron": "NEMOTRON_BOLT_REV", "nemotron-super": "NEMOTRON_SUPER_REV",
-              "flash-local": "FLASH_LOCAL_REV", "ornith-122b": "ORNITH_122B_REV", "flash-unsloth": "FLASH_UNSLOTH_REV"}
+              "flash-local": "FLASH_LOCAL_REV", "ornith-122b": "ORNITH_122B_REV", "flash-unsloth": "FLASH_UNSLOTH_REV",
+              # the Unsloth GGUF lane's two targets, two folders of one repository at one revision
+              "flash-unsloth-iq3": "FLASH_UNSLOTH_REV"}
 # The Nemotron lanes load a drafter with the checkpoint, and their Download (the switch's --fetch)
 # fetches both: Library's state of such a target counts its drafter too. Bolt's read whole with its
 # drafter missing, which its Load then fetched (found on the reference box, 2026-10-15). The 27B's
 # DFlash2 draft belongs to its lane's preparation instead (lane_prepared), not to a target.
 TARGET_DRAFT_PIN = {"nemotron": "NEMOTRON_BOLT_DRAFT_REV", "nemotron-super": "NEMOTRON_SUPER_DRAFT_REV",
                     # the Unsloth GGUF lane's DFlash2 draft, which its Download fetches with its parts
-                    "flash-unsloth": "FLASH_UNSLOTH_DRAFT_REV"}
+                    "flash-unsloth": "FLASH_UNSLOTH_DRAFT_REV", "flash-unsloth-iq3": "FLASH_UNSLOTH_DRAFT_REV"}
+# A target that serves some files of a repository that holds others: the variables of the lane's installer that pin
+# them (PATH=SHA256:SIZE), whose paths alone count in its Library state. The Unsloth GGUF lane's two targets are two
+# folders of one repository at one revision: its snapshot counted whole, either one read "on disk" once the other's
+# files were there (v1.49).
+TARGET_FILES = {"flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_PART"),
+                "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_IQ3_PART")}
+
+
+def target_files(target: str) -> list | None:
+    """The paths of its repository a target of TARGET_FILES serves, as its installer pins them; [] when the installer
+    is not read or pins none so (nothing of it then counts as there); None for a target that serves a whole repository."""
+    if target not in TARGET_FILES:
+        return None
+    script, prefix = TARGET_FILES[target]
+    try:
+        return rg.pinned_paths((REPO_DIR / script).read_text(), prefix)
+    except OSError:
+        return []
 
 
 def target_unit(target: str) -> Path:
@@ -3787,7 +3828,7 @@ def target_unit(target: str) -> Path:
         return FLASH_LOCAL_UNIT_PATH
     if target == "ornith-122b":
         return ORNITH_UNIT_PATH
-    if target == "flash-unsloth":
+    if target.startswith("flash-unsloth"):
         return FLASH_UNSLOTH_UNIT_PATH
     if target.startswith("flash"):
         return UNIT_PATHS["qwen38-flash.service"]
@@ -6119,8 +6160,10 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
         variant = video_variant()
         targets = []
 
-        def ckpt_state(t, repo, rev, allow=None):
-            """complete, incomplete or absent: the checkpoint at its pin in the caches the lanes read."""
+        def ckpt_state(t, repo, rev, allow=None, files=None):
+            """complete, incomplete or absent: the checkpoint at its pin in the caches the lanes read. files: the paths
+            a target serves of a repository that holds others (target_files), of which none there is no download
+            begun, whatever the others' files."""
             state = "absent"
             for d in caches:
                 repo_dir = Path(d) / "hub" / ("models--" + repo.replace("/", "--"))
@@ -6132,7 +6175,10 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                     except OSError:
                         pass
                 if r and (repo_dir / "snapshots" / r).is_dir():
-                    state = "complete" if rg.snapshot_complete(repo_dir / "snapshots" / r, allow) else "incomplete"
+                    snap = repo_dir / "snapshots" / r
+                    if files is not None and not any((snap / f).is_symlink() or (snap / f).exists() for f in files):
+                        continue
+                    state = "complete" if rg.snapshot_complete(snap, allow) else "incomplete"
                     if state == "complete":
                         break
             return state
@@ -6141,12 +6187,15 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
             var = TARGET_PIN[t]
             repo, rev = rg.PIN_MODELS[var], pins.get(var, "")
             allow = rg.video_allow(switch_text, variant or "fl2va") if t == "video" else None
-            state = ckpt_state(t, repo, rev, allow)
+            files = target_files(t)
+            state = ckpt_state(t, repo, rev, files or allow, files)
             dvar = TARGET_DRAFT_PIN.get(t)
             if dvar:
-                # whole with its drafter whole, absent with none of the two, begun otherwise
+                # whole with its drafter whole, absent with none of the two, begun otherwise; a target of
+                # TARGET_FILES with none of its files is absent whatever its drafter, which the lane's other target
+                # loads too (the Unsloth GGUF lane's DFlash2 draft, v1.49)
                 dstate = ckpt_state(t, rg.PIN_MODELS[dvar], pins.get(dvar, ""))
-                state = state if state == dstate else "incomplete"
+                state = state if state == dstate or (files is not None and state == "absent") else "incomplete"
             targets.append({"target": t, "repo": repo, "rev": rev, "state": state,
                             "installed": target_unit(t).exists()})
         data = {"pins": pins, "managed_repos": sorted(set(rg.PIN_MODELS.values())), "caches": caches,

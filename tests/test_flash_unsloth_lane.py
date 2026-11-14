@@ -30,6 +30,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 TEXT = (REPO / "install-flash-unsloth.sh").read_text()
 PINS = dict(re.findall(r'^(FLASH_UNSLOTH_[A-Z0-9_]+)="([^"]*)"', TEXT, re.M))
 PART1_PATH = PINS["FLASH_UNSLOTH_PART1"].rsplit("=", 1)[0]
+# the first part of its second target, UD-IQ3_XXS (v1.49)
+IQ3_PART1_PATH = PINS["FLASH_UNSLOTH_IQ3_PART1"].rsplit("=", 1)[0]
 DRAFT_PATH = PINS["FLASH_UNSLOTH_DRAFT"].rsplit("=", 1)[0]
 
 
@@ -105,6 +107,9 @@ class TheStagedUnit(unittest.TestCase):
         self.snap = self.hf / "hub" / f"models--{PINS['FLASH_UNSLOTH_REPO'].replace('/', '--')}" / "snapshots" / PINS["FLASH_UNSLOTH_REV"]
         (self.snap / "UD-Q4_K_XL").mkdir(parents=True)
         (self.snap / PART1_PATH).write_bytes(gguf(UNSLOTH_TEMPLATE))
+        # the first part of each target, which carries its template: either may be the lane's default
+        (self.snap / IQ3_PART1_PATH).parent.mkdir(parents=True)
+        (self.snap / IQ3_PART1_PATH).write_bytes(gguf(UNSLOTH_TEMPLATE.replace("HEAD", "HEAD UD-IQ3_XXS")))
 
     def tearDown(self):
         shutil.rmtree(self.t, ignore_errors=True)
@@ -241,9 +246,9 @@ class TheStagedUnit(unittest.TestCase):
                               capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "HOME": str(self.home)})
         self.assertEqual(said.stdout.strip(), "262144", said.stderr)
 
-    def staged_with(self, **values):
-        """The unit an installer whose measured variables hold these values stages, from a copy of the repository:
-        (returncode, its output, the engine's command)."""
+    def staged_with(self, env=None, **values):
+        """The unit an installer whose measured variables hold these values stages, from a copy of the repository, with
+        env added to its environment: (returncode, its output, the engine's command)."""
         repo = self.t / "repo"
         if not repo.is_dir():
             repo.mkdir()
@@ -255,7 +260,8 @@ class TheStagedUnit(unittest.TestCase):
             self.assertEqual(n, 1, var)
         (repo / "install-flash-unsloth.sh").write_text(text)
         self.out.unlink(missing_ok=True)
-        e = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "HF_CACHE": str(self.hf), "LANES_UNIT_DIR": str(self.units)}
+        e = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "HF_CACHE": str(self.hf), "LANES_UNIT_DIR": str(self.units),
+             **(env or {})}
         r = subprocess.run(["bash", str(repo / "install-flash-unsloth.sh"), "--stage", str(self.out)], capture_output=True,
                            text=True, env=e, timeout=120)
         return r.returncode, r.stdout + r.stderr, exec_command(self.out.read_text()) if self.out.exists() else ""
@@ -412,6 +418,131 @@ class TheWindowChosenAtInstall(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertFalse((self.cfg / "flash-unsloth-context").exists())
         self.assertIn(f"sudo rm -f {self.units}/qwen38-flash-unsloth.service", log.read_text())
+
+
+class TheSecondTarget(unittest.TestCase):
+    """UD-IQ3_XXS (decisions 1359, 1366 and 1374, v1.49), the lane's second target: Unsloth's 3-bit quantization of the
+    same model in the same repository at the same revision, under the same served name, as Kolibri's two checkpoints
+    are. Its own four parts (the fourth the very file of UD-Q4_K_XL's), its own template from its first part, its own
+    native form: four windows of 262,144 tokens in q8_0, eight having let the box's guard stop the engine under
+    GSM8K's eight requests (2026-11-14); its 1M mode, the lane's one request. The default, FLASH_UNSLOTH_DEFAULT, is
+    one line of its installer; an update keeps the target its unit serves; --recommended brings the default back."""
+    setUp, tearDown, stage, staged_with = (TheStagedUnit.setUp, TheStagedUnit.tearDown, TheStagedUnit.stage,
+                                           TheStagedUnit.staged_with)
+    IQ3 = {"FLASH_UNSLOTH_TARGET": "flash-unsloth-iq3"}
+
+    def read(self, fn):
+        """lanes.sh's fn of the staged unit: its window, or its target."""
+        args = ["$2"] if fn == "llamacpp_window" else ["$2", str(REPO / "install-flash-unsloth.sh")]
+        r = subprocess.run(["bash", "-c", f'. "$1"; {fn} {" ".join(args)}', "_", str(REPO / "lanes.sh"), str(self.out)],
+                           capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "HOME": str(self.home)})
+        return r.stdout.strip()
+
+    def test_its_unit_serves_its_own_parts_and_template_at_its_own_form(self):
+        rc, out = self.stage(**self.IQ3)
+        self.assertEqual(rc, 0, out)
+        unit = self.out.read_text()
+        cmd = exec_command(unit)
+        snap = f"/root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/{PINS['FLASH_UNSLOTH_REV']}"
+        self.assertIn(f"-m {snap}/{IQ3_PART1_PATH} ", unit)
+        self.assertNotIn("UD-Q4_K_XL", cmd)
+        # the check of its files names its four parts, then the draft and the template, as on UD-Q4_K_XL
+        m = re.search(r'bash "\$check" qwen38-flash-unsloth\.service flash-unsloth (.+?) \|\| exit', cmd)
+        repo_dir = self.hf / "hub" / "models--unsloth--Qwen3.8-Flash-Next-GGUF" / "snapshots" / PINS["FLASH_UNSLOTH_REV"]
+        self.assertEqual(m.group(1).split()[:4],
+                         [str(repo_dir / PINS[f"FLASH_UNSLOTH_IQ3_PART{i}"].rsplit("=", 1)[0]) for i in range(1, 5)])
+        # its forms: a window of the model's own 262,144 tokens for each of its requests, in its KV cache's type
+        slots, kv = int(PINS["FLASH_UNSLOTH_IQ3_SLOTS"]), PINS["FLASH_UNSLOTH_IQ3_KV"]
+        self.assertRegex(cmd, rf"-c {262144 * slots} -np {slots} -ctk {kv} -ctv {kv}\s+-md ")
+        self.assertNotIn("--rope-scaling", cmd)
+        self.assertNotIn("-kvu", cmd.split())
+        self.assertEqual((self.read("llamacpp_window"), self.read("flash_unsloth_target")), ("262144", "flash-unsloth-iq3"))
+        # the template its own first part carries, with the Qwen lanes' fixes
+        tpl = (self.cfg / "chat-template-flash-unsloth.jinja").read_text()
+        self.assertIn("HEAD UD-IQ3_XXS", tpl)
+        self.assertIn("reasoning_effort|default('lean')", tpl)
+        # the same engine otherwise: its name, its draft, its lookup, its cache in host memory
+        rc, out = self.stage(FLASH_UNSLOTH_TARGET="flash-unsloth")
+        self.assertEqual(rc, 0, out)
+
+        def form(c):
+            c = " ".join(c.replace("UD-IQ3_XXS", "UD-Q4_K_XL").split())
+            return re.sub(r"-c \d+ -np \d+( -ctk \S+ -ctv \S+)?", "FORM", c)
+        self.assertEqual(form(cmd), form(exec_command(self.out.read_text())))
+
+    def test_its_1m_mode_is_the_lanes_one_request(self):
+        rc, out = self.stage(FLASH_UNSLOTH_CONTEXT="1m", **self.IQ3)
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(exec_command(self.out.read_text()), TheWindowChosenAtInstall.ONE)
+        self.assertEqual((self.read("llamacpp_window"), self.read("flash_unsloth_target")), ("1048576", "flash-unsloth-iq3"))
+        # the choice is the lane's: kept for a Load of the other target too
+        rc, out = self.stage(FLASH_UNSLOTH_TARGET="flash-unsloth")
+        self.assertEqual((rc, self.read("llamacpp_window"), self.read("flash_unsloth_target")), (0, "1048576", "flash-unsloth"),
+                         out)
+
+    def test_its_forms_are_the_ones_measured(self):
+        """Four windows of 262,144 tokens in q8_0, 39 GiB available at ready, 66.2 tok/s for one request and 71.5 in all
+        with four; eight were ready with 17 to 18 GiB and the box's guard stopped the engine at 5 GiB under GSM8K's eight
+        requests (2026-11-14). Its 1M mode is UD-Q4_K_XL's, one request (decision 1316), with 25.8 GiB less of weights."""
+        self.assertEqual((PINS["FLASH_UNSLOTH_IQ3_SLOTS"], PINS["FLASH_UNSLOTH_IQ3_KV"], PINS["FLASH_UNSLOTH_1M_SLOTS"]),
+                         ("4", "q8_0", "1"))
+        self.assertNotIn("FLASH_UNSLOTH_IQ3_1M_SLOTS", PINS)
+
+    def test_an_update_keeps_the_target_its_unit_serves_and_recommended_brings_the_default_back(self):
+        rc, out = self.stage(**self.IQ3)
+        self.assertEqual(rc, 0, out)
+        shutil.copy(self.out, self.units / "qwen38-flash-unsloth.service")
+        # an update, or a Load's stage with no target named: the unit's
+        rc, out = self.stage()
+        self.assertEqual((rc, self.read("flash_unsloth_target")), (0, "flash-unsloth-iq3"), out)
+        # ./install.sh --recommended: the default, whatever the unit names
+        rc, out = self.stage(QWEN38_RECOMMENDED="1")
+        self.assertEqual((rc, self.read("flash_unsloth_target")), (0, PINS["FLASH_UNSLOTH_DEFAULT"]), out)
+        # a target named: that one, whatever the unit names
+        rc, out = self.stage(FLASH_UNSLOTH_TARGET="flash-unsloth")
+        self.assertEqual((rc, self.read("flash_unsloth_target")), (0, "flash-unsloth"), out)
+        # a unit that names neither (edited by hand): the default
+        (self.units / "qwen38-flash-unsloth.service").write_text("ExecStart=/bin/bash -c 'exec x -m /y/UD-Q2_K_XL/z.gguf'\n")
+        rc, out = self.stage()
+        self.assertEqual((rc, self.read("flash_unsloth_target")), (0, PINS["FLASH_UNSLOTH_DEFAULT"]), out)
+
+    def test_the_default_is_one_line_of_the_installer(self):
+        # UD-Q4_K_XL until UD-IQ3_XXS's quality is proven (decision 1359): FLASH_UNSLOTH_DEFAULT alone moves it
+        self.assertEqual(PINS["FLASH_UNSLOTH_DEFAULT"], "flash-unsloth")
+        self.assertEqual(len(re.findall(r"^FLASH_UNSLOTH_DEFAULT=", TEXT, re.M)), 1)
+        rc, out, cmd = self.staged_with(DEFAULT="flash-unsloth-iq3")
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"/{IQ3_PART1_PATH} ", cmd)
+        self.assertRegex(cmd, rf"-np {PINS['FLASH_UNSLOTH_IQ3_SLOTS']} -ctk {PINS['FLASH_UNSLOTH_IQ3_KV']} ")
+        rc, out, cmd = self.staged_with(DEFAULT="iq3")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("FLASH_UNSLOTH_DEFAULT must be flash-unsloth or flash-unsloth-iq3, got: iq3", out)
+
+    def test_an_unknown_target_or_a_form_the_engine_refuses_writes_no_unit_and_names_its_variable(self):
+        rc, out = self.stage(FLASH_UNSLOTH_TARGET="iq3")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("FLASH_UNSLOTH_TARGET takes flash-unsloth (UD-Q4_K_XL) or flash-unsloth-iq3 (UD-IQ3_XXS), got: iq3", out)
+        self.assertFalse(self.out.exists(), "a unit written all the same")
+        for var, bad in (("IQ3_SLOTS", "08"), ("IQ3_SLOTS", "0"), ("IQ3_KV", "f8_e4m3"), ("1M_SLOTS", "01")):
+            with self.subTest(var=var, value=bad):
+                rc, out, cmd = self.staged_with(env=self.IQ3, **{var: bad})
+                self.assertNotEqual(rc, 0, out)
+                self.assertIn(f"FLASH_UNSLOTH_{var} must be", out)
+                self.assertEqual(cmd, "")
+
+    def test_its_pins(self):
+        parts = [PINS[f"FLASH_UNSLOTH_IQ3_PART{i}"] for i in range(1, 5)]
+        for i, part in enumerate(parts, 1):
+            self.assertRegex(part, rf"^UD-IQ3_XXS/Qwen3\.8-Flash-Next-UD-IQ3_XXS-0000{i}-of-00004\.gguf=[0-9a-f]{{64}}:\d+$")
+        # its n-gram table is UD-Q4_K_XL's own file, its sha256 and its size; the other three are its own
+        self.assertEqual(parts[3].split("=", 1)[1], PINS["FLASH_UNSLOTH_PART4"].split("=", 1)[1])
+        q4 = {PINS[f"FLASH_UNSLOTH_PART{i}"].split("=", 1)[1].split(":")[0] for i in range(1, 4)}
+        self.assertFalse(q4 & {p.split("=", 1)[1].split(":")[0] for p in parts[:3]})
+        total = sum(int(p.rsplit(":", 1)[1]) for p in parts) + int(PINS["FLASH_UNSLOTH_DRAFT"].rsplit(":", 1)[1])
+        self.assertEqual(int(PINS["FLASH_UNSLOTH_IQ3_GB"]), -(-total // 10**9))
+        # check-pins.sh asks the Hub's pointer of each, as of UD-Q4_K_XL's
+        pins = (REPO / "check-pins.sh").read_text()
+        self.assertIn('check_model "unsloth-iq3-part$n" "$FLASH_UNSLOTH_REPO" "$FLASH_UNSLOTH_REV" "${part%=*}" "$sha"', pins)
 
 
 class ThePatcherReadsAGguf(unittest.TestCase):
@@ -644,7 +775,8 @@ class TheSwitchAndThePins(unittest.TestCase):
     SWITCH = (REPO / "switch-model.sh").read_text()
 
     def block(self):
-        m = re.search(r'^if \[ "\$CHOICE" = "flash-unsloth" \]; then\n(.*?)^fi\n', self.SWITCH, re.M | re.S)
+        m = re.search(r'^if \[ "\$CHOICE" = "flash-unsloth" \] \|\| \[ "\$CHOICE" = "flash-unsloth-iq3" \]; then\n(.*?)^fi\n',
+                      self.SWITCH, re.M | re.S)
         self.assertIsNotNone(m)
         return m.group(1)
 
@@ -658,8 +790,18 @@ class TheSwitchAndThePins(unittest.TestCase):
         self.assertIn('sudo install -m 644 "$FLU_STAGE" "$FLASH_UNSLOTH_UNIT"', b)
         self.assertNotIn("ckpt-fetch.py", b)
 
+    def test_its_two_targets_are_one_block_that_hands_the_installer_the_target(self):
+        # flash-unsloth and flash-unsloth-iq3 (v1.49): the installer fetches the target's files and renders its form, so
+        # each of its two calls names the target the switch was asked for; a call that named none would keep the unit's
+        b = self.block()
+        for mode in ("--fetch", '--stage "$FLU_STAGE"'):
+            with self.subTest(mode=mode):
+                self.assertIn(f'FLASH_UNSLOTH_TARGET="$CHOICE" bash "$REPO_DIR/install-flash-unsloth.sh" {mode}', b)
+        self.assertEqual(b.count("install-flash-unsloth.sh\" --"), 2)
+
     def test_the_installer_reads_its_pins_once(self):
         self.assertEqual(len(re.findall(r"^FLASH_UNSLOTH_PART[1-4]=", TEXT, re.M)), 4)
+        self.assertEqual(len(re.findall(r"^FLASH_UNSLOTH_IQ3_PART[1-4]=", TEXT, re.M)), 4)
         for var in ("FLASH_UNSLOTH_PART1", "FLASH_UNSLOTH_PART2", "FLASH_UNSLOTH_PART3", "FLASH_UNSLOTH_PART4",
                     "FLASH_UNSLOTH_DRAFT"):
             self.assertRegex(PINS[var], r"^[^=]+\.gguf=[0-9a-f]{64}:\d+$", var)
@@ -722,16 +864,34 @@ class TheLoadSetsOpencodeForTheWindow(unittest.TestCase):
         end = text.index('  echo "Clients reach it through the proxy on :30001 with the box\'s key, as model qwen3.8-flash-next-unsloth."')
         self.block = text[start:end].replace("/etc/systemd/system/qwen38-keepalive.service", str(self.d / "keepalive.service"))
 
-    def load(self, form):
+    def load(self, form, choice="flash-unsloth"):
         unit = self.d / "qwen38-flash-unsloth.service"
         unit.write_text(f"ExecStart=/bin/bash -c 'exec docker run x \\\n    {form}  \\\n    -md y'\n")
         script = "\n".join(["set -uo pipefail", f'REPO_DIR="{REPO}"', f'CONFIG_DIR="{self.cfg}"', f'. "{REPO}/lanes.sh"',
-                            f'FLASH_UNSLOTH_UNIT="{unit}"', self.block])
+                            f'FLASH_UNSLOTH_UNIT="{unit}"', f"CHOICE={choice}", self.block])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"PATH": f"{self.bin}:/usr/bin:/bin", "HOME": str(self.home)})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("NOTE", r.stdout + r.stderr)
         return [json.loads(c.read_text()) for c in self.configs]
+
+    def test_its_entry_says_the_target_its_unit_serves(self):
+        # UD-IQ3_XXS (v1.49): its four windows of 262,144 the native pair, its 1M mode the 1m pair, its name its own; and
+        # the unit in place names the target whatever the switch was asked (--clients runs for the unit in place)
+        iq3 = "-m /root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/x/UD-IQ3_XXS/q.gguf"
+        for form, choice, ctx, label in (
+                (f"{iq3} -c 1048576 -np 4 -ctk q8_0 -ctv q8_0", "flash-unsloth-iq3", 205000, "UD-IQ3_XXS + DFlash2 (local, 262K)"),
+                (f"{iq3} -c 1048576 -np 1 -ctk q8_0 -ctv q8_0 --rope-scaling yarn", "flash-unsloth-iq3", 830000,
+                 "UD-IQ3_XXS + DFlash2 (local, 1M)"),
+                (f"{iq3} -c 1048576 -np 4 -ctk q8_0 -ctv q8_0", "flash-unsloth", 205000, "UD-IQ3_XXS + DFlash2 (local, 262K)"),
+                (f"{iq3.replace('UD-IQ3_XXS', 'UD-Q4_K_XL')} -c 524288 -np 2", "flash-unsloth-iq3", 205000,
+                 "UD-Q4_K_XL + DFlash2 (local, 262K)")):
+            for c in self.load(form, choice):
+                with self.subTest(form=form, choice=choice):
+                    m = c["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
+                    self.assertEqual(m["limit"], {"context": ctx, "input": ctx, "output": 32000})
+                    self.assertEqual(m["name"], f"Qwen3.8-Flash-Next Unsloth {label}")
+                    self.assertEqual(c["model"], "flash-unsloth/qwen3.8-flash-next-unsloth")
 
     def test_a_load_to_its_1m_window_and_back_moves_the_limits_of_the_entry_already_there(self):
         for form, ctx, label in (("-c 1048576 -np 1 -ctk q8_0 -ctv q8_0 --rope-scaling yarn", 830000, "(local, 1M)"),

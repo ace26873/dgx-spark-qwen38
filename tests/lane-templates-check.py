@@ -55,9 +55,11 @@ VLLM_LANES = {
 # How each llama.cpp target's installer serves its template: the one its GGUF carries in its first part
 # (tokenizer.chat_template), patched by patch-template.py --gguf with the installer's TEMPLATE_FIXES and handed to
 # llama-server with --chat-template-file (install-flash-unsloth.sh, v1.48). (installer, pin prefix, the variable that
-# pins the first part as PATH=SHA256:SIZE, the fixes.)
+# pins the first part as PATH=SHA256:SIZE, the fixes.) A target, not a lane: the Unsloth GGUF lane's two quantizations
+# each carry their template in a first part of their own (v1.49).
 GGUF_LANES = {
     "flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_PART1", {"LEAN_DEFAULT": "1"}),
+    "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_IQ3_PART1", {"LEAN_DEFAULT": "1"}),
 }
 # switch-model.sh's targets that serve no chat template
 NOT_TEXT = {"image", "image-turbo", "video"}

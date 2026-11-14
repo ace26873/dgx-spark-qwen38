@@ -121,6 +121,41 @@ class Fetch(unittest.TestCase):
         self.snap("RadixArk/Qwen3.8-27B-NVFP4", self.pins["STOCK_REV"])
         self.assertEqual(self.targets()["stock"]["state"], "complete")
 
+    def test_the_unsloth_lanes_two_targets_each_count_their_own_parts(self):
+        # UD-Q4_K_XL and UD-IQ3_XXS, two folders of one repository at one revision (v1.49): either read whole once the
+        # other's parts were there, and the Library offered no Download of a target its Load then fetched (55 GB)
+        import re
+        text = (REPO / "install-flash-unsloth.sh").read_text()
+        parts = {t: re.findall(rf'^{v}[1-4]="([^"=]+)=', text, re.M)
+                 for t, v in (("flash-unsloth", "FLASH_UNSLOTH_PART"), ("flash-unsloth-iq3", "FLASH_UNSLOTH_IQ3_PART"))}
+        self.assertEqual([len(p) for p in parts.values()], [4, 4])
+        snap = self.hub / "models--unsloth--Qwen3.8-Flash-Next-GGUF" / "snapshots" / self.pins["FLASH_UNSLOTH_REV"]
+        draft = (self.hub / "models--ggml-org--Qwen3.8-Flash-Next-GGUF" / "snapshots" / self.pins["FLASH_UNSLOTH_DRAFT_REV"]
+                 / re.search(r'^FLASH_UNSLOTH_DRAFT="([^"=]+)=', text, re.M).group(1))
+        draft.parent.mkdir(parents=True)
+        draft.write_text("w")
+
+        def put(paths):
+            for rel in paths:
+                (snap / rel).parent.mkdir(parents=True, exist_ok=True)
+                (snap / rel).write_text("w")
+
+        def states():
+            t = self.targets()
+            return t["flash-unsloth"]["state"], t["flash-unsloth-iq3"]["state"]
+
+        put(parts["flash-unsloth-iq3"][:2])
+        self.assertEqual(states(), ("absent", "incomplete"))
+        put(parts["flash-unsloth-iq3"][2:])
+        self.assertEqual(states(), ("absent", "complete"))
+        put(parts["flash-unsloth"])
+        self.assertEqual(states(), ("complete", "complete"))
+        shutil.rmtree(snap / parts["flash-unsloth-iq3"][0].split("/")[0])
+        self.assertEqual(states(), ("complete", "absent"))
+        # the draft both load: whole with it alone, and not taken for a download of the other begun
+        draft.unlink()
+        self.assertEqual(states(), ("incomplete", "absent"))
+
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})
         self.assertEqual(code, 202, body)

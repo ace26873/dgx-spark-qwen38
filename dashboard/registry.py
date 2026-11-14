@@ -40,7 +40,8 @@ PIN_MODELS = {
     "NEMOTRON_SUPER_DRAFT_REV": "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4-LiLiCorr",
     "FLASH_LOCAL_REV": "nvidia/Qwen3.8-Flash-Next-FP4-Local",
     "ORNITH_122B_REV": "ornith-ai/Ornith-1.5-122B-NVFP4",
-    # the Unsloth GGUF lane's: Unsloth's GGUF repository (the lane serves its UD-Q4_K_XL parts) and its draft's
+    # the Unsloth GGUF lane's: Unsloth's GGUF repository (the lane serves its UD-Q4_K_XL parts or its UD-IQ3_XXS ones,
+    # two targets at this one revision) and its draft's
     "FLASH_UNSLOTH_REV": "unsloth/Qwen3.8-Flash-Next-GGUF",
     "FLASH_UNSLOTH_DRAFT_REV": "ggml-org/Qwen3.8-Flash-Next-GGUF",
 }
@@ -162,6 +163,13 @@ def gguf_complete(snap: Path, allow=None) -> bool:
         if m and any(f"{m.group(1)}-{i:05d}-of-{m.group(3)}.gguf" not in names for i in range(1, int(m.group(3)) + 1)):
             return False
     return True
+
+
+def pinned_paths(installer_text: str, prefix: str) -> list[str]:
+    """The paths an installer pins one by one as PREFIX<n>="PATH=SHA256:SIZE", in their order: the GGUF parts a target
+    of a llama.cpp lane serves of a repository that holds every quantization (install-flash-unsloth.sh's
+    FLASH_UNSLOTH_PART1 to 4, and FLASH_UNSLOTH_IQ3_PART1 to 4 for its second target, v1.49)."""
+    return re.findall(rf'^{re.escape(prefix)}\d+="([^"=]+)=[0-9a-f]{{64}}:\d+"$', installer_text or "", re.M)
 
 
 VIDEO_ALLOW_RE = re.compile(r'if \[ "\$VID_VARIANT" = "fl2va" \]; then VID_ALLOW="([^"]+)"\s*else VID_ALLOW="([^"]+)"')

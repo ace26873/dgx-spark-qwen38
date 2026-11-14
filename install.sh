@@ -2480,15 +2480,19 @@ if [ "$OC_ORNITH_122B" -eq 1 ]; then
 fi
 # The Qwen3.8 Flash-Next Unsloth GGUF lane, its own provider (its own served model) with its unit.
 [ -f "$FLASH_UNSLOTH_UNIT_PATH" ] && OC_FLASH_UNSLOTH=1
-OC_FLASH_UNSLOTH_CTX=""; OC_FLASH_UNSLOTH_OUT=""; OC_FLASH_UNSLOTH_NAME=""; OC_FLASH_UNSLOTH_WINDOW=""
+OC_FLASH_UNSLOTH_CTX=""; OC_FLASH_UNSLOTH_OUT=""; OC_FLASH_UNSLOTH_NAME=""; OC_FLASH_UNSLOTH_WINDOW=""; OC_FLASH_UNSLOTH_TARGET=""
 if [ "$OC_FLASH_UNSLOTH" -eq 1 ]; then
-  # its unit's window, the -c its llama-server takes, and the pair of that window: 262,144 for each of its two requests,
-  # 1,048,576 for one with FLASH_UNSLOTH_CONTEXT=1m (decisions 1316 and 1318, 2026-11-12)
+  # its unit's window, the -c its llama-server takes, and the pair of that window: 262,144 for each request, 1,048,576
+  # with FLASH_UNSLOTH_CONTEXT=1m (decisions 1316 and 1318, 2026-11-12); and the target the unit serves, which the
+  # entry's name says (lanes.sh), its installer's default for a unit that names neither of its two (v1.49)
   OC_FLASH_UNSLOTH_WINDOW="$(llamacpp_window "$FLASH_UNSLOTH_UNIT_PATH")"
-  OC_FLASH_UNSLOTH_PAIR="$("$REPO_DIR/oc-limits.sh" flash-unsloth --from "$FLASH_UNSLOTH_UNIT_PATH")" \
-    || die "oc-limits.sh refused flash-unsloth (repo bug: please open an issue)"
+  OC_FLASH_UNSLOTH_TARGET="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
+  [ -n "$OC_FLASH_UNSLOTH_TARGET" ] \
+    || OC_FLASH_UNSLOTH_TARGET="$(sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$REPO_DIR/install-flash-unsloth.sh")"
+  OC_FLASH_UNSLOTH_PAIR="$("$REPO_DIR/oc-limits.sh" "$OC_FLASH_UNSLOTH_TARGET" --from "$FLASH_UNSLOTH_UNIT_PATH")" \
+    || die "oc-limits.sh refused ${OC_FLASH_UNSLOTH_TARGET:-the Qwen3.8 Flash-Next Unsloth GGUF lane} (repo bug: please open an issue)"
   OC_FLASH_UNSLOTH_CTX="${OC_FLASH_UNSLOTH_PAIR%% *}"; OC_FLASH_UNSLOTH_OUT="$(echo "$OC_FLASH_UNSLOTH_PAIR" | cut -d' ' -f2)"
-  OC_FLASH_UNSLOTH_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label flash-unsloth "${OC_FLASH_UNSLOTH_WINDOW:-262144}" || true)"
+  OC_FLASH_UNSLOTH_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label "$OC_FLASH_UNSLOTH_TARGET" "${OC_FLASH_UNSLOTH_WINDOW:-262144}" || true)"
 fi
 # How much of a conversation survives a compaction verbatim, from the same table.
 OC_KEEP="$("$REPO_DIR/oc-limits.sh" --preserve "$OC_CTX")" \
@@ -2919,7 +2923,7 @@ if [ "$ORNITH_122B_BOOT" -eq 1 ] && [ "$OC_ORNITH_122B" -eq 1 ]; then
 fi
 if [ "$FLASH_UNSLOTH_BOOT" -eq 1 ] && [ "$OC_FLASH_UNSLOTH" -eq 1 ]; then
   # the Qwen3.8 Flash-Next Unsloth GGUF lane is this box's lane: opencode's default stays on it
-  OC_POINT_LANE=flash-unsloth; OC_POINT_CHOICE=flash-unsloth; OC_POINT_WINDOW="${OC_FLASH_UNSLOTH_WINDOW:-262144}"
+  OC_POINT_LANE=flash-unsloth; OC_POINT_CHOICE="$OC_FLASH_UNSLOTH_TARGET"; OC_POINT_WINDOW="${OC_FLASH_UNSLOTH_WINDOW:-262144}"
 fi
 python3 "$REPO_DIR/oc-point-default.py" "$CONFIG_DIR/opencode.json" "$OC_POINT_LANE" "$OC_POINT_CHOICE" "$OC_POINT_WINDOW" \
   || die "could not point the generated opencode config at the installed lane"

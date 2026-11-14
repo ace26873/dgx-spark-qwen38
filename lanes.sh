@@ -404,6 +404,22 @@ llamacpp_window(){  # $1 a unit file
   case " $cmd " in *" -kvu "*) ;; *) [ -z "$np" ] || [ "$np" -le 1 ] || c=$((c / np)) ;; esac
   printf '%s\n' "$c"
 }
+# The target of the Unsloth GGUF lane a unit serves (v1.49), by the folder of Unsloth's repository its engine's -m names
+# (read in the unit's lines, its comments left out), as the lane's installer pins the first part of each target:
+# flash-unsloth-iq3 in FLASH_UNSLOTH_IQ3_PART1's folder (UD-IQ3_XXS), flash-unsloth in FLASH_UNSLOTH_PART1's
+# (UD-Q4_K_XL). Nothing for a unit that names neither, or none. One reading for the installer, which keeps the target
+# its unit serves, and for the switch and install.sh, which name it to the clients.
+flash_unsloth_target(){  # $1 a unit file, $2 install-flash-unsloth.sh
+  local m pair dir
+  m="$({ grep -v '^[[:space:]]*#' "$1" 2>/dev/null || true; } | tr '\n' ' ' | { grep -oE -- '[[:space:]]-m [^ ]+' || true; } \
+       | awk 'NR == 1 {print $2}')"
+  [ -n "$m" ] || return 0
+  for pair in "FLASH_UNSLOTH_IQ3_PART1 flash-unsloth-iq3" "FLASH_UNSLOTH_PART1 flash-unsloth"; do
+    dir="$(sed -n "s|^${pair% *}=\"\\([^/\"]*\\)/.*|\\1|p" "$2" 2>/dev/null | head -1)"
+    case "$m" in */"$dir"/*) [ -z "$dir" ] || { printf '%s\n' "${pair#* }"; return 0; } ;; esac
+  done
+  return 0
+}
 existing(){  # $1 a path
   local p="$1"; while [ ! -e "$p" ]; do p="$(dirname "$p")"; done; printf '%s\n' "$p"
 }

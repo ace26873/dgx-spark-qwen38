@@ -10,6 +10,7 @@ table and gave an FP8 box the NVFP4 1M pair (found in review, 2026-09-24). These
 installer's own lines, as written, in a throwaway config dir.""" 
 import json
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -35,7 +36,7 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
              pair=None, names=False, flash_running=None, kolibri_unit=False, kolibri_boot=False, doc=False,
              nemotron_unit=False, nemotron_boot=False, super_unit=False, super_boot=False,
              flocal_unit=False, flocal_boot=False, ornith_unit=False, ornith_boot=False, unsloth_unit=False,
-             unsloth_boot=False, unsloth_slots="-c 524288 -np 2"):
+             unsloth_boot=False, unsloth_slots="-c 524288 -np 2", unsloth_model="x.gguf"):
     t = pathlib.Path(tempfile.mkdtemp(prefix="oc-art-"))
     kolibri = t / "qwen38-kolibri.service"
     if kolibri_unit:
@@ -54,7 +55,7 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
         ornith.write_text("ExecStart=... ornith-ai/Ornith-1.5-122B-NVFP4 --revision f049036f ...\n")
     unsloth = t / "qwen38-flash-unsloth.service"
     if unsloth_unit:
-        unsloth.write_text("ExecStart=... -m /root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/x.gguf "
+        unsloth.write_text(f"ExecStart=... -m /root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/{unsloth_model} "
                            f"--alias qwen3.8-flash-next-unsloth {unsloth_slots} ...\n")
     if flash_running:
         (t / "launch-flash.sh").write_text(
@@ -423,6 +424,47 @@ class ABoxBootingFlashUnsloth(unittest.TestCase):
                              unsloth_boot=True, unsloth_slots=slots, doc=True)
                 m = d["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
                 self.assertEqual(m["name"], "Qwen3.8-Flash-Next Unsloth UD-Q4_K_XL + DFlash2 (local, 262K)")
+
+    def test_its_entry_names_the_target_its_unit_serves(self):
+        # UD-IQ3_XXS (v1.49), its GGUF in that folder of Unsloth's repository: its four windows of 262,144 the native
+        # pair, its 1M mode the 1m pair, under its own name, and opencode's default stays the lane's one served name
+        iq3 = "snapshots/" + "d" * 40 + "/UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf"
+        for slots, mode, said in (("-c 1048576 -np 4 -ctk q8_0 -ctv q8_0", "native", "262K"),
+                                  ("-c 1048576 -np 1 -ctk q8_0 -ctv q8_0", "1m", "1M")):
+            with self.subTest(mode=mode):
+                d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), unsloth_unit=True,
+                             unsloth_boot=True, unsloth_slots=slots, unsloth_model=iq3, doc=True)
+                ctx, out, *_ = subprocess.run([str(REPO / "oc-limits.sh"), "flash-unsloth-iq3", mode], capture_output=True,
+                                              text=True, check=True).stdout.split()
+                m = d["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
+                self.assertEqual(m["limit"], {"context": int(ctx), "input": int(ctx), "output": int(out)})
+                self.assertEqual(m["name"], f"Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2 (local, {said})")
+                self.assertEqual(d["model"], "flash-unsloth/qwen3.8-flash-next-unsloth")
+
+    def test_serving_at_boot_its_entry_is_pointed_at_under_the_name_of_its_target(self):
+        # install.sh's own lines that point opencode's default at the lane that boots, and name its entry: the name of
+        # the target its unit serves, UD-IQ3_XXS's (v1.49), where they named UD-Q4_K_XL's whatever the unit served
+        text = INSTALL.read_text()
+        start = text.index('OC_POINT_LANE="$LANE"; OC_POINT_CHOICE="$MODEL_CHOICE"; OC_POINT_WINDOW="$OC_WINDOW"\n')
+        end = text.index('  || die "could not point the generated opencode config at the installed lane"\n', start)
+        d = pathlib.Path(tempfile.mkdtemp(prefix="oc-art-point-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        cfg = d / "opencode.json"
+        cfg.write_text(json.dumps({"model": "qwen38/qwen3.8-27b", "provider": {
+            "qwen38": {"models": {"qwen3.8-27b": {"name": "x"}}},
+            "flash-unsloth": {"models": {"qwen3.8-flash-next-unsloth": {"name": "y"}}}}}, indent=2) + "\n")
+        off = " ".join(f"{lane}_BOOT=0 OC_{lane}=0" for lane in ("KOLIBRI", "NEMOTRON", "NEMOTRON_SUPER", "FLASH_LOCAL", "ORNITH_122B"))
+        script = "\n".join(["set -euo pipefail", 'die(){ echo "DIE: $*"; exit 1; }', f'REPO_DIR="{REPO}"; CONFIG_DIR="{d}"',
+                             "LANE=27b MODEL_CHOICE=stock OC_WINDOW=1010000 " + off,
+                             "FLASH_UNSLOTH_BOOT=1 OC_FLASH_UNSLOTH=1 OC_FLASH_UNSLOTH_TARGET=flash-unsloth-iq3 "
+                             "OC_FLASH_UNSLOTH_WINDOW=262144", text[start:end] + "  || die point"])
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                           env={"PATH": "/usr/bin:/bin", "HOME": str(d)})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        doc = json.loads(cfg.read_text())
+        self.assertEqual(doc["model"], "flash-unsloth/qwen3.8-flash-next-unsloth")
+        self.assertEqual(doc["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]["name"],
+                         "Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2 (local, 262K)")
 
     def test_without_its_unit_there_is_no_unsloth_provider(self):
         d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), ornith_unit=True, doc=True)

@@ -252,9 +252,10 @@ class ItsUnit(Base):
     def test_its_clients_and_the_unsloth_lanes_are_set_alone_by_an_action_of_their_own(self):
         # the Load of such a lane that serves without being the boot lane sets its clients with it before the restart,
         # where a switch would point the boot at it (base.js, laneJourneySteps): the two lanes whose clients follow
-        # their unit's window, and no other target
-        self.assertEqual(self.ck.ACTIONS["clients"]["params"], {"target": ["flash-local", "flash-unsloth"]})
-        for t in ("flash-local", "flash-unsloth"):
+        # their unit's window, the Unsloth GGUF lane by each of its two targets (v1.49), and no other target
+        self.assertEqual(self.ck.ACTIONS["clients"]["params"],
+                         {"target": ["flash-local", "flash-unsloth", "flash-unsloth-iq3"]})
+        for t in ("flash-local", "flash-unsloth", "flash-unsloth-iq3"):
             self.assertEqual(self.ck.ACTIONS["clients"]["argv"]({"target": t}),
                              ["bash", str(REPO / "switch-model.sh"), t, "--clients"])
         code, body = self.ck.start_action("clients", {"target": "kolibri"})

@@ -127,7 +127,7 @@ const LANE_META = {
   [NEMOTRON_UNIT]: {title: 'Nemotron 3.5 Bolt', kind: 'Text, images and video, 262K tokens', desc: 'NVIDIA’s mixture of experts, 74B with 9B active in 2 bits, served by vLLM with its drafter. Reasoning, tool calls and vision.', view: 'agent', lane: 'nemotron', maker: 'nvidia'},
   [NEMOTRON_SUPER_UNIT]: {title: 'Nemotron 3.5 Super VL', kind: 'Text, images and video, 1M tokens', desc: 'NVIDIA’s mixture of experts, 120B with 12B active in NVFP4, served by vLLM with its drafter. Reasoning, tool calls and vision over a 1M window.', view: 'agent', lane: 'nemotron-super', maker: 'nvidia'},
   [ORNITH_UNIT]: {title: 'Ornith 1.5 122B', kind: 'Text, images and video, 1M tokens', desc: 'Ornith AI’s mixture of experts, 122B with 8 of its 256 experts active, in its authors’ NVFP4 build, served by vLLM with b12x and its MTP head. Reasoning, tool calls and vision.', view: 'agent', lane: 'ornith-122b', maker: 'ornith'},
-  [FLASH_UNSLOTH_UNIT]: {title: 'Qwen3.8 Flash-Next Unsloth GGUF', kind: 'Text, 262K tokens of context', desc: 'The same 176B model in Unsloth’s dynamic GGUF (UD-Q4_K_XL), served by llama.cpp with an n-gram lookup and a DFlash2 draft, its n-gram (PLE) table read from the disk. Reasoning and tool calls.', view: 'agent', lane: 'flash-unsloth', maker: 'unsloth'},
+  [FLASH_UNSLOTH_UNIT]: {title: 'Qwen3.8 Flash-Next Unsloth GGUF', kind: 'Text, 262K tokens of context', desc: 'The same 176B model in Unsloth’s dynamic GGUF (UD-Q4_K_XL or UD-IQ3_XXS), served by llama.cpp with an n-gram lookup and a DFlash2 draft, its n-gram (PLE) table read from the disk. Reasoning and tool calls.', view: 'agent', lane: 'flash-unsloth', maker: 'unsloth'},
   [IMAGE_UNIT]: {title: 'Qwen-Image 2.1', kind: 'Images', desc: 'Create, edit with up to ten references, cut out with a real alpha channel.', view: 'image', lane: 'image', maker: 'qwen'},
   [VIDEO_UNIT]: {title: 'MiniMax-H3', kind: 'Video with sound', desc: 'Video and audio made together, from a prompt or from keyframes.', view: 'video', lane: 'video', maker: 'minimax'}};
 // a lane's maker's mark, as an image the stylesheet sizes (the marks belong to their owners, img/logos/NOTICE.md)
@@ -142,12 +142,12 @@ function makerMark(unit, cls = 'mark'){
 const READY_DEFAULT = {[U27]: 540, [UFLASH]: 780, [FLASH_LOCAL_UNIT]: 1020, [KOLIBRI_UNIT]: 600, [NEMOTRON_UNIT]: 450, [NEMOTRON_SUPER_UNIT]: 660, [ORNITH_UNIT]: 420, [FLASH_UNSLOTH_UNIT]: 420, [IMAGE_UNIT]: 70, [VIDEO_UNIT]: 720};
 const TARGET_UNIT = t => t === 'image' || t === 'image-turbo' ? IMAGE_UNIT : t === 'video' ? VIDEO_UNIT
   : String(t).startsWith('kolibri') ? KOLIBRI_UNIT : t === 'nemotron-super' ? NEMOTRON_SUPER_UNIT : String(t).startsWith('nemotron') ? NEMOTRON_UNIT
-  : t === 'flash-local' ? FLASH_LOCAL_UNIT : t === 'ornith-122b' ? ORNITH_UNIT : t === 'flash-unsloth' ? FLASH_UNSLOTH_UNIT
+  : t === 'flash-local' ? FLASH_LOCAL_UNIT : t === 'ornith-122b' ? ORNITH_UNIT : String(t).startsWith('flash-unsloth') ? FLASH_UNSLOTH_UNIT
   : String(t).startsWith('flash') ? UFLASH : U27;
 const LANE_TARGETS = {[U27]: ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'arete'], [UFLASH]: ['flash', 'flash-uncensored', 'flash-nvda'],
                       [FLASH_LOCAL_UNIT]: ['flash-local'],
                       [KOLIBRI_UNIT]: ['kolibri', 'kolibri-nvfp4'], [NEMOTRON_UNIT]: ['nemotron'], [NEMOTRON_SUPER_UNIT]: ['nemotron-super'],
-                      [ORNITH_UNIT]: ['ornith-122b'], [FLASH_UNSLOTH_UNIT]: ['flash-unsloth'], [IMAGE_UNIT]: ['image', 'image-turbo'],
+                      [ORNITH_UNIT]: ['ornith-122b'], [FLASH_UNSLOTH_UNIT]: ['flash-unsloth', 'flash-unsloth-iq3'], [IMAGE_UNIT]: ['image', 'image-turbo'],
                       [VIDEO_UNIT]: ['video']};
 // Each version's official name: the model, its precision, and who publishes it, read off the repository its
 // installer pins (decisions 1180 and 1185: "abliterated", the word of those builds' own makers, never "uncensored"
@@ -161,14 +161,15 @@ const TARGET_NAME = {stock: 'Qwen3.8 27B NVFP4 · RadixArk', uncensored: 'Qwen3.
                      image: 'Qwen-Image 2.1 · Qwen', 'image-turbo': 'Qwen-Image 2.1 Turbo · Qwen', video: 'MiniMax-H3 · MiniMax',
                      kolibri: 'Kolibri-1 FP8 · Aleph Alpha', 'kolibri-nvfp4': 'Kolibri-1 NVFP4 · Quantinine',
                      nemotron: 'Nemotron 3.5 Bolt 24GB · NVIDIA', 'nemotron-super': 'Nemotron 3.5 Super VL NVFP4 · NVIDIA',
-                     'ornith-122b': 'Ornith 1.5 122B NVFP4 · Ornith AI', 'flash-unsloth': 'Qwen3.8 Flash-Next UD-Q4_K_XL GGUF · Unsloth'};
+                     'ornith-122b': 'Ornith 1.5 122B NVFP4 · Ornith AI', 'flash-unsloth': 'Qwen3.8 Flash-Next UD-Q4_K_XL GGUF · Unsloth',
+                     'flash-unsloth-iq3': 'Qwen3.8 Flash-Next UD-IQ3_XXS GGUF · Unsloth'};
 // A version's name on its button in Lanes, and the line that tells it apart once chosen. A
 // target is declared in the tables of this block: a page test fails when one lacks a name or a line.
 const TARGET_SHORT_NAME = {stock: 'NVFP4 · RadixArk', uncensored: 'Abliterated NVFP4 · edp1096', fp8: 'FP8 · Qwen',
   'uncensored-fp8': 'Abliterated FP8 · edp1096', arete: 'Arete NVFP4 · atakans', flash: 'NVFP4 · RadixArk', 'flash-uncensored': 'Abliterated NVFP4 · dealignai',
   'flash-nvda': 'NVFP4 · NVIDIA', image: 'Base', 'image-turbo': 'Turbo', video: 'H3', kolibri: 'FP8 · Aleph Alpha',
   'kolibri-nvfp4': 'NVFP4 · Quantinine', nemotron: 'Bolt', 'nemotron-super': 'Super VL', 'flash-local': 'FP4-Local',
-  'ornith-122b': '122B', 'flash-unsloth': 'UD-Q4_K_XL · Unsloth'};
+  'ornith-122b': '122B', 'flash-unsloth': 'UD-Q4_K_XL · Unsloth', 'flash-unsloth-iq3': 'UD-IQ3_XXS · Unsloth'};
 const TARGET_LINE = {
   stock: 'The default: smallest and fastest', uncensored: 'Refusals removed, same size and speed',
   fp8: "Qwen's own weights: the most faithful, and heavier", 'uncensored-fp8': 'Refusals removed, and heavier',
@@ -180,7 +181,8 @@ const TARGET_LINE = {
   'nemotron-super': 'The one version: NVFP4 and its drafter, a 1M window',
   'flash-local': 'The one version: NVIDIA’s FP4 build and its MTP head',
   'ornith-122b': 'The one version: its authors’ NVFP4 build and its MTP head',
-  'flash-unsloth': 'The one version: Unsloth’s dynamic 4-bit GGUF, with an n-gram lookup and a DFlash2 draft'};
+  'flash-unsloth': 'Unsloth’s dynamic 4-bit GGUF, with an n-gram lookup and a DFlash2 draft: two requests at once',
+  'flash-unsloth-iq3': 'Its experts in 3-bit: faster, and four requests at once'};
 const TARGET_NOTE = {
   stock: 'The NVFP4 quantization this repo pins by default: smallest and fastest of the 27B targets.',
   uncensored: 'The abliterated NVFP4 checkpoint: same size and speed as RadixArk’s NVFP4, refusals removed.',
@@ -199,7 +201,8 @@ const TARGET_NOTE = {
   'nemotron-super': 'NVIDIA’s Nemotron 3.5 Super VL in NVFP4, served as its model card says for a DGX Spark: its LiLiCorr drafter, a window of 1,048,576 tokens, the Mamba state in float16 with stochastic rounding, temperature 1.0, top_p 0.95, reasoning on (off, efficient or full per request), in the Nemotron 3.5 Bolt lane’s vLLM image. It reads images and video. Measured on this box: 70 tokens/s alone on code, 31 on prose, its whole window 1.1 to 1.3 times over in its cache. The first switch downloads about 77 GB.',
   'flash-local': 'NVIDIA’s own FP4 build of the flash model, served as its model card says for a DGX Spark: vLLM with b12x, its experts and its n-gram table in NVFP4 after a quantization-aware distillation from the full precision (GPQA Diamond 91.5 % against 92.2 % on NVIDIA’s card), an MTP head drafting 4 tokens, 262,144 tokens of context and a KV cache of about 920,000 tokens, reasoning on at lean as on the other Qwen lanes unless a request asks for another level (xhigh by default with FLASH_LOCAL_EFFORT=xhigh). Its table is read at every token: with the HF cache on another disk, its first Load copies the table’s files (32 GB) beside your home directory. The first boot tunes b12x’s kernels for this GPU, about 17 min; the next ones take about 6. The first switch downloads about 102 GB.',
   'ornith-122b': 'Ornith AI’s Ornith 1.5 122B (MIT) in its authors’ NVFP4 build, served by vLLM with b12x in the Qwen3.8 Flash-Next FP4-Local lane’s image: its experts and output head in NVFP4, its projections in FP8, an MTP head drafting 2 tokens, 1,048,576 tokens of context (its own 262,144 stretched four times with YaRN), temperature 0.6, top_p 0.95, top_k 20, reasoning on (off with effort none or minimal). It reads images and video. The first switch downloads about 78 GB.',
-  'flash-unsloth': 'Unsloth’s dynamic GGUF of the flash model (UD-Q4_K_XL, 76.9 GiB of weights), served by llama.cpp’s own server with its n-gram lookup and ggml-org’s DFlash2 draft (Q8_0), its weights copied into the GPU’s memory and its n-gram (PLE) table (26.8 GiB) read from the disk as the tokens need it: 262,144 tokens of context for each of two requests at once (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer), the model card’s sampling (temperature 1.0, top_p 0.95, top_k 20), reasoning on at lean as on the other Qwen lanes unless a request asks for another level. Measured on this box at that sampling, one request, on its image (llama.cpp b12316, 2026-11-12, each text’s first pass): 51.8 tokens/s on code, 56.9 in reasoning, 31.5 on prose and 123.7 on a rewrite of code (27.9, 27.7, 27.3 and 27.4 without the lookup and the draft, on the image before it); two requests at once, 63.2 tokens/s in all. The first switch downloads about 112 GB.'};
+  'flash-unsloth': 'Unsloth’s dynamic GGUF of the flash model (UD-Q4_K_XL, 76.9 GiB of weights), served by llama.cpp’s own server with its n-gram lookup and ggml-org’s DFlash2 draft (Q8_0), its weights copied into the GPU’s memory and its n-gram (PLE) table (26.8 GiB) read from the disk as the tokens need it: 262,144 tokens of context for each of two requests at once (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer), the model card’s sampling (temperature 1.0, top_p 0.95, top_k 20), reasoning on at lean as on the other Qwen lanes unless a request asks for another level. Measured on this box at that sampling, one request, on its image (llama.cpp b12316, 2026-11-12, each text’s first pass): 51.8 tokens/s on code, 56.9 in reasoning, 31.5 on prose and 123.7 on a rewrite of code (27.9, 27.7, 27.3 and 27.4 without the lookup and the draft, on the image before it); two requests at once, 63.2 tokens/s in all. The first switch downloads about 112 GB.',
+  'flash-unsloth-iq3': 'Unsloth’s UD-IQ3_XXS GGUF of the same model, served the same way (llama.cpp’s own server, its n-gram lookup and ggml-org’s DFlash2 draft, the same chat template and sampling): its experts in 3-bit, 51.1 GiB of weights where UD-Q4_K_XL has 76.9, and the same n-gram (PLE) table, read from the disk. The room it leaves goes to more requests at once: 262,144 tokens of context for each of four, the KV cache in q8_0 (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer). Measured on this box, one request at temperature 0 on its image (llama.cpp b12316, 2026-11-14, each text’s first pass, two windows of 262,144 for both quantizations, the GPU capped at 2,400 MHz): 69.4 tokens/s on code, 76.4 in reasoning, 37.7 on prose and 171.7 on a rewrite of code, where UD-Q4_K_XL gave 55.6, 60.5, 32.0 and 129.8; with its four windows, 66.2 tokens/s for one request and 71.5 in all with four (the GPU capped at 2,000 MHz). Its quality against UD-Q4_K_XL is measured before it may become the lane’s default. The first switch downloads about 85 GB, 55 when UD-Q4_K_XL is there (the n-gram table is one file for the two).'};
 // What installs a lane this box does not have. Since v1.20 a plain ./install.sh installs
 // every lane, so one missing here was left out (a --no-<lane> on the last run) or did not fit:
 // --with-<lane> installs it beside the lane that serves, which keeps serving. A text lane comes with

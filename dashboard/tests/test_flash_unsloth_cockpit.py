@@ -29,9 +29,12 @@ SERVED = "qwen3.8-flash-next-unsloth"
 MODELS = {"object": "list", "data": [{"id": SERVED, "aliases": [SERVED], "tags": [], "object": "model",
                                        "created": 1, "owned_by": "llamacpp",
                                        "meta": {"n_ctx": 262144, "n_ctx_train": 262144}}]}
-# two slots, a window each (-c 524288 -np 2): each slot's context is its own window (n_ctx_slot = 262144, no kv_unified)
+# two slots, a window each (-c 524288 -np 2): each slot's context is its own window (n_ctx_slot = 262144, no kv_unified);
+# its model_path, the -m it was started with (server-context.cpp: params_base.model.path, b12291), in the folder of
+# Unsloth's repository of the target it serves
+IN_BOX = "/root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/" + "d" * 40
 PROPS = {"default_generation_settings": {"n_ctx": 262144}, "total_slots": 2, "model_alias": SERVED,
-         "model_path": "/root/.cache/huggingface/hub/x.gguf", "build_info": "b12316-5d4c8eeb2"}
+         "model_path": f"{IN_BOX}/UD-Q4_K_XL/m-00001-of-00004.gguf", "build_info": "b12316-5d4c8eeb2"}
 METRICS = ("# HELP llamacpp:tokens_predicted_total Number of generation tokens processed\n"
            "# TYPE llamacpp:tokens_predicted_total counter\nllamacpp:tokens_predicted_total 1.23457e+06\n"
            "# TYPE llamacpp:spec_decode_num_accepted_tokens_total counter\nllamacpp:spec_decode_num_accepted_tokens_total 300\n"
@@ -172,6 +175,23 @@ class ItsEnginePanel(Base):
         # the flash lane's one-prompt ceiling, which the proxy applies to every name of the flash model
         self.assertEqual(out["prompt_ceiling_tokens"], 250000)
 
+    def test_which_of_its_two_targets_it_serves_is_the_engines_own_word(self):
+        # UD-IQ3_XXS (v1.49): the GGUF the engine loaded says the target and its precision, not the unit, which names
+        # what its next start loads (a switch since its start); the unit's -m when the engine does not say it
+        self.ck.run = lambda argv, **kw: ""
+        saved = dict(PROPS)
+        self.addCleanup(lambda: (PROPS.clear(), PROPS.update(saved)))
+        PROPS["model_path"] = f"{IN_BOX}/UD-IQ3_XXS/m-UD-IQ3_XXS-00001-of-00004.gguf"
+        out = self.ck.llamacpp_engine_info()
+        self.assertEqual((out["served_target"], out["info"]["quantization"]), ("flash-unsloth-iq3", "ud-iq3_xxs"))
+        del PROPS["model_path"]
+        out = self.ck.llamacpp_engine_info()
+        self.assertEqual((out["served_target"], out["info"]["quantization"]), ("flash-unsloth", "ud-q4_k_xl"))
+        # a GGUF of no target's folder: neither said
+        PROPS["model_path"] = "/root/.cache/huggingface/hub/x.gguf"
+        out = self.ck.llamacpp_engine_info()
+        self.assertEqual((out["served_target"], out["info"]["quantization"]), (None, None))
+
     def test_its_load_is_read_off_its_metrics_with_the_key(self):
         self.serving("ready")
         load = self.ck.llamacpp_load(timeout=3)[0]
@@ -264,6 +284,22 @@ class ItsUnit(Base):
     def test_the_target_is_read_from_the_path_of_its_model(self):
         self.ck.UNIT_TARGET_CACHE.clear()
         self.assertEqual(self.ck.unit_target(U), {"model": REPO_ID, "target": "flash-unsloth"})
+        # its second target, UD-IQ3_XXS, the folder of the same repository its -m names (v1.49)
+        text = self.unit.read_text()
+        self.addCleanup(self.unit.write_text, text)
+        self.unit.write_text(text.replace("/UD-Q4_K_XL/m-00001-of-00004.gguf", "/UD-IQ3_XXS/m-UD-IQ3_XXS-00001-of-00004.gguf"))
+        self.assertEqual(self.ck.unit_target(U), {"model": REPO_ID, "target": "flash-unsloth-iq3"})
+        self.unit.write_text(text.replace("/UD-Q4_K_XL/", "/UD-Q2_K_XL/"))
+        self.assertEqual(self.ck.unit_target(U), {"model": REPO_ID, "target": None})
+
+    def test_its_targets_are_the_folders_its_installer_pins(self):
+        # the cockpit's table of the two targets, by folder, is the folders of the first parts install-flash-unsloth.sh
+        # pins for each (a folder renamed there and not here would read the lane's target as none)
+        import re
+        text = (REPO / "install-flash-unsloth.sh").read_text()
+        pinned = {re.search(rf'^{var}="([^/"]+)/', text, re.M).group(1): target
+                  for var, target in (("FLASH_UNSLOTH_PART1", "flash-unsloth"), ("FLASH_UNSLOTH_IQ3_PART1", "flash-unsloth-iq3"))}
+        self.assertEqual({f: t for f, (t, _) in self.ck.LLAMACPP_TARGETS[U].items()}, pinned)
 
     def test_it_is_a_switch_target_a_unit_the_page_may_drive_and_a_lane_it_prepares(self):
         self.assertIn("flash-unsloth", self.ck.ACTIONS["switch"]["params"]["target"])
@@ -276,8 +312,20 @@ class ItsUnit(Base):
         self.assertEqual(self.ck.ACTIONS["prepare"]["argv"]({"target": "flash-unsloth"})[-1], "flash-unsloth")
 
     def test_the_flash_lanes_prefix_does_not_take_it(self):
-        self.assertEqual(self.ck.target_lane("flash-unsloth"), "flash-unsloth")
-        self.assertEqual(self.ck.target_unit("flash-unsloth"), self.ck.FLASH_UNSLOTH_UNIT_PATH)
+        for target in ("flash-unsloth", "flash-unsloth-iq3"):
+            with self.subTest(target=target):
+                self.assertEqual(self.ck.target_lane(target), "flash-unsloth")
+                self.assertEqual(self.ck.target_unit(target), self.ck.FLASH_UNSLOTH_UNIT_PATH)
+
+    def test_its_second_target_is_one_the_page_may_switch_fetch_and_set_the_clients_of(self):
+        # UD-IQ3_XXS (v1.49): its own target, at the lane's one pin, its draft fetched with it, its lane prepared alone
+        for action in ("switch", "fetch", "clients", "prepare"):
+            self.assertIn("flash-unsloth-iq3", self.ck.ACTIONS[action]["params"]["target"], action)
+        self.assertEqual((self.ck.TARGET_PIN["flash-unsloth-iq3"], self.ck.TARGET_DRAFT_PIN["flash-unsloth-iq3"]),
+                         ("FLASH_UNSLOTH_REV", "FLASH_UNSLOTH_DRAFT_REV"))
+        self.assertEqual(self.ck.ACTIONS["prepare"]["argv"]({"target": "flash-unsloth-iq3"})[-1], "flash-unsloth")
+        self.assertEqual(self.ck.ACTIONS["clients"]["argv"]({"target": "flash-unsloth-iq3"})[-2:],
+                         ["flash-unsloth-iq3", "--clients"])
 
     def test_it_is_prepared_once_the_image_its_unit_names_is_here(self):
         img = "ghcr.io/ggml-org/llama.cpp@sha256:" + "0" * 64

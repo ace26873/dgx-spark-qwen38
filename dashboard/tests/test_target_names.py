@@ -20,6 +20,7 @@ PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC
         "nemotron-super": ("install-nemotron-super.sh", "NEMOTRON_SUPER_REPO"),
         "ornith-122b": ("install-ornith-122b.sh", "ORNITH_122B_REPO"),
         "flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
+        "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
         "image": ("install-image.sh", "IMAGE_MODEL_PIN"), "image-turbo": ("install-image.sh", "IMAGE_TURBO_PIN"),
         "video": ("install-video.sh", "VIDEO_MODEL_PIN")}
 # a repository's owner on Hugging Face, written as its own pages write its name
@@ -27,8 +28,10 @@ PUBLISHER = {"RadixArk": "RadixArk", "edp1096": "edp1096", "Qwen": "Qwen", "nvid
              "Aleph-Alpha": "Aleph Alpha", "Quantinine": "Quantinine", "ornith-ai": "Ornith AI", "MiniMaxAI": "MiniMax",
              "unsloth": "Unsloth", "atakans": "atakans"}
 # a precision the repository's name does not say: Aleph Alpha's own release of Kolibri-1 is its FP8 build, and
-# Unsloth's GGUF repository holds every quantization of the model, the lane serving its UD-Q4_K_XL folder
-UNSAID = {"kolibri": {"fp8"}, "flash-unsloth": {"ud", "q4", "k", "xl"}}
+# Unsloth's GGUF repository holds every quantization of the model, the lane serving its UD-Q4_K_XL folder or its
+# UD-IQ3_XXS one, each read off the folder of the part its installer pins first (PRECISION below)
+UNSAID = {"kolibri": {"fp8"}, "flash-unsloth": {"ud", "q4", "k", "xl"}, "flash-unsloth-iq3": {"ud", "iq3", "xxs"}}
+PRECISION = {"flash-unsloth": "FLASH_UNSLOTH_PART1", "flash-unsloth-iq3": "FLASH_UNSLOTH_IQ3_PART1"}
 
 
 def table(name):
@@ -70,7 +73,7 @@ class EachVersionHasItsOfficialName(unittest.TestCase):
 
     def test_a_versions_button_says_its_precision_and_its_publisher_where_its_lane_has_several(self):
         for target in ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-uncensored",
-                       "flash-nvda", "kolibri", "kolibri-nvfp4"):
+                       "flash-nvda", "kolibri", "kolibri-nvfp4", "flash-unsloth", "flash-unsloth-iq3"):
             with self.subTest(target=target):
                 pub = self.name[target].rsplit(" · ", 1)[1]
                 self.assertTrue(self.short[target].endswith(" · " + pub), self.short[target])
@@ -79,6 +82,17 @@ class EachVersionHasItsOfficialName(unittest.TestCase):
                 said, name = words(self.short[target].rsplit(" · ", 1)[0]), words(self.name[target].rsplit(" · ", 1)[0])
                 at = [name.index(w) for w in said]
                 self.assertEqual(at, sorted(at), (self.short[target], self.name[target]))
+
+    def test_a_gguf_versions_precision_is_the_folder_its_parts_are_pinned_in(self):
+        # Unsloth's repository holds every quantization of the model: the precision a version's name and its button say
+        # is the folder of the first part its installer pins, two versions of one repository since v1.49
+        text = (REPO / "install-flash-unsloth.sh").read_text()
+        for target, var in PRECISION.items():
+            with self.subTest(target=target):
+                folder = re.search(rf'^{var}="([^/"]+)/', text, re.M).group(1)
+                self.assertEqual(set(words(folder)), UNSAID[target])
+                self.assertIn(f" {folder} ", self.name[target])
+                self.assertTrue(self.short[target].startswith(folder + " · "), self.short[target])
 
     def test_no_name_says_stock_uncensored_or_flash_176b(self):
         shown = list(self.name.values()) + list(self.short.values()) + list(table("TARGET_LINE").values())

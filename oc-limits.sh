@@ -296,12 +296,13 @@ case "$CHOICE" in
     #     990,000 - 20,000 + 43,863 + 32,000 = 1,045,863  <=  1,048,576
     CTX=990000; OUT=32000; LABEL="local, 1M"
     ;;
-  flash-unsloth)
+  flash-unsloth|flash-unsloth-iq3)
     # Its window, one request's (native | 1m, FLASH_UNSLOTH_CONTEXT of install-flash-unsloth.sh), or, with --from, its
     # unit's: lanes.sh's llamacpp_window, the -c of its engine, which holds a window for each of its requests (or the one
     # they share with -kvu, which its installer refuses: a unit edited by hand), past 262,144 by YaRN alone. llama.cpp
     # refuses a prompt past a request's window, so the window decides the pair, and each mode's pair fits every window
-    # from its own up: a window under 1,048,576 gets the native pair.
+    # from its own up: a window under 1,048,576 gets the native pair. Its two targets, UD-Q4_K_XL and UD-IQ3_XXS, give
+    # each request the same windows (v1.49): they differ in how many requests they serve at once, not in a request's.
     MODE="$SELECTOR"
     if [ -z "$MODE" ]; then
       WINDOW=""
@@ -313,16 +314,16 @@ case "$CHOICE" in
       if [ "${WINDOW:-0}" -ge 1048576 ] 2>/dev/null; then MODE=1m; else MODE=native; fi
     fi
     case "$MODE" in
-      # The model's own window, 262,144 tokens (the context the GGUF says it was trained for), for each of its two
-      # requests, the lane's (decision 1318, 2026-11-12): the flash lane's rule and numbers (the same model, the same
-      # tokenizer, the proxy's same ceiling):
+      # The model's own window, 262,144 tokens (the context the GGUF says it was trained for), for each of its requests,
+      # two on UD-Q4_K_XL (decision 1318, 2026-11-12), four on UD-IQ3_XXS (decision 1366): the flash lane's rule and
+      # numbers (the same model, the same tokenizer, the proxy's same ceiling):
       #     205,000 - 20,000 + 43,863 + 32,000 = 260,863  <=  262,144
       native) CTX=205000; OUT=32000; LABEL="local, 262K" ;;
       # FLASH_UNSLOTH_CONTEXT=1m: one request at a time with a window of 1,048,576 tokens (YaRN at four times), the pool
       # (llama.cpp's memory fit lowers a -c left unset alone, common/fit.cpp), whose prompt the proxy relays up to 92 %,
-      # no flash ceiling there (wide_flash). The pair keeps the lane's answer budget and is sized by the FP4-Local lane's
-      # rule at its 1M: the cockpit's check (fit_verdict) with a pool 10 % smaller, and the window holding the prompt at
-      # opencode's compaction point, one worst step and the answer:
+      # no flash ceiling there (wide_flash), on either target. The pair keeps the lane's answer budget and is sized by the
+      # FP4-Local lane's rule at its 1M: the cockpit's check (fit_verdict) with a pool 10 % smaller, and the window
+      # holding the prompt at opencode's compaction point, one worst step and the answer:
       #     830,000 + 32,000 = 862,000  <=  1,048,576 x 0.92 x 0.90 = 868,220
       #     830,000 - 20,000 + 43,863 + 32,000 = 885,863  <=  1,048,576
       1m) CTX=830000; OUT=32000; LABEL="local, 1M" ;;

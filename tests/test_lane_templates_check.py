@@ -23,9 +23,13 @@ class TheLanesItKnows(unittest.TestCase):
         specs = {name: env for name, _, _, env in ltc.lane_specs()}
         self.assertEqual(sorted(specs), sorted(["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-nvda",
                                                 "flash-uncensored", "flash-local", "ornith-122b", "kolibri",
-                                                "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-unsloth"]))
-        # the Unsloth GGUF lane's: the template its GGUF's first part carries, patched with the Qwen fixes at lean
+                                                "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-unsloth",
+                                                "flash-unsloth-iq3"]))
+        # the Unsloth GGUF lane's: the template its GGUF's first part carries, patched with the Qwen fixes at lean, the
+        # first part of each of its two targets (v1.49)
         self.assertEqual(specs["flash-unsloth"], {"LEAN_DEFAULT": "1", "gguf": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf"})
+        self.assertEqual(specs["flash-unsloth-iq3"],
+                         {"LEAN_DEFAULT": "1", "gguf": "UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf"})
         self.assertEqual(specs["ornith-122b"], {"patches": "system-reminder,tool-reference"})
         self.assertEqual(specs["stock"], {})
         self.assertIsNone(specs["kolibri"])
@@ -70,7 +74,9 @@ class TheLanesItKnows(unittest.TestCase):
     def test_a_gguf_lane_that_serves_its_template_otherwise_or_pins_its_header_otherwise_stops_it(self):
         # the Unsloth GGUF lane (v1.48): its fixes as GGUF_LANES says them, its template read from the part it pins first
         for old, new, said in (("TEMPLATE_FIXES=(LEAN_DEFAULT=1)", "TEMPLATE_FIXES=()", "serves its template otherwise"),
-                               ('FLASH_UNSLOTH_PART1="', 'FLASH_UNSLOTH_FIRST="', "no longer pins FLASH_UNSLOTH_PART1")):
+                               ('FLASH_UNSLOTH_PART1="', 'FLASH_UNSLOTH_FIRST="', "no longer pins FLASH_UNSLOTH_PART1"),
+                               ('FLASH_UNSLOTH_IQ3_PART1="', 'FLASH_UNSLOTH_IQ3_FIRST="',
+                                "no longer pins FLASH_UNSLOTH_IQ3_PART1")):
             with self.subTest(said=said):
                 d = self.copy()
                 f = d / "install-flash-unsloth.sh"

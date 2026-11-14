@@ -19,7 +19,8 @@ ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-flash-
 # memory guard above) and so the unit's main process, checks the GGUF parts, the draft and the chat template the
 # engine loads (it says why), gives a cache on a disk mounted late at boot 90 s, and exits 78 without them, which
 # leaves the unit failed with the reason on the lane's card. The check itself gone, bash exits 78 too, with its line.
-# Unsloth's GGUF of Qwen3.8-Flash-Next (UD-Q4_K_XL, four parts) served by llama.cpp's own server, from the image
+# Unsloth's GGUF of Qwen3.8-Flash-Next (UD-Q4_K_XL or UD-IQ3_XXS, the lane's two targets, four parts each, -m naming
+# the first) served by llama.cpp's own server, from the image
 # its project publishes for arm64 with CUDA 13 (pinned by digest, b12316), with the options measured on the
 # reference box (2026-11-11 and 12, docs/flash-unsloth-lane.md):
 #   --lazy-mode on: the model's n-gram table (its fourth part, 26.8 GiB in IQ4_NL) is read from the disk row by row
@@ -33,12 +34,12 @@ ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-flash-
 #   -ngl 999 -fa on --no-repack: every layer on the GPU, flash attention, and no repacking of the tensors that
 #     stay on the processor's side (the table): repacking would copy what is read in place.
 #   -c: the windows, the installer's CTX for each request (262,144 tokens, the context the model was trained for, read
-#     in the GGUF), YaRN's options past it (its YARN), the KV cache's type (its KV, llama.cpp's own f16), and -np, the
-#     requests at once (its SLOTS, 2), each with a window of its own (-c holds them all, and no request can make
-#     another fail); a third request waits for one of them to end. A window the requests share (-kvu) is refused:
-#     llama-server stopped itself under load in four of the nine runs that shared one (the installer says how).
-#     FLASH_UNSLOTH_CONTEXT=1m renders one request at a time instead, with a window of 1,048,576 by YaRN at four times
-#     and the KV cache in q8_0. --jinja and
+#     in the GGUF), YaRN's options past it (its YARN), the KV cache's type (its KV, llama.cpp's own f16; IQ3_KV on
+#     UD-IQ3_XXS), and -np, the requests at once (its SLOTS, 2; IQ3_SLOTS on UD-IQ3_XXS), each with a window of its own (-c
+#     holds them all, and no request can make another fail); one more request waits for one of them to end. A window
+#     the requests share (-kvu) is refused: llama-server stopped itself under load in four of the nine runs that shared
+#     one (the installer says how). FLASH_UNSLOTH_CONTEXT=1m renders one request at a time instead, on either target,
+#     with a window of 1,048,576 by YaRN at four times and the KV cache in q8_0. --jinja and
 #     --chat-template-file: the chat template the GGUF carries, Unsloth's, with the fixes the other Qwen lanes'
 #     templates have (install-flash-unsloth.sh says which); the model card's sampling (temperature 1.0, top_p
 #     0.95, top_k 20) is in the GGUF, and the server applies it to a request that sets none.

@@ -91,11 +91,12 @@ LANES = {
                     "targets": ("ornith-122b",), "heavy_64": (),
                     "served": "ornith-1.5-122b", "provider": "ornith-122b", "ports": (TEXT_PORT,),
                     "fits_64": False, "title": "Ornith 1.5 122B"},
-    # install-flash-unsloth.sh: llama.cpp's official image, Unsloth's GGUF of the flash model; its unit's
-    # --alias is qwen3.8-flash-next-unsloth (llama-server has no --served-model-name)
+    # install-flash-unsloth.sh: llama.cpp's official image, Unsloth's GGUF of the flash model in two quantizations
+    # (UD-Q4_K_XL and UD-IQ3_XXS, v1.49); its unit's --alias is qwen3.8-flash-next-unsloth (llama-server has no
+    # --served-model-name)
     "flash-unsloth": {"unit": "qwen38-flash-unsloth.service", "installer": "install-flash-unsloth.sh", "flags": True,
                       "kind": "text", "engine": "llamacpp", "b12x": False,
-                      "targets": ("flash-unsloth",), "heavy_64": (),
+                      "targets": ("flash-unsloth", "flash-unsloth-iq3"), "heavy_64": (),
                       "served": "qwen3.8-flash-next-unsloth", "provider": "flash-unsloth", "ports": (TEXT_PORT,),
                       "fits_64": False, "title": "Qwen3.8 Flash-Next Unsloth GGUF"},
     # install-speech.sh: on the CPU beside any lane, PORT 30024 (SPEECH_PORT) and its recognizer on the

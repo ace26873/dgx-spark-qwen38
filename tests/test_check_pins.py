@@ -42,9 +42,11 @@ KOKORO_FILES = (pin(SPEECH, "KOKORO_MODEL_FILE"), pin(SPEECH, "KOKORO_VOICES_FIL
 # started to, as these were, in 2025).
 KOLIBRI = (REPO / "install-kolibri.sh").read_text()
 NEMOTRON = (REPO / "install-nemotron.sh").read_text()
-# the Unsloth GGUF lane's four parts and its draft, each pinned as PATH=SHA256:SIZE: the pointer names that sha256
+# the Unsloth GGUF lane's four parts of each of its two targets and its draft, each pinned as PATH=SHA256:SIZE: the
+# pointer names that sha256
 UNSLOTH = dict((path.rsplit("/", 1)[-1], sha) for path, sha in re.findall(
-    r'^FLASH_UNSLOTH_(?:PART[1-4]|DRAFT)="([^"=]+)=([0-9a-f]{64}):\d+"', (REPO / "install-flash-unsloth.sh").read_text(), re.M))
+    r'^FLASH_UNSLOTH_(?:PART[1-4]|IQ3_PART[1-4]|DRAFT)="([^"=]+)=([0-9a-f]{64}):\d+"',
+    (REPO / "install-flash-unsloth.sh").read_text(), re.M))
 # and PyPI publishes the very wheel files the Kolibri and Nemotron builds download, by URL and sha256
 UPSTREAM = {
     "lfs": {**dict(re.findall(r'(?:ASR|MMPROJ)_FILE="([^"]+)"; (?:ASR|MMPROJ)_SHA="([0-9a-f]{64})"', SPEECH)), **UNSLOTH},
@@ -182,7 +184,7 @@ class TheCheckPins(PinsBase):
         rc, out = self.run_pins(None, "hf_secretvalue123")
         self.assertEqual(rc, 0, out)
         hf = [c for c in self.calls() if c["url"].startswith("https://huggingface.co/")]
-        self.assertEqual(len(hf), 31, hf)          # ten checkpoints, the diffusion lanes' three, the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's five (its four parts and its draft)
+        self.assertEqual(len(hf), 35, hf)          # ten checkpoints, the diffusion lanes' three, the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft)
         for c in hf:
             self.assertIn("Authorization: Bearer hf_secretvalue123", c["stdin"], c)
             self.assertFalse(any("hf_secretvalue123" in a for a in c["argv"]), c["argv"])
@@ -316,12 +318,15 @@ class ThePinsOutsideThePinBlock(PinsBase):
         # anonymous token (v1.48). Each part under a label of its own: the four read "unsloth-part4.gguf" as first written
         rc, out = self.run_pins(None, None, "unsloth")
         self.assertEqual(rc, 0, out)
-        for label in ("unsloth-part1", "unsloth-part2", "unsloth-part3", "unsloth-part4", "unsloth-draft", "flash-unsloth"):
+        for label in ("unsloth-part1", "unsloth-part2", "unsloth-part3", "unsloth-part4", "unsloth-draft", "flash-unsloth",
+                      "unsloth-iq3-part1", "unsloth-iq3-part2", "unsloth-iq3-part3", "unsloth-iq3-part4"):
             self.assertIn("ok", self.line(out, label), out)
         urls = [c["url"] for c in self.calls()]
+        # and its second target's, UD-IQ3_XXS, at the same revision (v1.49)
         for n in range(1, 5):
-            self.assertIn("https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/raw/d96201194f103c906994f283f504209dc8d2a10c/"
-                          f"UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-0000{n}-of-00004.gguf", urls)
+            for quant in ("UD-Q4_K_XL", "UD-IQ3_XXS"):
+                self.assertIn("https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/raw/d96201194f103c906994f283f504209dc8d2a10c/"
+                              f"{quant}/Qwen3.8-Flash-Next-{quant}-0000{n}-of-00004.gguf", urls)
         self.assertIn("https://huggingface.co/ggml-org/Qwen3.8-Flash-Next-GGUF/raw/b9ad2d241b433afd84a423760ccf11929c9a71fa/"
                       "dflash-Qwen3.8-Flash-Next-Q8_0.gguf", urls)
         self.assertTrue(any(u.startswith("https://ghcr.io/token?service=ghcr.io&scope=repository:ggml-org/llama.cpp:pull")
@@ -523,7 +528,7 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
         for label in self.GITHUB:
             self.assertIn("HTTP 504 from the GitHub API, so not checked", self.line(out, label), out)
             self.assertNotIn("no such", self.line(out, label), out)
-        self.assertIn("6 of 49 pins could not be asked about", out)
+        self.assertIn("6 of 53 pins could not be asked about", out)
         self.assertIn("run it again before re-pinning anything", out)
         self.assertNotIn("A removed upstream revision", out)
 

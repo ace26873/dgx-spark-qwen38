@@ -71,9 +71,9 @@ eval "$fline"
 # The Ornith lane's: its authors' checkpoint (its image is the Qwen3.8 Flash-Next FP4-Local lane's, checked below).
 oline="$(grep -E '^ORNITH_122B_(REPO|REV)=' "$REPO_DIR/install-ornith-122b.sh")"
 eval "$oline"
-# The Qwen3.8 Flash-Next Unsloth GGUF lane's: Unsloth's GGUF at its revision, each of the four parts the lane
-# serves by its sha256 (PATH=SHA256:SIZE), the draft the same way in ggml-org's repository, and llama.cpp's image.
-uline="$(grep -E '^FLASH_UNSLOTH_(REPO|REV|PART[1-4]|DRAFT_REPO|DRAFT_REV|DRAFT|IMAGE)=' "$REPO_DIR/install-flash-unsloth.sh")"
+# The Qwen3.8 Flash-Next Unsloth GGUF lane's: Unsloth's GGUF at its revision, each of the four parts of each of its two
+# targets by its sha256 (PATH=SHA256:SIZE), the draft the same way in ggml-org's repository, and llama.cpp's image.
+uline="$(grep -E '^FLASH_UNSLOTH_(REPO|REV|PART[1-4]|IQ3_PART[1-4]|DRAFT_REPO|DRAFT_REV|DRAFT|IMAGE)=' "$REPO_DIR/install-flash-unsloth.sh")"
 eval "$uline"
 # The speech lane's: llama.cpp's commit, each recognizer's two GGUF at its revision with the
 # sha256 the install checks, and Kokoro's two files, which nothing checked either (found in the
@@ -435,6 +435,12 @@ n=0
 for part in "$FLASH_UNSLOTH_PART1" "$FLASH_UNSLOTH_PART2" "$FLASH_UNSLOTH_PART3" "$FLASH_UNSLOTH_PART4"; do
   n=$((n + 1)); sha="${part##*=}"; sha="${sha%%:*}"
   check_model "unsloth-part$n" "$FLASH_UNSLOTH_REPO" "$FLASH_UNSLOTH_REV" "${part%=*}" "$sha"
+done
+# and its second target's, UD-IQ3_XXS (v1.49), whose fourth part is the first's own file
+n=0
+for part in "$FLASH_UNSLOTH_IQ3_PART1" "$FLASH_UNSLOTH_IQ3_PART2" "$FLASH_UNSLOTH_IQ3_PART3" "$FLASH_UNSLOTH_IQ3_PART4"; do
+  n=$((n + 1)); sha="${part##*=}"; sha="${sha%%:*}"
+  check_model "unsloth-iq3-part$n" "$FLASH_UNSLOTH_REPO" "$FLASH_UNSLOTH_REV" "${part%=*}" "$sha"
 done
 sha="${FLASH_UNSLOTH_DRAFT##*=}"; sha="${sha%%:*}"
 check_model  unsloth-draft  "$FLASH_UNSLOTH_DRAFT_REPO" "$FLASH_UNSLOTH_DRAFT_REV" "${FLASH_UNSLOTH_DRAFT%=*}" "$sha"

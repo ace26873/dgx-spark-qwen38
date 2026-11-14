@@ -487,15 +487,16 @@ jobs:
           # `nemotron`, the Nemotron lane's (--with-nemotron), `nemotron-super`, the
           # Nemotron Super lane's (--with-nemotron-super), `flash-local`, the Flash
           # FP4-Local lane's (--with-flash-local), `ornith-122b`, the Ornith lane's
-          # (--with-ornith-122b), and `flash-unsloth`, the Qwen3.8 Flash-Next Unsloth GGUF
-          # lane's (--with-flash-unsloth), each switched to like any other, and none a
+          # (--with-ornith-122b), and `flash-unsloth` and `flash-unsloth-iq3`, the Qwen3.8
+          # Flash-Next Unsloth GGUF lane's two quantizations (--with-flash-unsloth), each
+          # switched to like any other, and none a
           # MODEL_CHOICE (none has a recipe; Kolibri, the Nemotron lanes, Flash FP4-Local and
           # Ornith serve text from vLLM, the Unsloth GGUF lane from llama.cpp, under their own
           # installers). Both sets are asserted, so a
           # target added to the switcher and forgotten in the cockpit's enum is
           # still caught.
           FLAG_LANES = ["image", "image-turbo", "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-local",
-                        "ornith-122b", "flash-unsloth"]
+                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3"]
           ref = choices
           switch_ref = sorted(ref + FLAG_LANES)
           text_lists = {"install.sh MODEL_CHOICE": choices, "recipes BUILTIN_IDS": sorted(builtins)}
@@ -576,6 +577,9 @@ jobs:
           [ $(( C + O )) -le "$LOW" ] || { echo "flash-unsloth 1m: $C + $O passes $LOW, its pool less 10 %"; exit 1; }
           [ $(( C - 20000 + 43863 + O )) -le 1048576 ] || { echo "flash-unsloth 1m: past its 1,048,576 window"; exit 1; }
           ! l flash-unsloth nonsense 2>/dev/null || { echo "an unknown flash-unsloth mode must be refused"; exit 1; }
+          # its second target, UD-IQ3_XXS (v1.49): more requests at once, the same window for each, the same pairs
+          [ "$(l flash-unsloth-iq3)" = "$(l flash-unsloth)" ] || { echo "flash-unsloth-iq3's default drifted"; exit 1; }
+          [ "$(l flash-unsloth-iq3 1m)" = "$(l flash-unsloth 1m)" ] || { echo "flash-unsloth-iq3 1m drifted"; exit 1; }
           # Nonsense is refused rather than defaulted, or a typo silently serves
           # the wrong budget.
           ! l banana native 2>/dev/null || { echo "an unknown target must be refused"; exit 1; }

@@ -69,8 +69,10 @@ LABEL = {"stock": "Qwen3.8-27B NVFP4 + DFlash2",
          "flash-local": "Qwen3.8-Flash-Next FP4-Local NVIDIA + MTP",
          # Ornith AI's Ornith 1.5 122B, a lane of its own on vLLM.
          "ornith-122b": "Ornith 1.5 122B NVFP4 + MTP",
-         # Unsloth's GGUF of the flash model, a lane of its own on llama.cpp, with ggml-org's DFlash2 draft.
-         "flash-unsloth": "Qwen3.8-Flash-Next Unsloth UD-Q4_K_XL + DFlash2"}
+         # Unsloth's GGUF of the flash model, a lane of its own on llama.cpp, with ggml-org's DFlash2 draft: its two
+         # quantizations share its one served-model-name, qwen3.8-flash-next-unsloth.
+         "flash-unsloth": "Qwen3.8-Flash-Next Unsloth UD-Q4_K_XL + DFlash2",
+         "flash-unsloth-iq3": "Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2"}
 
 
 def label_for(choice: str, window: str) -> str | None:

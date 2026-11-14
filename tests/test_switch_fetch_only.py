@@ -240,6 +240,24 @@ class FetchOnly(unittest.TestCase):
         self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
         self.assertFalse((box.home / ".config/qwen38/text-lane").exists(), "--fetch wrote the text-lane record")
 
+    def test_the_unsloth_lanes_second_target_fetches_its_own_parts(self):
+        # flash-unsloth-iq3 (v1.49): UD-IQ3_XXS's four parts, the fourth the very file of UD-Q4_K_XL's, then the draft,
+        # whatever target the unit in place serves; nothing else changes
+        box = Box()
+        unit_before = box.unsloth_unit.read_bytes()
+        rc, out, runs, calls = box.run("flash-unsloth-iq3", "--fetch")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("is in the cache; nothing else was changed", out)
+        pins = box.unsloth_pins
+        fetches = box.gguf_log.read_text().splitlines()
+        self.assertEqual(len(fetches), 2, fetches)
+        parts = " ".join(pins[f"FLASH_UNSLOTH_IQ3_PART{i}"] for i in range(1, 5))
+        self.assertTrue(fetches[0].endswith(f"gguf-fetch.py {box.home}/.cache/huggingface {pins['FLASH_UNSLOTH_REPO']} "
+                                            f"{pins['FLASH_UNSLOTH_REV']} {parts}"), fetches[0])
+        self.assertTrue(fetches[1].endswith(f" {pins['FLASH_UNSLOTH_DRAFT']}"), fetches[1])
+        self.assertEqual((runs, box.unsloth_unit.read_bytes()), ([], unit_before))
+        self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
+
     def test_without_it_the_switch_goes_on_past_the_download(self):
         rc, out, runs, _ = Box().run("stock")
         self.assertEqual(len(runs), 1, out)

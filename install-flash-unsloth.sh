@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install the Qwen3.8 Flash-Next Unsloth GGUF lane: Qwen3.8-Flash-Next in Unsloth's dynamic GGUF quantization
-# (unsloth/Qwen3.8-Flash-Next-GGUF, UD-Q4_K_XL: 76.9 GiB of weights, and the model's n-gram table, 26.8 GiB, which the
-# engine reads from the disk as the tokens need it), drafted by ggml-org's DFlash2 head, served by llama.cpp's own
-# server from the image its project publishes, on the text lanes' port behind the proxy and its key. Idempotent, and
-# safe to run alone.
+# (unsloth/Qwen3.8-Flash-Next-GGUF, UD-Q4_K_XL: 76.9 GiB of weights, or UD-IQ3_XXS, and the model's n-gram table, 26.8
+# GiB, which the engine reads from the disk as the tokens need it), drafted by ggml-org's DFlash2 head, served by
+# llama.cpp's own server from the image its project publishes, on the text lanes' port behind the proxy and its key.
+# Idempotent, and safe to run alone.
 #
 #   ./install-flash-unsloth.sh                 first install, or update in place
 #   ./install-flash-unsloth.sh --no-smoke      skip the proof at the end
@@ -17,16 +17,23 @@
 #                                              sudo, its chat template made first: switch-model.sh
 #                                              flash-unsloth installs FILE
 #
-# THE WINDOW is 262,144 tokens, the model's own, for each of two requests at once: FLASH_UNSLOTH_CONTEXT=1m gives one
-# request at a time a window of 1,048,576 (YaRN at four times) instead, and the choice holds for every run after, a
-# Load from the cockpit included (FLASH_UNSLOTH_CONTEXT=native brings the default back), as FLASH_LOCAL_CONTEXT
-# does for the FP4-Local lane. A window shared by several requests (-kvu) is refused for now: FLASH_UNSLOTH_SHARED says
-# why.
+# TWO QUANTIZATIONS, ONE LANE (v1.49). Unsloth's repository holds every quantization of the model, and the lane serves
+# two, each a switch target under the one name clients ask for: UD-Q4_K_XL (flash-unsloth) and UD-IQ3_XXS
+# (flash-unsloth-iq3), its experts in 3-bit, 51.1 GiB of weights, the same n-gram table. FLASH_UNSLOTH_DEFAULT below
+# is the one a new install serves; an update keeps the one its unit names; ./switch-model.sh flash-unsloth-iq3 (or
+# flash-unsloth) moves the lane to the other, and its first switch downloads what it lacks.
+#
+# THE WINDOW is 262,144 tokens, the model's own, for each request: two at once on UD-Q4_K_XL, four on UD-IQ3_XXS.
+# FLASH_UNSLOTH_CONTEXT=1m gives one request at a time a window of 1,048,576 (YaRN at four times) instead, on either,
+# and the choice holds for every run after, a Load from the cockpit included (FLASH_UNSLOTH_CONTEXT=native brings the
+# default back), as FLASH_LOCAL_CONTEXT does for the FP4-Local lane. A window shared by several requests (-kvu) is
+# refused for now: FLASH_UNSLOTH_SHARED says why.
 #
 # install.sh puts this lane's unit in on every plain install, like the other lanes, and its first Load from the
 # cockpit pulls its image and fetches its files; ./install.sh --no-flash-unsloth leaves it out of the run that passes
-# it. It takes 112 GB of GGUF files (the model's four parts, 111.3 GB, and the draft, 0.7) and an image of 4.5 GB
-# (2.7 to download): when the disk does not have the room, this refuses before downloading anything.
+# it. It takes 112 GB of GGUF files on UD-Q4_K_XL (the model's four parts, 111.3 GB, and the draft, 0.7), 85 on
+# UD-IQ3_XXS (55 more beside UD-Q4_K_XL's, whose n-gram table it shares), and an image of 4.5 GB (2.7 to download):
+# when the disk does not have the room, this refuses before downloading anything.
 #
 # WHY A LANE OF ITS OWN. The flash lane serves the same model on SGLang, from NVFP4 checkpoints, and the FP4-Local lane
 # on vLLM, from NVIDIA's FP4 build. This one is Unsloth's GGUF on llama.cpp: another engine and another quantization
@@ -101,6 +108,22 @@ FLASH_UNSLOTH_PART1="UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.ggu
 FLASH_UNSLOTH_PART2="UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00002-of-00004.gguf=45792ae869072d8229384c51c7c73dd959e191505252b41dd71852d9746f5ce4:49720539552"
 FLASH_UNSLOTH_PART3="UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00003-of-00004.gguf=8c76e79d444b16a663d9c8db54e585ed3b1da13eebd2619c37b0c355da803c82:32803030176"
 FLASH_UNSLOTH_PART4="UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00004-of-00004.gguf=5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36:28800138432"
+# The lane's second quantization, the folder UD-IQ3_XXS of the same repository at the same revision (decisions 1359,
+# 1366 and 1374): its experts in 3-bit, 51.1 GiB of weights in its second and third parts, and the same n-gram table,
+# its fourth part the very file of UD-Q4_K_XL's (one blob in the cache, fetched once for the two). The same way, read
+# from the cache's own blobs on the reference box, which gguf-fetch.py had checked against these sha256 and sizes as
+# they came (2026-11-13).
+FLASH_UNSLOTH_IQ3_PART1="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf=9d5644b371ffac921427c8021cc7242dab8e3ba37d7b48d1e79fe3770fbf9915:10946618"
+FLASH_UNSLOTH_IQ3_PART2="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00004.gguf=aacaff3bdb9032c2c3be428167930809735f65d3cfb204eba07d85e421e7ddf4:49946027488"
+FLASH_UNSLOTH_IQ3_PART3="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00004.gguf=ef8f14e790ab471b363f146d5e8664eefbaf03e5776f317a1fb96a2bc7707b07:4869325888"
+FLASH_UNSLOTH_IQ3_PART4="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004.gguf=5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36:28800138432"
+# THE LANE'S DEFAULT TARGET, the one place it is set: flash-unsloth (UD-Q4_K_XL, FLASH_UNSLOTH_PART1 to 4) or
+# flash-unsloth-iq3 (UD-IQ3_XXS, the four parts just above). A new install serves it, and so do an update of a unit that
+# names neither and ./install.sh --recommended; an update keeps the target its unit names, and FLASH_UNSLOTH_TARGET,
+# which ./switch-model.sh gives this installer, names another. UD-Q4_K_XL as v1.48.0 shipped it: UD-IQ3_XXS decodes
+# about 25 % faster at a first pass (69.4 tok/s in code against 55.6, 2026-11-14, one measure each), and takes its place
+# once its quality is proven (decision 1359).
+FLASH_UNSLOTH_DEFAULT="flash-unsloth"
 # The draft, ggml-org's GGUF of the DFlash2 head of incoai (Q8_0): measured against the MTP head and the DFlash2 head
 # in Q4_0, the one that decodes fastest at the model card's sampling (docs/flash-unsloth-lane.md).
 FLASH_UNSLOTH_DRAFT_REPO="ggml-org/Qwen3.8-Flash-Next-GGUF"
@@ -112,8 +135,10 @@ FLASH_UNSLOTH_DRAFT="dflash-Qwen3.8-Flash-Next-Q8_0.gguf=4670408ccf79cf36b5f2cad
 # NVIDIA_REQUIRE_CUDA), which the box's 580.178.04 meets. It replaced b12282's image, measured first, on which the n-gram
 # lookup slowed the DFlash2 draft down (SPEC below, 2026-11-12).
 FLASH_UNSLOTH_IMAGE="ghcr.io/ggml-org/llama.cpp@sha256:a5600a59c704208491adbb96505454a8d3d4cd3a9db48b03cf2760b660b7fd16"
-# the files at these revisions, 111.99 GB, rounded up: the room their fetch asks, here and in switch-model.sh
+# the files at these revisions, 111.99 GB, rounded up: the room their fetch asks; 84.28 GB with UD-IQ3_XXS's parts,
+# of which the n-gram table, 28.8, is UD-Q4_K_XL's own
 FLASH_UNSLOTH_GB="112"
+FLASH_UNSLOTH_IQ3_GB="85"
 # What drafts (--spec-type): llama.cpp's n-gram lookup (ngram-mod) before ggml-org's DFlash2 head. On the pinned image,
 # at the model card's sampling, one request, the weights copied into the GPU's memory from the USB SSD, each text's first
 # pass (the lookup's pool keeps what a pass wrote, so a second pass of the same text is no measure of it): code 51.8
@@ -179,20 +204,55 @@ FLASH_UNSLOTH_YARN=""
 # tok/s against 676.0 in f16 (2.4 % less), 31 GiB available at ready against 27, its short decodes at temperature 0 at
 # 61.0 / 62.8 / 31.5 / 54.0 tok/s. Its answers' quality in q8_0 was measured with YaRN at four times, in the 1M mode below.
 FLASH_UNSLOTH_KV=""
-# FLASH_UNSLOTH_CONTEXT=1m: one request at a time with a window of 1,048,576 tokens, YaRN at four times, its KV cache in
-# q8_0 whatever KV says (the mode beside the default, decisions 1316 and 1318), as FLASH_LOCAL_CONTEXT=1m is the
-# FP4-Local lane's. Measured (variantes-20261112-1001-contexte-1m-b12291, b12291 built on the box, the DFlash2 head
-# alone): ready in 51 s, 100,881 MiB of the GPU's, 16.1 GiB available at ready, 13.9 through a prompt of 985,296 tokens
-# and 12.9 at the lowest, at its end (the box's telemetry); three codes of three found in it, computed at 440.2 tok/s;
-# short texts decoded at temperature 0 at 58.2 / 62.1 / 31.4 / 51.6 tok/s, where one request at 262,144 in q8_0 gave
-# 61.0 / 62.8 / 31.5 / 54.0 (variantes-20261112-0704-contexte-q8-b12291). Its answers through the proxy: GSM8K 98.0 % and
-# HumanEval 98.2 % (the lane's second proof, 2026-11-13; at the native window GSM8K 98.8 % in that proof, HumanEval 99.4 %
-# in the study). Kept for the runs after in a file of its own: a Load from the cockpit stages the unit with none of the
-# user's environment. native (or empty) brings the default back. The choice is read past the uninstall, which removes
-# it, and kept by the render that takes it, and by --prepare.
+# FLASH_UNSLOTH_CONTEXT=1m: a window of 1,048,576 tokens for each request, YaRN at four times, its KV cache in q8_0
+# whatever KV says (the mode beside the default, decisions 1316 and 1318), as FLASH_LOCAL_CONTEXT=1m is the FP4-Local
+# lane's, 1M_SLOTS requests at once (below): one. Measured so (variantes-20261112-1001-contexte-1m-b12291, b12291
+# built on the box, the DFlash2 head alone): ready in 51 s, 100,881 MiB of the GPU's, 16.1 GiB available at ready, 13.9
+# through a prompt of 985,296 tokens and 12.9 at the lowest, at its end (the box's telemetry); three codes of three found
+# in it, computed at 440.2 tok/s; short texts decoded at temperature 0 at 58.2 / 62.1 / 31.4 / 51.6 tok/s, where one
+# request at 262,144 in q8_0 gave 61.0 / 62.8 / 31.5 / 54.0 (variantes-20261112-0704-contexte-q8-b12291). Its answers
+# through the proxy: GSM8K 98.0 % and HumanEval 98.2 % (the lane's second proof, 2026-11-13; at the native window GSM8K
+# 98.8 % in that proof, HumanEval 99.4 % in the study). Kept for the runs after in a file of its own: a Load from the
+# cockpit stages the unit with none of the user's environment. native (or empty) brings the default back. The choice is
+# read past the uninstall, which removes it, and kept by the render that takes it, and by --prepare.
 CONTEXT_CHOICE="$CONFIG_DIR/flash-unsloth-context"
+# The requests at once in that mode, on both targets: UD-IQ3_XXS takes UD-Q4_K_XL's 1M form as it is, with 25.8 GiB
+# less of weights to hold beside it (2026-11-14).
+FLASH_UNSLOTH_1M_SLOTS="1"
+# UD-IQ3_XXS's native form, the values a measure of its memory at its lowest under load may still move (decision 1366:
+# the most requests and context first, then the speed; decision 1359: 10 GiB available at the lowest): four windows of
+# 262,144 tokens, the KV cache in q8_0, 1,048,576 tokens in all. Measured on 2026-11-14 (iq3-places.jeu, the pinned
+# image b12316, its n-gram lookup and its DFlash2 draft, --cache-ram 2048, the GPU capped at 2,000 MHz): 39 GiB
+# available at ready, 66.2 tok/s for one request and 71.5 in all with four. Eight windows of 262,144 in q8_0 were ready
+# with 17 to 18 GiB and did not hold: under GSM8K's eight requests MemAvailable fell from 26 to 15 GiB in the first
+# minute, then about 1 GiB a minute, and the box's guard stopped the engine at 5 GiB, 14 min in, with no score;
+# sixteen windows of 131,072 were stopped so under eight requests. To be proved before it ships: its lowest
+# MemAvailable under GSM8K's eight requests, and its quality (GSM8K, HumanEval, MMLU).
+FLASH_UNSLOTH_IQ3_SLOTS="4"
+FLASH_UNSLOTH_IQ3_KV="q8_0"
 MODEL="$FLASH_UNSLOTH_REPO"; MODEL_REV="$FLASH_UNSLOTH_REV"
-MODEL_FILES=("$FLASH_UNSLOTH_PART1" "$FLASH_UNSLOTH_PART2" "$FLASH_UNSLOTH_PART3" "$FLASH_UNSLOTH_PART4")
+# The target (FLASH_UNSLOTH_DEFAULT above): FLASH_UNSLOTH_TARGET given, else the one the installed unit serves (lanes.sh,
+# by the folder of its GGUF), else the default; ./install.sh --recommended installs the default whatever the unit
+# names, as it does the Kolibri lane's checkpoint. Its files and its native form are the variables above for it (SLOTS
+# and KV, each with the name a refusal says), its 1M mode the lane's (FLASH_UNSLOTH_1M_SLOTS).
+INSTALLED_TARGET="$(flash_unsloth_target "$INSTALLED" "$HERE/install-flash-unsloth.sh")"
+if [ "${QWEN38_RECOMMENDED:-0}" = 1 ]; then INSTALLED_TARGET=""; fi
+case "${FLASH_UNSLOTH_TARGET:-}" in
+  ""|flash-unsloth|flash-unsloth-iq3) ;;
+  *) die "FLASH_UNSLOTH_TARGET takes flash-unsloth (UD-Q4_K_XL) or flash-unsloth-iq3 (UD-IQ3_XXS), got: $FLASH_UNSLOTH_TARGET" ;;
+esac
+TARGET="${FLASH_UNSLOTH_TARGET:-${INSTALLED_TARGET:-$FLASH_UNSLOTH_DEFAULT}}"
+case "$TARGET" in
+  flash-unsloth)
+    MODEL_FILES=("$FLASH_UNSLOTH_PART1" "$FLASH_UNSLOTH_PART2" "$FLASH_UNSLOTH_PART3" "$FLASH_UNSLOTH_PART4")
+    SLOTS="$FLASH_UNSLOTH_SLOTS"; KV="$FLASH_UNSLOTH_KV"; TARGET_GB="$FLASH_UNSLOTH_GB"
+    SLOTS_VAR=FLASH_UNSLOTH_SLOTS; KV_VAR=FLASH_UNSLOTH_KV ;;
+  flash-unsloth-iq3)
+    MODEL_FILES=("$FLASH_UNSLOTH_IQ3_PART1" "$FLASH_UNSLOTH_IQ3_PART2" "$FLASH_UNSLOTH_IQ3_PART3" "$FLASH_UNSLOTH_IQ3_PART4")
+    SLOTS="$FLASH_UNSLOTH_IQ3_SLOTS"; KV="$FLASH_UNSLOTH_IQ3_KV"; TARGET_GB="$FLASH_UNSLOTH_IQ3_GB"
+    SLOTS_VAR=FLASH_UNSLOTH_IQ3_SLOTS; KV_VAR=FLASH_UNSLOTH_IQ3_KV ;;
+  *) die "FLASH_UNSLOTH_DEFAULT must be flash-unsloth or flash-unsloth-iq3, got: $TARGET" ;;
+esac
 DRAFT="$FLASH_UNSLOTH_DRAFT_REPO"; DRAFT_REV="$FLASH_UNSLOTH_DRAFT_REV"; DRAFT_FILE="$FLASH_UNSLOTH_DRAFT"
 LOCAL_IMAGE="$FLASH_UNSLOTH_IMAGE"
 # Its pull at its peak: 4.50 GB unpacked and 2.70 GB to download (docker image inspect and docker manifest inspect
@@ -209,7 +269,8 @@ vlane_engine_env "${FLASH_UNSLOTH_PORT:-}"
 # result; and the lean effort is its default, as on the other Qwen lanes (LEAN.md): the GGUF's is xhigh.
 TEMPLATE="$CONFIG_DIR/chat-template-flash-unsloth.jinja"
 TEMPLATE_FIXES=(LEAN_DEFAULT=1)
-part1_host(){ llane_path "$MODEL" "$MODEL_REV" "$FLASH_UNSLOTH_PART1"; }
+# the first part of the target served, which carries its chat template
+part1_host(){ llane_path "$MODEL" "$MODEL_REV" "${MODEL_FILES[0]}"; }
 lane_template(){ llane_template "$TEMPLATE" "$(part1_host)" "${TEMPLATE_FIXES[@]}"; }
 lane_template_if_cached(){ [ -f "$(part1_host)" ] || return 0; lane_template; }
 
@@ -229,7 +290,7 @@ if [ -n "${FLASH_UNSLOTH_CONTEXT+set}" ]; then
   case "$FLASH_UNSLOTH_CONTEXT" in
     1m) ;;
     ""|native) FLASH_UNSLOTH_CONTEXT=native ;;
-    *) die "FLASH_UNSLOTH_CONTEXT=$FLASH_UNSLOTH_CONTEXT: native (262,144 tokens for each of 2 requests at once, the default) or 1m (1,048,576 for one request)" ;;
+    *) die "FLASH_UNSLOTH_CONTEXT=$FLASH_UNSLOTH_CONTEXT: native (262,144 tokens for each of $SLOTS requests at once, the default) or 1m (1,048,576 for $([ "$FLASH_UNSLOTH_1M_SLOTS" = 1 ] && echo "one request" || echo "each of $FLASH_UNSLOTH_1M_SLOTS requests at once"))" ;;
   esac
   CONTEXT_GIVEN=1
 elif [ "$(head -1 "$CONTEXT_CHOICE" 2>/dev/null)" = 1m ]; then
@@ -246,24 +307,26 @@ keep_choice(){
 # The unit, rendered for this box: written to $1. Its start checks the files the engine reads (llamacpp-files.sh):
 # the four parts, the draft and the chat template, each where the unit names it.
 render_unit(){
-  local n="$FLASH_UNSLOTH_SLOTS" c="$FLASH_UNSLOTH_CTX" factor="$FLASH_UNSLOTH_YARN" type="$FLASH_UNSLOTH_KV" kv="" yarn=""
+  local n="$SLOTS" n1m="$FLASH_UNSLOTH_1M_SLOTS" c="$FLASH_UNSLOTH_CTX" factor="$FLASH_UNSLOTH_YARN" type="$KV" kv="" yarn=""
   local slots="" ctx="" files="" f
   local in_box="/root/.cache/huggingface"
   # Numbers written with no leading zero: bash's arithmetic reads one as octal, and 08 failed ("value too great for
   # base") where 0262144 rendered -c 182472 with no word said (code review of v1.48.0, 2026-11-12).
-  case "$FLASH_UNSLOTH_SLOTS" in ''|*[!0-9]*|0*) die "FLASH_UNSLOTH_SLOTS must be a number of requests, from 1, with no leading zero, got: $FLASH_UNSLOTH_SLOTS" ;; esac
+  # the target's own (SLOTS_VAR and KV_VAR: FLASH_UNSLOTH_IQ3_SLOTS on UD-IQ3_XXS) and the 1M mode's, said by their names
+  case "$n" in ''|*[!0-9]*|0*) die "$SLOTS_VAR must be a number of requests, from 1, with no leading zero, got: $n" ;; esac
+  case "$n1m" in ''|*[!0-9]*|0*) die "FLASH_UNSLOTH_1M_SLOTS must be a number of requests, from 1, with no leading zero, got: $n1m" ;; esac
   case "$FLASH_UNSLOTH_CTX" in ''|*[!0-9]*|0*) die "FLASH_UNSLOTH_CTX must be a number of tokens, with no leading zero, got: $FLASH_UNSLOTH_CTX" ;; esac
   case "$FLASH_UNSLOTH_LOAD" in mmap|auto|none|dio) ;; *) die "FLASH_UNSLOTH_LOAD must be mmap, auto, none or dio, got: $FLASH_UNSLOTH_LOAD" ;; esac
   case "$FLASH_UNSLOTH_YARN" in '') ;; *[!0-9]*|0*|1) die "FLASH_UNSLOTH_YARN must be empty or YaRN's factor, 2 or more, with no leading zero, got: $FLASH_UNSLOTH_YARN" ;; esac
-  case "$FLASH_UNSLOTH_KV" in ''|f16|q8_0) ;; *) die "FLASH_UNSLOTH_KV must be empty, f16 or q8_0 (FP8 is refused for this model), got: $FLASH_UNSLOTH_KV" ;; esac
+  case "$type" in ''|f16|q8_0) ;; *) die "$KV_VAR must be empty, f16 or q8_0 (FP8 is refused for this model), got: $type" ;; esac
   case "$FLASH_UNSLOTH_SHARED" in
     0) ;;
     1) die "FLASH_UNSLOTH_SHARED=1 (one window the requests share, -kvu) is refused: llama-server stopped itself under load in four of the nine runs that shared a window (\"failed to remove sequence\", measured on 2026-11-12 with b12291 and with the image b12316; llama.cpp issue 31656). Set it to 0, a window each." ;;
     *) die "FLASH_UNSLOTH_SHARED must be 0 (a window for each request), got: $FLASH_UNSLOTH_SHARED" ;;
   esac
-  # FLASH_UNSLOTH_CONTEXT=1m: one request, a window of 1,048,576 by YaRN at four times, its KV cache in q8_0, as measured
-  # (above)
-  if [ "$FLASH_UNSLOTH_CONTEXT" = 1m ]; then n=1; c=1048576; factor=4; type=q8_0; fi
+  # FLASH_UNSLOTH_CONTEXT=1m: 1M_SLOTS requests, a window of 1,048,576 each by YaRN at four times, their KV cache in q8_0,
+  # as measured (above), on either target
+  if [ "$FLASH_UNSLOTH_CONTEXT" = 1m ]; then n="$n1m"; c=1048576; factor=4; type=q8_0; fi
   # a window for each request, -c holding them all
   slots="-np $n"; ctx=$((c * n))
   [ -z "$type" ] || kv="-ctk $type -ctv $type"
@@ -272,7 +335,7 @@ render_unit(){
   files="$files $(llane_path "$DRAFT" "$DRAFT_REV" "$DRAFT_FILE") $TEMPLATE"
   sed -e "s|__USER__|$(id -un)|g" -e "s|__GROUP__|$(id -gn "$(id -un)")|g" -e "s|__HOME__|$HOME|g" \
       -e "s|__IMAGE__|$LOCAL_IMAGE|g" -e "s|__HF_CACHE__|$HF_CACHE|g" -e "s|__FILES__|${files# }|g" \
-      -e "s|__MODEL__|$in_box/hub/models--${MODEL//\//--}/snapshots/$MODEL_REV/${FLASH_UNSLOTH_PART1%=*}|g" \
+      -e "s|__MODEL__|$in_box/hub/models--${MODEL//\//--}/snapshots/$MODEL_REV/${MODEL_FILES[0]%=*}|g" \
       -e "s|__DRAFT__|$in_box/hub/models--${DRAFT//\//--}/snapshots/$DRAFT_REV/${DRAFT_FILE%=*}|g" \
       -e "s|__CTX__|$ctx|g" -e "s|__SLOTS__|$slots|g" -e "s|__KV__|$kv|g" -e "s|__SPEC__|$FLASH_UNSLOTH_SPEC|g" \
       -e "s|__LOAD__|$FLASH_UNSLOTH_LOAD|g" -e "s|__YARN__|$yarn|g" \
@@ -294,7 +357,7 @@ install_service(){
   # Installed, not switched to: the lane this box serves stays the lane it serves.
   echo "installed as a lane of its own. Switch to it like any lane:"
   echo "  the cockpit: Load on Qwen3.8 Flash-Next Unsloth GGUF in the Lanes view"
-  echo "  a terminal : ./switch-model.sh flash-unsloth, then the commands it prints"
+  echo "  a terminal : ./switch-model.sh $TARGET, then the commands it prints"
 }
 
 # The room the files still missing need on the cache's disk, said before a byte is downloaded: the GGUF files and
@@ -329,7 +392,7 @@ if [ "$MODE" = stage ]; then
   exit 0
 fi
 
-step "1/5 Preflight (Qwen3.8 Flash-Next Unsloth GGUF: $MODEL @ ${MODEL_REV:0:12})"
+step "1/5 Preflight (Qwen3.8 Flash-Next Unsloth GGUF: $MODEL ${MODEL_FILES[0]%%/*} @ ${MODEL_REV:0:12})"
 vlane_preflight engine-preflight.sh llamacpp-files.sh gguf-fetch.py patch-template.py
 # what is left to download of the pinned files, not what the repositories' folders hold (llamacpp-lane.sh)
 WEIGHTS_GB="$(missing_gb)"
@@ -340,8 +403,8 @@ if [ "$MODE" = units ]; then
   install_service
   step "Done: the Qwen3.8 Flash-Next Unsloth GGUF lane is installed; its first Load prepares it"
   echo "  the cockpit: Load on Qwen3.8 Flash-Next Unsloth GGUF in the Lanes view pulls its image (about 4.5 GB, 2.7 to"
-  echo "               download), fetches its GGUF files (about $FLASH_UNSLOTH_GB GB), then starts it"
-  echo "  a terminal : ./install-flash-unsloth.sh --prepare, then ./switch-model.sh flash-unsloth and the commands it prints"
+  echo "               download), fetches its GGUF files (about $TARGET_GB GB), then starts it"
+  echo "  a terminal : ./install-flash-unsloth.sh --prepare, then ./switch-model.sh $TARGET and the commands it prints"
   exit 0
 fi
 
@@ -364,7 +427,7 @@ if [ "$MODE" = prepare ]; then
   exit 0
 fi
 
-step "3/5 GGUF files ($MODEL @ ${MODEL_REV:0:12} and its draft, resumable) and the chat template"
+step "3/5 GGUF files ($MODEL ${MODEL_FILES[0]%%/*} @ ${MODEL_REV:0:12} and its draft, resumable) and the chat template"
 fetch_files
 lane_template
 
@@ -378,5 +441,5 @@ VLANE_PARSERS="llama.cpp's parser of the template's tool calls is"; VLANE_BOOT="
 vlane_prove
 
 step "Done: the Qwen3.8 Flash-Next Unsloth GGUF lane is installed and proved it serves on $ENGINE_BIND:$PORT"
-echo "  switch to it : Load on Qwen3.8 Flash-Next Unsloth GGUF in the cockpit, or ./switch-model.sh flash-unsloth"
+echo "  switch to it : Load on Qwen3.8 Flash-Next Unsloth GGUF in the cockpit, or ./switch-model.sh $TARGET"
 echo "  clients      : the proxy on :30001 with the box's key, model qwen3.8-flash-next-unsloth (OpenAI and Anthropic APIs)"

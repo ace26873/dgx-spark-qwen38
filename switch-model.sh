@@ -19,8 +19,10 @@
 #   ./switch-model.sh flash-local     # nvidia/Qwen3.8-Flash-Next-FP4-Local, NVIDIA's FP4 build of the flash model (vLLM + b12x)
 #   ./switch-model.sh ornith-122b     # ornith-ai/Ornith-1.5-122B-NVFP4, Ornith AI's mixture of experts (vLLM + b12x)
 #   ./switch-model.sh flash-unsloth   # unsloth/Qwen3.8-Flash-Next-GGUF, Unsloth's GGUF of the flash model (llama.cpp)
+#   ./switch-model.sh flash-unsloth-iq3 # the same lane on its UD-IQ3_XXS quantization, its experts in 3-bit
 #   ./switch-model.sh <target> --fetch  # that target's checkpoint only, into the cache; nothing else changes
-#   ./switch-model.sh <flash-local|flash-unsloth> --clients  # that lane's clients for its unit's window; nothing else
+#   ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients
+#                                     # that lane's clients for its unit's window; nothing else
 #
 # Within the 27B lane (stock, uncensored, fp8, uncensored-fp8, arete) it does what it
 # always did:
@@ -61,7 +63,7 @@ _ENV_HF_CACHE="${HF_CACHE:-}"      # before the pins below give it install.sh's 
 # 27B lane and restarting what follows it, where the usage was all anyone wanted (found
 # in review, 2026-09-24). MODEL_CHOICE= still names one, as install.sh takes it.
 CHOICE="${1:-${MODEL_CHOICE:-}}"
-case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
+case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
 # --fetch: the target's checkpoint only, fetched as a switch fetches it (the cache first,
 # resumable, its room checked), and nothing else: no unit, no boot, no engine, no record.
 # Library's Download runs it, and a lane installed without its weights gets them so.
@@ -76,9 +78,9 @@ case "${2:-}" in
   "") ;;
   --fetch) FETCH_ONLY=1 ;;
   --clients)
-    case "$CHOICE" in flash-local|flash-unsloth) CLIENTS_ONLY=1 ;;
-      *) die "--clients is for flash-local and flash-unsloth, the lanes whose clients follow their unit's window" ;; esac ;;
-  *) die "unknown option: $2 (the options are --fetch, and --clients for flash-local and flash-unsloth)" ;;
+    case "$CHOICE" in flash-local|flash-unsloth|flash-unsloth-iq3) CLIENTS_ONLY=1 ;;
+      *) die "--clients is for flash-local, flash-unsloth and flash-unsloth-iq3, the lanes whose clients follow their unit's window" ;; esac ;;
+  *) die "unknown option: $2 (the options are --fetch, and --clients for flash-local, flash-unsloth and flash-unsloth-iq3)" ;;
 esac
 fetched(){  # $1 what: in --fetch mode the checkpoint is in the cache, and the run ends here
   [ "$FETCH_ONLY" -eq 1 ] || return 0
@@ -773,13 +775,15 @@ fi
 # stop anything, print the exact commands. The files and the unit come from the lane's installer, with no sudo
 # (install-flash-unsloth.sh --fetch, then --stage): its GGUF files are pinned there one by one and fetched with
 # gguf-fetch.py, its image having no Python; one renderer, so a switch after the pins moved, or after the cache
-# moved, puts in the unit an install would.
+# moved, puts in the unit an install would. Its two targets, UD-Q4_K_XL (flash-unsloth) and UD-IQ3_XXS
+# (flash-unsloth-iq3), are one lane under one served name, as the Kolibri lane's two checkpoints are: the target is
+# handed to the installer (FLASH_UNSLOTH_TARGET), which fetches its files and renders its forms.
 FLASH_UNSLOTH_UNIT="/etc/systemd/system/qwen38-flash-unsloth.service"
 FLASH_UNSLOTH_UNIT_NAME="qwen38-flash-unsloth.service"
 # Rewritten with sudo, so staged at a fixed path the cockpit's exact-argv sudoers allowlist names,
 # as the other lanes' units are.
 FLU_STAGE="$CONFIG_DIR/qwen38-flash-unsloth.service.switch-stage"
-if [ "$CHOICE" = "flash-unsloth" ]; then
+if [ "$CHOICE" = "flash-unsloth" ] || [ "$CHOICE" = "flash-unsloth-iq3" ]; then
   [ -f "$FLASH_UNSLOTH_UNIT" ] || die "the Qwen3.8 Flash-Next Unsloth GGUF lane is not installed on this box (no $FLASH_UNSLOTH_UNIT). Install it once: ./install.sh --with-flash-unsloth (about 117 GB)"
   # the fetch, the unit and the boot: --clients goes straight to the clients, for the unit in place
   if [ "$CLIENTS_ONLY" -eq 0 ]; then
@@ -795,13 +799,13 @@ if [ "$CHOICE" = "flash-unsloth" ]; then
     # As the user, by the lane's installer: the files pinned there, the room checked before a byte comes, the token
     # read from the environment (gguf-fetch.py), so it is in no argv. The image is not needed for it, so a --fetch
     # of the Library works before the lane's first Load pulled it.
-    HF_CACHE="$FLU_HF" bash "$REPO_DIR/install-flash-unsloth.sh" --fetch \
+    HF_CACHE="$FLU_HF" FLASH_UNSLOTH_TARGET="$CHOICE" bash "$REPO_DIR/install-flash-unsloth.sh" --fetch \
       || die "the Qwen3.8 Flash-Next Unsloth GGUF files could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
     fetched "$FLASH_UNSLOTH_REPO @ ${FLASH_UNSLOTH_REV:0:12}"
     docker image inspect "$FLASH_UNSLOTH_IMAGE" >/dev/null 2>&1 \
       || die "the Qwen3.8 Flash-Next Unsloth GGUF lane's image (${FLASH_UNSLOTH_IMAGE:0:40}...) is missing: ./prepare-lane.sh flash-unsloth pulls it (no sudo; its first Load from the cockpit runs it), then switch again"
     # its chat template, and its unit for these files
-    HF_CACHE="$FLU_HF" bash "$REPO_DIR/install-flash-unsloth.sh" --stage "$FLU_STAGE" \
+    HF_CACHE="$FLU_HF" FLASH_UNSLOTH_TARGET="$CHOICE" bash "$REPO_DIR/install-flash-unsloth.sh" --stage "$FLU_STAGE" \
       || { rm -f "$FLU_STAGE"; die "the Qwen3.8 Flash-Next Unsloth GGUF unit could not be prepared (the lines above say why)"; }
     FLU_REWRITTEN=""
     if ! cmp -s "$FLU_STAGE" "$FLASH_UNSLOTH_UNIT"; then
@@ -831,7 +835,7 @@ if [ "$CHOICE" = "flash-unsloth" ]; then
     for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service; do
       systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
     done
-    printf '\n\033[1;32mSwitch queued: %s (%s)\033[0m\n' "$FLASH_UNSLOTH_REPO" "$FLASH_UNSLOTH_UNIT_NAME"
+    printf '\n\033[1;32mSwitch queued: %s, %s (%s)\033[0m\n' "$FLASH_UNSLOTH_REPO" "$CHOICE" "$FLASH_UNSLOTH_UNIT_NAME"
     if [ -n "$RUNNING" ]; then
       echo "Effective after:  sudo systemctl stop $RUNNING && sudo systemctl start $FLASH_UNSLOTH_UNIT_NAME   (or next reboot)"
     elif systemctl is-active --quiet "$FLASH_UNSLOTH_UNIT_NAME" 2>/dev/null; then
@@ -852,15 +856,18 @@ if [ "$CHOICE" = "flash-unsloth" ]; then
   else
     FLU_OC_SUM="$({ cat "$CONFIG_DIR/opencode.json" "$HOME/.config/opencode/opencode.json" 2>/dev/null || true; } | sha256sum)"
     # the window of the unit just staged (its -c, a window for each request), and its pair: 262,144 by default,
-    # 1,048,576 for one request with FLASH_UNSLOTH_CONTEXT=1m, the choice its installer kept (decisions 1316 and 1318)
+    # 1,048,576 with FLASH_UNSLOTH_CONTEXT=1m, the choice its installer kept (decisions 1316 and 1318); and the target it
+    # serves, which the entry's name says (lanes.sh): the unit in place's with --clients, the one just staged otherwise
     FLU_WINDOW="$(llamacpp_window "$FLASH_UNSLOTH_UNIT")"
-    FLU_PAIR="$("$REPO_DIR/oc-limits.sh" flash-unsloth --from "$FLASH_UNSLOTH_UNIT")" || FLU_PAIR=""
+    FLU_TARGET="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT" "$REPO_DIR/install-flash-unsloth.sh")"
+    FLU_TARGET="${FLU_TARGET:-$CHOICE}"
+    FLU_PAIR="$("$REPO_DIR/oc-limits.sh" "$FLU_TARGET" --from "$FLASH_UNSLOTH_UNIT")" || FLU_PAIR=""
     read -r FLU_CTX FLU_OUT _ <<< "$FLU_PAIR"
-    FLU_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label flash-unsloth "${FLU_WINDOW:-262144}" || true)"
+    FLU_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label "$FLU_TARGET" "${FLU_WINDOW:-262144}" || true)"
     FLU_PORT="$({ grep -m1 -oE 'PROXY_PORT=[0-9]+|keepalive-proxy.py [0-9]+' /etc/systemd/system/qwen38-keepalive.service 2>/dev/null || true; } | grep -oE '[0-9]+$' || true)"
     FLU_SRC="$(mktemp)"
     if [ -n "$FLU_PAIR" ] && python3 "$REPO_DIR/oc-flash-unsloth.py" "http://127.0.0.1:${FLU_PORT:-30001}/v1" "$CONFIG_DIR/api-key" \
-         "$FLU_CTX" "$FLU_OUT" "${FLU_NAME:-Qwen3.8-Flash-Next Unsloth UD-Q4_K_XL + DFlash2 (local, 262K)}" > "$FLU_SRC"; then
+         "$FLU_CTX" "$FLU_OUT" "${FLU_NAME:-Qwen3.8-Flash-Next Unsloth GGUF + DFlash2 (local)}" > "$FLU_SRC"; then
       # The compaction block is global: sized from this lane's window as every text switch sizes
       # it from its own. pi's keepRecentTokens follows (pi-gen).
       FLU_KEEP="$("$REPO_DIR/oc-limits.sh" --preserve "$FLU_CTX")" || FLU_KEEP=""
@@ -873,11 +880,11 @@ if [ "$CHOICE" = "flash-unsloth" ]; then
           || echo "NOTE: could not update the Qwen3.8 Flash-Next Unsloth GGUF limits in $OC_JSON; check them by hand ($FLU_PAIR)"
         # --clients: the limits and the entry's name for its window, alone, as for FP4-Local
         if [ "${CLIENTS_ONLY:-0}" -eq 1 ]; then
-          python3 "$REPO_DIR/oc-point-default.py" --name-only "$OC_JSON" flash-unsloth flash-unsloth "${FLU_WINDOW:-262144}" \
+          python3 "$REPO_DIR/oc-point-default.py" --name-only "$OC_JSON" flash-unsloth "$FLU_TARGET" "${FLU_WINDOW:-262144}" \
             || echo "NOTE: could not update $OC_JSON (hand-edited?); the Unsloth GGUF entry keeps its name"
           continue
         fi
-        python3 "$REPO_DIR/oc-point-default.py" "$OC_JSON" flash-unsloth flash-unsloth "${FLU_WINDOW:-262144}" \
+        python3 "$REPO_DIR/oc-point-default.py" "$OC_JSON" flash-unsloth "$FLU_TARGET" "${FLU_WINDOW:-262144}" \
           || echo "NOTE: could not update $OC_JSON (hand-edited?); set its \"model\" field yourself"
         [ -n "$FLU_KEEP" ] && { python3 "$REPO_DIR/oc-merge-limits.py" "$OC_JSON" --compaction "$FLU_KEEP" \
           || echo "NOTE: could not update the compaction block in $OC_JSON; check it by hand ($FLU_KEEP)"; }
