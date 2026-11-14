@@ -2805,7 +2805,7 @@ def collect_lifecycle():
         is_kolibri = unit == lc.KOLIBRI_UNIT
         is_nemotron = unit in NEMOTRON_LANES      # the vLLM lanes on b12x: Nemotron's two, FP4-Local, Ornith
         is_llamacpp = unit in LLAMACPP_LANES      # llama.cpp's: the Unsloth GGUF lane
-        if (is_image or is_video) and not (IMAGE_UNIT_PATHS[unit].exists() if is_image else VIDEO_UNIT_PATH.exists()):
+        if (is_image or is_video) and not (image_unit_path(unit).exists() if is_image else VIDEO_UNIT_PATH.exists()):
             continue                    # not installed: no card, no pill, no gate
         if is_kolibri and not KOLIBRI_UNIT_PATH.exists():
             continue
@@ -4297,7 +4297,11 @@ IMAGE_UNIT_PATH = Path("/etc/systemd/system/qwen38-image.service")
 IMAGE_H3_UNIT = "qwen38-image-h3.service"
 IMAGE_H3_UNIT_PATH = Path("/etc/systemd/system/qwen38-image-h3.service")
 IMAGE_UNITS = (IMAGE_UNIT, IMAGE_H3_UNIT)
-IMAGE_UNIT_PATHS = {IMAGE_UNIT: IMAGE_UNIT_PATH, IMAGE_H3_UNIT: IMAGE_H3_UNIT_PATH}
+
+
+def image_unit_path(unit: str) -> Path:
+    """The unit file of an image lane, read from the module's names when asked (a test points them elsewhere)."""
+    return IMAGE_H3_UNIT_PATH if unit == IMAGE_H3_UNIT else IMAGE_UNIT_PATH
 # The lane's second checkpoint (install-image.sh IMAGE_TURBO_PIN): eight steps fixed by
 # the sigma grid in its model_index.json, whatever num_inference_steps a request sends.
 IMAGE_TURBO_MODEL = "Qwen/Qwen-Image-2.1-Turbo"
@@ -4335,10 +4339,11 @@ IMAGE_END_MARKS = ("Pixel data generated", "Error executing request", "Failed to
 IMAGE_UNIT_CACHE: dict = {}
 
 
-def _image_unit_text(path: Path = IMAGE_UNIT_PATH) -> str:
-    """A unit's text, read once per mtime: a lifecycle tick, a status call and the tab's
-    poll each ask for the port, the bind and the model, several times a second between
-    them. Empty when the unit is absent or unreadable."""
+def _image_unit_text(path: Path | None = None) -> str:
+    """A unit's text (the Qwen-Image 2.1 lane's by default), read once per mtime: a lifecycle
+    tick, a status call and the tab's poll each ask for the port, the bind and the model,
+    several times a second between them. Empty when the unit is absent or unreadable."""
+    path = path or IMAGE_UNIT_PATH
     try:
         key = (str(path), path.stat().st_mtime_ns)
     except OSError:
@@ -4354,7 +4359,7 @@ def _image_unit_text(path: Path = IMAGE_UNIT_PATH) -> str:
     return text
 
 
-def _image_unit_flag(flag: str, fallback: str, path: Path = IMAGE_UNIT_PATH) -> str:
+def _image_unit_flag(flag: str, fallback: str, path: Path | None = None) -> str:
     """What the installed unit passes, not what this file assumes. The installer accepts
     IMAGE_BIND, so a lane bound elsewhere must not be probed on a loopback port that
     nothing is listening on: the tab would read "loading weights" forever on a lane that
@@ -4390,7 +4395,7 @@ def image_unit() -> str:
     busy = [u for u in IMAGE_UNITS if states.get(u) in lc.BUSY_STATES]
     if busy:
         return min(busy, key=lambda u: states[u] == "stopping")
-    return next((u for u in IMAGE_UNITS if IMAGE_UNIT_PATHS[u].exists()), IMAGE_UNIT)
+    return next((u for u in IMAGE_UNITS if image_unit_path(u).exists()), IMAGE_UNIT)
 
 
 def image_base(unit: str | None = None) -> str:
@@ -4446,7 +4451,7 @@ def _image_journal(invocation: str) -> list:
     return raw.splitlines()
 
 
-def image_progress(serving: bool = True, unit: str = IMAGE_UNIT) -> dict:
+def image_progress(serving: bool = True, unit: str | None = None) -> dict:
     """Which stage a request in flight is at, in the engine's own words. The boot is the
     lifecycle's business (lc.parse_image_boot_log), not this function's: two parsers of one
     journal is how two parts of a page end up disagreeing. Returns {} when nothing runs.
@@ -4454,7 +4459,7 @@ def image_progress(serving: bool = True, unit: str = IMAGE_UNIT) -> dict:
     ("[MiniMaxH3DenoisingStage] started"), read here alike."""
     if not serving:
         return {}
-    lines = _image_journal(IMAGE_INVOCATION.get(unit, ""))
+    lines = _image_journal(IMAGE_INVOCATION.get(unit or IMAGE_UNIT, ""))
     if not lines:
         return {}
     # Serving: a request is in flight until the line that ends one. The three stages are
@@ -4518,7 +4523,7 @@ def image_engine_state(unit: str, *, active: str, sub: str, prev_state: str | No
     return st, boot, running
 
 
-def image_healthy(unit: str = IMAGE_UNIT) -> bool:
+def image_healthy(unit: str | None = None) -> bool:
     """An image lane's own /health, on its own port. A 503 is its answer while it
     loads, a connection refused its answer while it starts; only a 200 is ready."""
     try:
@@ -4540,8 +4545,8 @@ def image_status() -> dict:
     probes, so they could disagree for a tick about whether the lane was up. It says which
     image lane the view addresses (unit) and every image lane installed (units)."""
     unit = image_unit()
-    path, h3 = IMAGE_UNIT_PATHS[unit], unit == IMAGE_H3_UNIT
-    out = {"unit": unit, "units": [u for u in IMAGE_UNITS if IMAGE_UNIT_PATHS[u].exists()],
+    path, h3 = image_unit_path(unit), unit == IMAGE_H3_UNIT
+    out = {"unit": unit, "units": [u for u in IMAGE_UNITS if image_unit_path(u).exists()],
            "installed": path.exists(), "port": image_h3_port() if h3 else image_port(),
            "host": _image_unit_flag("--host", "127.0.0.1", path),
            "model": _image_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3-Image" if h3 else "Qwen/Qwen-Image-2.1", path),
@@ -4640,10 +4645,10 @@ def _run_over(life: tuple, life0: tuple) -> bool:
             or life[1] != life0[1])
 
 
-def _image_life(unit: str = IMAGE_UNIT) -> tuple:
+def _image_life(unit: str | None = None) -> tuple:
     """(ActiveState, InvocationID) of an image unit, asked of systemd directly: the
     lifecycle ticks every 2 s, and the question is whether THIS request outlived its lane."""
-    raw = run(["systemctl", "show", unit, "-p", "ActiveState,InvocationID"], timeout=5)
+    raw = run(["systemctl", "show", unit or IMAGE_UNIT, "-p", "ActiveState,InvocationID"], timeout=5)
     if not answered(raw):
         return LIFE_UNKNOWN
     d = dict(ln.split("=", 1) for ln in raw.splitlines() if "=" in ln)
@@ -4661,13 +4666,13 @@ IMAGE_CRASHED = ("the image lane crashed while this image was being made (system
 IMAGE_CRASH_RESULTS = {"signal", "core-dump", "oom-kill", "watchdog"}
 
 
-def _image_exit(unit: str = IMAGE_UNIT) -> dict:
+def _image_exit(unit: str | None = None) -> dict:
     """SubState and Result of an image unit, asked of systemd once a request was cut."""
-    raw = run(["systemctl", "show", unit, "-p", "SubState,Result,NRestarts"], timeout=5)
+    raw = run(["systemctl", "show", unit or IMAGE_UNIT, "-p", "SubState,Result,NRestarts"], timeout=5)
     return dict(ln.split("=", 1) for ln in raw.splitlines() if "=" in ln)
 
 
-def _image_cut(t0: float, unit: str = IMAGE_UNIT) -> tuple[int, dict]:
+def _image_cut(t0: float, unit: str | None = None) -> tuple[int, dict]:
     """The answer for a request whose run of the lane ended under it: a crash said as one
     (the page read every such end as "Cancelled", found in review, 2026-09-24), a stop or a
     restart as the interruption it is."""
@@ -4714,7 +4719,7 @@ def _image_request_ended_since(invocation: str, since: float) -> bool:
     return bool(raw.strip())
 
 
-def _release_image_lock_when_done(life0: tuple, since: float, unit: str = IMAGE_UNIT) -> None:
+def _release_image_lock_when_done(life0: tuple, since: float, unit: str | None = None) -> None:
     """The lock of a call that timed out here, given back when the lane is done with it: its
     journal shows a request ending, or the lane is no longer the run the call went to (a
     Cancel, a Stop, a crash), or another IMAGE_TIMEOUT went by with neither."""

@@ -36,6 +36,8 @@ const IMG_H3_SIZES = [['2048x2048', 'Square, 2048 × 2048, the quickest (about 1
   ['custom', 'Custom, any multiple of 32']];
 const IMG_H3_MAX_PIXELS = 6272 * 2688;
 const IMG_H3_STEPS = 6;
+// its licence's Excluded Territories (definition 5 and clause V.4 of its LICENSE), said where the view says its licence
+const IMG_H3_LICENCE = 'Its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE).';
 // The image lane this view addresses, by cockpit.py's rule (image_unit): the one up or on its way up,
 // one coming up before one stopping, else the one installed, Qwen-Image 2.1 first.
 function imgUnit(){
@@ -132,14 +134,14 @@ function imgCurl(){
   }
   setText('img-curl', text);
 }
-// The size list of the lane the view addresses, filled again when that lane changes: the size chosen stays
-// when the other lane has it, else that lane's default.
+// The size list of the lane the view addresses, filled again when that lane changes, at that lane's default:
+// 1024 x 1024 for Qwen-Image 2.1, 2048 x 2048 for MiniMax-H3-Image (a smaller size costs it as much).
 function imgFillSizes(){
   const unit = imgUnit(); if (IS.sizesOf === unit) return;
-  const sel = $('img-size'), was = sel.value; clear(sel);
+  const sel = $('img-size'); clear(sel);
   imgSizes().forEach(([v, label]) => { const o = el('option', null, label); o.value = v; sel.append(o); });
   IS.sizesOf = unit;
-  sel.value = imgSizes().some(([v]) => v === was) ? was : imgSizes()[0][0];
+  sel.value = imgSizes()[0][0];
 }
 function imgSync(){
   imgFillSizes();
@@ -167,8 +169,7 @@ function imgSync(){
   // each lane's licence, as its model card states it: MiniMax-H3-Image's asks for its name in the product, which this view shows
   if (IS.licenseOf !== imgUnit()){
     IS.licenseOf = imgUnit(); const lic = $('img-license'); clear(lic);
-    if (h3) lic.append('MiniMax-H3-Image Community License: ', el('b', null, 'not granted in the European Union, the United Kingdom, South Korea or the United States'),
-      '; elsewhere, MiniMax’s written authorization above USD 1 million of annual revenue or for a service hosted for others. Nothing leaves this machine either way.');
+    if (h3) lic.append('MiniMax-H3-Image: ' + IMG_H3_LICENCE + ' Nothing leaves this machine either way.');
     else lic.append('Qwen Research License: research and evaluation, ', el('b', null, 'not commercial use'), '. Nothing leaves this machine either way.');
   }
   [['img-steps', 1, 100], ['img-n', 1, 10]].forEach(([id, a, b]) => { const v = id === 'img-steps' ? imgSteps() : Number($(id).value); $(id).style.setProperty('--pct', (100 * (v - a) / (b - a)).toFixed(1) + '%'); });
@@ -426,4 +427,5 @@ function wireImage(){
 }
 onShow('image', imgLane);
 onLoadChange(imgSync);
-afterApply(() => { imgRenderLane(); });
+// a lifecycle that changes the image lane the view addresses changes its sizes and its controls at once
+afterApply(() => { imgRenderLane(); if (IS.sizesOf !== imgUnit()) imgSync(); });

@@ -133,7 +133,7 @@ class TheUnit(unittest.TestCase):
         The status the tab polls takes its word instead of asking the lane a second time."""
         text = COCKPIT.read_text()
         healthy = text[text.index("def image_healthy("):text.index("def image_status(")]
-        self.assertIn('urllib.request.urlopen(urllib.request.Request(image_base() + "/health")', healthy)
+        self.assertIn('urllib.request.urlopen(urllib.request.Request(image_base(unit) + "/health")', healthy)
         self.assertIn("return False", healthy)          # any non-200 answer is "not yet"
         st = text[text.index("def image_status("):text.index("def _image_decoded_refs(")]
         self.assertIn('out["available"] = out["state"] in ("ready", "degraded")', st)

@@ -1,0 +1,58 @@
+[11-11 02:55:13] Disabling component offload for MiniMaxH3ImagePipelineConfig because minimum available memory on selected GPUs is 116.34 GiB: dit_cpu_offload=False, text_encoder_cpu_offload=False
+[11-11 02:55:13] Host and device share one memory pool: pinned host weight copies are disabled (pass --pin-cpu-memory true to override).
+[11-11 02:55:13] Host and device share one memory pool: PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True so the allocator's reserve does not crowd out the page cache.
+[11-11 02:55:13] Host and device share one memory pool: MIMALLOC_PURGE_DELAY=0 MIMALLOC_ALLOW_LARGE_OS_PAGES=0 so the CPU allocator returns freed weight copies to the pool.
+[93m[11-11 02:55:13] Host and device share one memory pool and this process has no cgroup memory limit: device allocations may fail while the page cache holds the free memory. Run with a limit a few GiB under physical memory (for example docker --memory).[0;0m
+[93m[11-11 02:55:13] Host and device share one memory pool and swap is enabled (32 GiB): the kernel may swap out weight copies under page-cache pressure. Run with swap off for this process (container --memory-swap equal to --memory, or vm.swappiness=0).[0;0m
+[11-11 02:55:13] Diffusers version: 0.37.0
+[11-11 02:55:13] Starting server...
+[11-11 02:55:18] Scheduler (dp replica 0) bind at endpoint: tcp://127.0.0.1:5645
+[11-11 02:55:19] Numerics policy: cudnn TF32 and bf16 reduced-precision reduction enabled. These lower precision below the reference, so quality='exact' is bit-reproducible on this server but not free of approximate library defaults. Pass --allow-cudnn-tf32 false --allow-bf16-reduced-precision-reduction false for the strict contract (slower fp32 convolutions).
+[11-11 02:55:19] torch.compile cache: TORCHINDUCTOR_CACHE_DIR=/root/.cache/sgl_diffusion/torch_compile_cache/inductor TRITON_CACHE_DIR=/root/.cache/sgl_diffusion/torch_compile_cache/triton
+[11-11 02:55:19] Initializing distributed environment with world_size=1, device=cuda:0, timeout=3600
+[11-11 02:55:19] Setting distributed timeout to 3600 seconds
+[11-11 02:55:19] No pipeline_class_name specified, using model_index.json
+[11-11 02:55:19] Diffusers version: 0.37.0
+[11-11 02:55:19] Using pipeline from model_index.json: MiniMaxH3ImagePipeline
+[11-11 02:55:19] Loading pipeline modules...
+[11-11 02:55:19] Model already exists locally and is complete
+[11-11 02:55:19] Model path: /hf/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/492fd8c4eca666f1085f57e30738c1e0d86b3439
+[11-11 02:55:19] Diffusers version: 0.37.0
+[11-11 02:55:19] Loading pipeline modules from config: {'_class_name': 'MiniMaxH3ImagePipeline', '_diffusers_version': '0.37.0', '_minimax_h3': {'partition': 'image', 'pdd_fused_heads': 'pdd_fused_heads.safetensors', 'schema_version': 1, 'task_aliases': {}, 'tasks': ['t2i', 'edit']}, 'processor': ['transformers', 'Qwen3VLProcessor'], 'scheduler': None, 'text_encoder': ['transformers', 'Qwen3VLForConditionalGeneration', {'type_hint': ['transformers', 'Qwen3VLForConditionalGeneration'], 'pretrained_model_name_or_path': 'MiniMaxAI/MiniMax-H3', 'subfolder': 'text_encoder', 'variant': None, 'revision': None}], 'tokenizer': ['transformers', 'Qwen2TokenizerFast'], 'transformer': ['diffusers', 'MiniMaxH3DiTModel'], 'vae': ['diffusers', 'MiniMaxH3ImageVAE']}
+[93m[11-11 02:55:19] model_index.json does not contain a video_vae module, but found {video_vae: vae} in _extra_config_module_map, adding to model_index.[0;0m
+[11-11 02:55:19] Using module vae for video_vae
+[11-11 02:55:19] Loading required components: ['processor', 'text_encoder', 'tokenizer', 'video_vae', 'transformer']
+[11-11 02:55:19] Memory-aware component load order: ['text_encoder', 'transformer', 'video_vae', 'processor', 'tokenizer']
+[11-11 02:55:19] Loading text_encoder from /h3/snapshots/42ed227ee7df40d41602854ae760620d6eb651fe/text_encoder. avail mem: 114.37 GB
+[11-11 02:55:20] Defaulting to Torch SDPA backend on SM12.x
+[11-11 02:55:20] Defaulting to Torch SDPA backend on SM12.x
+[11-11 02:58:34] Attention backends for text_encoder: torch_sdpa
+[11-11 02:58:34] Loaded text_encoder: MiniMaxH3Qwen3VLEncoder (sgl-diffusion version). model size: 48.09 GB, vram: 48.09 GB. avail GPU mem: 65.24 GB
+[11-11 02:58:34] Using fa backend for component: transformer
+[11-11 02:58:34] Loading transformer from /hf/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/492fd8c4eca666f1085f57e30738c1e0d86b3439/transformer. avail mem: 65.24 GB
+[11-11 02:58:34] Loading MiniMaxH3DiTModel from 12 safetensors file(s) , param_dtype: torch.bfloat16
+[11-11 03:01:10] MiniMax H3 AdaLN rebuild slab: 64 plans x 2 timesteps = 1.15 GiB
+[11-11 03:01:10] Attention backends for transformer: fa (deferred first-use selection)
+[11-11 03:01:10] Loaded transformer: MiniMaxH3DiTModel (sgl-diffusion version). model size: 38.6 GB, vram: 38.60 GB. avail GPU mem: 25.60 GB
+[11-11 03:01:10] Loading video_vae from /hf/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/492fd8c4eca666f1085f57e30738c1e0d86b3439/vae. avail mem: 25.60 GB
+[11-11 03:01:35] VAE: video_vae holds 299 decoder weights in torch.bfloat16 from load (file-backed)
+[11-11 03:01:35] MiniMax-H3 VAE: installed quality-gated fast path (24 QK RMSNorm+RoPE fusions, cuDNN SDPA; 64 tiles and 1 windows per decoder forward).
+[11-11 03:01:35] Attention backends for video_vae: torch_sdpa
+[11-11 03:01:35] Loaded video_vae: MiniMaxH3ImageVAE (sgl-diffusion version). model size: 1.42 GB, vram: 1.42 GB. avail GPU mem: 24.00 GB
+[11-11 03:01:35] Loading processor from /hf/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/492fd8c4eca666f1085f57e30738c1e0d86b3439/processor. avail mem: 23.99 GB
+[11-11 03:01:36] Loaded processor: Qwen3VLProcessor (sgl-diffusion version). model size: NA GB, weights: none. avail GPU mem: 24.72 GB
+[11-11 03:01:36] Loading tokenizer from /hf/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/492fd8c4eca666f1085f57e30738c1e0d86b3439/tokenizer. avail mem: 24.72 GB
+[11-11 03:01:36] Loaded tokenizer: Qwen2Tokenizer (sgl-diffusion version). model size: NA GB, weights: none. avail GPU mem: 24.63 GB
+[11-11 03:01:36] MiniMax-H3 PDD: 6 fused output heads loaded from /hf/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/492fd8c4eca666f1085f57e30738c1e0d86b3439/pdd_fused_heads.safetensors
+[11-11 03:01:36] Creating pipeline stages...
+[11-11 03:01:36] Defaulting to Torch SDPA backend on SM12.x
+[11-11 03:01:36] Using torch_sdpa attention backend
+[11-11 03:01:36] Pipeline instantiated
+[11-11 03:01:36] Worker 0: Initialized device, model, and distributed environment.
+[11-11 03:01:36] Worker 0: Scheduler loop started.
+[11-11 03:01:36] [server-load] workers_ready_monotonic_ns=110564767026202
+[11-11 03:01:36] Starting FastAPI server.
+[11-11 03:01:36] ZMQ Broker is listening for offline jobs on tcp://127.0.0.1:30097
+[11-11 03:01:37] Diffusers version: 0.37.0
+[11-11 03:02:25] MiniMax H3 image: generated 2048x2048 (min_generation_area), resized to the requested 512x512 with LANCZOS
+[11-11 03:02:25] The server is fired up and ready to roll!

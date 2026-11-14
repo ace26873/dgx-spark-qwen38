@@ -105,7 +105,7 @@ class Base(unittest.TestCase):
         # becomes a bound method and would be handed self. Two tests below call the real
         # one to check it reads the installed unit.
         cls.saved = {"image_base": cls.ck.image_base}
-        cls.ck.image_base = lambda: "http://127.0.0.1:30020"
+        cls.ck.image_base = lambda unit=None: "http://127.0.0.1:30020"
 
     @classmethod
     def tearDownClass(cls):
@@ -440,7 +440,7 @@ class OneAtATime(Base):
         def slow(req, timeout=None):
             raise socket.timeout("timed out")
         self.ck.urllib.request.urlopen = slow
-        self.ck._image_life = lambda: lives[0]
+        self.ck._image_life = lambda unit=None: lives[0]
         self.ck._image_request_ended_since = lambda invocation, since: ended[0]
         self.ck.IMAGE_END_POLL_S = 0.02
 
@@ -550,7 +550,12 @@ class ThePixelBudget(Base):
         self.assertEqual(self.ck.IMAGE_MAX_PIXELS, 2752 * 1536)
         self.assertIn("const IMG_MAX_PIXELS = 2752 * 1536;", js)
         problem = js[js.index("function imgProblem(){"):js.index("function imgEstimate(")]
-        self.assertIn("n * w * h > IMG_MAX_PIXELS", problem)
+        self.assertIn("const max = imgMaxPixels();", problem)
+        self.assertIn("if (n * w * h > max)", problem)
+        # and the MiniMax-H3-Image lane's, each read for the lane the view addresses
+        self.assertEqual(self.ck.IMAGE_H3_MAX_PIXELS, 6272 * 2688)
+        self.assertIn("const IMG_H3_MAX_PIXELS = 6272 * 2688;", js)
+        self.assertIn("const imgMaxPixels = () => imgH3() ? IMG_H3_MAX_PIXELS : IMG_MAX_PIXELS;", js)
 
 
 class ARequestCutByAStopSaysSo(Base):
@@ -569,9 +574,9 @@ class ARequestCutByAStopSaysSo(Base):
         saved = (self.ck._image_life, self.ck._image_exit)
         self.addCleanup(setattr, self.ck, "_image_life", saved[0])
         self.addCleanup(setattr, self.ck, "_image_exit", saved[1])
-        self.ck._image_life = lambda: next(it)
+        self.ck._image_life = lambda unit=None: next(it)
         # how the run ended, as systemd tells it after a stop (a crash is ACrashIsNotACancel)
-        self.ck._image_exit = lambda: {"SubState": "dead", "Result": "success", "NRestarts": "0"}
+        self.ck._image_exit = lambda unit=None: {"SubState": "dead", "Result": "success", "NRestarts": "0"}
 
     def test_a_500_from_a_lane_that_changed_is_an_interruption(self):
         self.fail_with(self.ck.urllib.error.HTTPError("http://x", 500, "Internal Server Error", {}, None))
@@ -614,10 +619,10 @@ class ACrashIsNotACancel(Base):
 
     def lives(self, *seq):
         it = iter(seq)
-        self.ck._image_life = lambda: next(it)
+        self.ck._image_life = lambda unit=None: next(it)
 
     def exits(self, **facts):
-        self.ck._image_exit = lambda: dict(facts)
+        self.ck._image_exit = lambda unit=None: dict(facts)
 
     def setUp(self):
         super().setUp()
@@ -786,7 +791,7 @@ class TheImageLaneStateHoldsWhileItServes(Base):
     U = "qwen38-image.service"
 
     def state(self, healthy, enter="100", prev="ready"):
-        self.ck.image_healthy = lambda: healthy
+        self.ck.image_healthy = lambda unit=None: healthy
         self.ck._image_journal = lambda invocation: ["[x] INFO: GET /health 200 OK"] * 300
         st, boot, running = self.ck.image_engine_state(self.U, active="active", sub="running",
                                                        prev_state=prev, enter_key=enter)
@@ -815,7 +820,7 @@ class TheImageLaneStateHoldsWhileItServes(Base):
         self.assertEqual(self.state(False, enter="200", prev="ready"), "starting")
 
     def test_a_lane_that_never_served_is_read_from_its_boot_log(self):
-        self.ck.image_healthy = lambda: False
+        self.ck.image_healthy = lambda unit=None: False
         self.ck._image_journal = lambda invocation: ["[09-22 17:20:37] Starting server...",
                                                     "[09-22 17:20:44] Loading pipeline modules...",
                                                     "... Loading transformer from /x"]
@@ -848,7 +853,7 @@ class TheJournalIsThisRunsOnly(Base):
             return "" if "_SYSTEMD_INVOCATION_ID=new-run" in argv else self.OLD_RUN
 
         self.ck.run = fake_run
-        self.ck.image_healthy = lambda: False
+        self.ck.image_healthy = lambda unit=None: False
 
     def test_a_run_that_has_printed_nothing_yet_is_starting_not_warming_up(self):
         st, boot, _ = self.ck.image_engine_state(self.U, active="active", sub="running",

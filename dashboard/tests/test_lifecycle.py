@@ -256,6 +256,47 @@ class ThreeEngines(unittest.TestCase):
         self.assertNotIn(":30001", w[0])
 
 
+class ImageH3BootLog(unittest.TestCase):
+    """A boot of the MiniMax-H3-Image lane at its SGLang commit, the engine's own lines from the study that measured it
+    on the reference box (2026-11-11, fixtures/image-h3-boot.log, the probes of /health left out): 451 s from the
+    external SSD, its text encoder, DiT and VAE named as they load. TODO(measure): the lane's own unit's journal."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lines = (HERE.parent / "fixtures" / "image-h3-boot.log").read_text().splitlines()
+
+    def at(self, needle):
+        for i, ln in enumerate(self.lines):
+            if needle in ln:
+                return lc.parse_image_h3_boot_log(self.lines[:i + 1])
+        self.fail(f"the fixture has no line with {needle!r}")
+
+    def test_a_complete_boot_is_fired_up_with_every_stage_done(self):
+        b = lc.parse_image_h3_boot_log(self.lines)
+        self.assertTrue(b["fired_up"])
+        self.assertEqual(b["done"], list(lc.IMAGE_H3_STAGES))
+
+    def test_each_milestone_names_what_is_being_loaded(self):
+        self.assertEqual(self.at("Starting server...")["stage"], "init")
+        self.assertEqual(self.at("Loading text_encoder from")["detail"], "the 48 GiB text encoder")
+        self.assertEqual(self.at("Loading MiniMaxH3DiTModel from")["detail"], "the 38.6 GiB DiT")
+        self.assertEqual(self.at("Loading video_vae from")["detail"], "the 1.4 GiB VAE")
+        b = self.at("Starting FastAPI server")
+        self.assertEqual((b["stage"], b["detail"], b["fired_up"]), ("warming-up", "one throwaway image", False))
+
+    def test_a_line_it_has_no_marker_for_reads_as_weights_without_a_name(self):
+        b = self.at("Loading processor from")
+        self.assertEqual((b["stage"], b["detail"]), ("loading-weights", "loading a pipeline component"))
+
+    def test_it_is_an_engine_the_cockpit_follows_on_its_own_facts(self):
+        self.assertIn(lc.IMAGE_H3_UNIT, lc.ENGINE_UNITS)
+        self.assertNotIn(lc.IMAGE_H3_UNIT, lc.TEXT_UNITS)
+        w = lc.warn_reasons("unit", {"unit": lc.IMAGE_H3_UNIT, "verb": "stop"}, {lc.IMAGE_H3_UNIT: "ready"})
+        self.assertEqual(len(w), 1)
+        self.assertIn("an image being generated right now is lost", w[0])
+        self.assertNotIn(":30001", w[0])
+
+
 class ImageBootLog(unittest.TestCase):
     """A real boot of the image lane, captured from journald on the reference box:
     64 s from process start to fired up. The engine and uvicorn write two different
