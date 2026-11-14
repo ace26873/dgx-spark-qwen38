@@ -9,13 +9,13 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 die() { printf '\n\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ── Same pins as install.sh (read from it: single source of truth) ──
-PINS="$(grep -E '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|MODEL_CHOICE|CONTEXT_MODE|DRAFT2_REPO|DRAFT2_REV|DRAFT2_QUANT|DRAFT2_TOKENS|SERVE_IMAGE|PORT|HF_CACHE|CONFIG_DIR)=' "$REPO_DIR/install.sh" || true)"
+PINS="$(grep -E '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|ARETE_REPO|ARETE_REV|MODEL_CHOICE|CONTEXT_MODE|DRAFT2_REPO|DRAFT2_REV|DRAFT2_QUANT|DRAFT2_TOKENS|SERVE_IMAGE|PORT|HF_CACHE|CONFIG_DIR)=' "$REPO_DIR/install.sh" || true)"
 # A count of matched lines was the old check, and adding a pin broke both scripts
 # at once (it did, on 2026-09-08). What matters is not how many lines matched but
 # whether every name this script goes on to use is defined, so that is what is
 # asserted, and a failure says which one.
 eval "$PINS"
-for _v in IMAGE STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV UNCFP8_REPO UNCFP8_REV MODEL_CHOICE DRAFT2_REPO DRAFT2_REV DRAFT2_QUANT DRAFT2_TOKENS SERVE_IMAGE PORT HF_CACHE CONFIG_DIR; do
+for _v in IMAGE STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV UNCFP8_REPO UNCFP8_REV ARETE_REPO ARETE_REV MODEL_CHOICE DRAFT2_REPO DRAFT2_REV DRAFT2_QUANT DRAFT2_TOKENS SERVE_IMAGE PORT HF_CACHE CONFIG_DIR; do
   eval "[ -n \"\${$_v:-}\" ]" || die "install.sh no longer defines $_v (repo layout changed?)"
 done
 unset _v
@@ -39,8 +39,9 @@ case "${MODEL_CHOICE}" in
   uncensored) MODEL_REPO="$UNC_REPO";   MODEL_REV="${MODEL_REV:-$UNC_REV}" ;;
   fp8)        MODEL_REPO="$FP8_REPO";   MODEL_REV="${MODEL_REV:-$FP8_REV}" ;;
   uncensored-fp8) MODEL_REPO="$UNCFP8_REPO"; MODEL_REV="${MODEL_REV:-$UNCFP8_REV}" ;;
+  arete)      MODEL_REPO="$ARETE_REPO"; MODEL_REV="${MODEL_REV:-$ARETE_REV}" ;;
   flash|flash-nvda|flash-uncensored) die "the flash targets are service-only in this release: MODEL_CHOICE=$MODEL_CHOICE ./install.sh (./run.sh covers the 27B targets)" ;;
-  *) die "MODEL_CHOICE must be stock, uncensored, fp8, uncensored-fp8, flash, flash-nvda or flash-uncensored (got: ${MODEL_CHOICE})" ;;
+  *) die "MODEL_CHOICE must be stock, uncensored, fp8, uncensored-fp8, arete, flash, flash-nvda or flash-uncensored (got: ${MODEL_CHOICE})" ;;
 esac
 # See install.sh: Qwen's FP8 checkpoint carries no KV scales, so without this the
 # KV cache falls back to bf16 and costs about half the pool.
@@ -95,6 +96,12 @@ for PAIR in "$MODEL_REPO=$MODEL_REV" "$DRAFT2_REPO=$DRAFT2_REV"; do
   CHK_OUT="$(python3 "$REPO_DIR/patch-yarn.py" --check "$HF_CACHE" "$REPO" "$REV" 2>&1)" \
     || { printf '%s\n' "$CHK_OUT" >&2; die "checkpoint $REPO is YaRN-patched for 1M context (details above). With a backup present, restore the native configs with: CONTEXT_MODE=native $PREP"; }
 done
+# Arete's checkpoint declares no KV cache: its preparation writes the lane's fp8 declaration into
+# its config (patch-kv.py), without which the engine serves a bf16 cache and about half the pool.
+if [ "$MODEL_CHOICE" = arete ]; then
+  CHK_OUT="$(python3 "$REPO_DIR/patch-kv.py" --check "$HF_CACHE" "$MODEL_REPO" "$MODEL_REV" 2>&1)" \
+    || { printf '%s\n' "$CHK_OUT" >&2; die "checkpoint $MODEL_REPO does not declare the fp8 KV cache the 27B lane serves it with (details above). Run: $PREP"; }
+fi
 docker image inspect "$SERVE_IMAGE" >/dev/null 2>&1 || die "serving image $SERVE_IMAGE not built. Run: $PREP"
 
 # ── Nothing else may be using the GPU or the port (GB10: one engine at a time) ──

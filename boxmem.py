@@ -33,7 +33,7 @@ FITS_64 = ("27b", "nemotron", "speech")
 LANES = ("27b", "flash", "image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local",
          "ornith-122b", "flash-unsloth", "speech")
 # Each target switch-model.sh and MODEL_CHOICE name, and its lane.
-TARGETS = {"stock": "27b", "uncensored": "27b", "fp8": "27b", "uncensored-fp8": "27b",
+TARGETS = {"stock": "27b", "uncensored": "27b", "fp8": "27b", "uncensored-fp8": "27b", "arete": "27b",
            "flash": "flash", "flash-nvda": "flash", "flash-uncensored": "flash",
            "image": "image", "image-turbo": "image", "video": "video",
            "kolibri": "kolibri", "kolibri-nvfp4": "kolibri", "nemotron": "nemotron",
@@ -41,6 +41,7 @@ TARGETS = {"stock": "27b", "uncensored": "27b", "fp8": "27b", "uncensored-fp8": 
            "flash-unsloth": "flash-unsloth"}
 # Targets of a lane that fits, which a 64 GB box still does not take: Qwen's FP8 weights of the 27B
 # (30.9 GB against 21.9 GB for NVFP4) leave its KV pool too little, and no 64 GB run measured them.
+# Arete's NVFP4 (21.1 GB) weighs less than RadixArk's and takes the same KV cache: it goes where that one goes.
 HEAVY_64 = ("fp8", "uncensored-fp8")
 # (sys_vendor, product_name) as a box's DMI gives them, each read on a real box and never
 # guessed, and the name its maker sells it under. Any other box is named by its DMI as it is.

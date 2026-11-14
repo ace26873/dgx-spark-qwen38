@@ -2542,7 +2542,7 @@ def _guard_failed(err: str):
 
 
 VAR2TARGET = {"STOCK_REV": "stock", "UNC_REV": "uncensored", "FP8_REV": "fp8",
-              "UNCFP8_REV": "uncensored-fp8", "FLASH_REV": "flash",
+              "UNCFP8_REV": "uncensored-fp8", "ARETE_REV": "arete", "FLASH_REV": "flash",
               "FLASH_NVDA_REV": "flash-nvda", "FLASH_UNC_REV": "flash-uncensored"}
 UNIT_PATHS = {"qwen38-sglang.service": Path("/etc/systemd/system/qwen38-sglang.service"),
               "qwen38-flash.service": CONFIG_DIR / "launch-flash.sh"}
@@ -3622,7 +3622,7 @@ ACTIONS = {
     # model switch (repo script: it never starts, stops or restarts an engine)
     "switch": {
         "danger": "medium",
-        "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8",
+        "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8", "arete",
                               "flash", "flash-nvda", "flash-uncensored", "flash-local", "image", "image-turbo",
                               "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "ornith-122b",
                               "flash-unsloth"]},
@@ -3756,6 +3756,7 @@ ACTIONS["prepare"] = {
 
 # Which pin each switch target serves (registry.PIN_MODELS names its repo).
 TARGET_PIN = {"stock": "STOCK_REV", "uncensored": "UNC_REV", "fp8": "FP8_REV", "uncensored-fp8": "UNCFP8_REV",
+              "arete": "ARETE_REV",
               "flash": "FLASH_REV", "flash-nvda": "FLASH_NVDA_REV", "flash-uncensored": "FLASH_UNC_REV",
               "image": "IMAGE_MODEL_PIN_REV", "image-turbo": "IMAGE_TURBO_PIN_REV",
               "video": "VIDEO_MODEL_PIN_REV", "kolibri": "KOLIBRI_FP8_REV", "kolibri-nvfp4": "KOLIBRI_NVFP4_REV",

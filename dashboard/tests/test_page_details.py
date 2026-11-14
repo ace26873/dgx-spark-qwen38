@@ -390,7 +390,7 @@ class SwitchPhrasesNameTheLane(unittest.TestCase):
 
     def test_every_target_reads_differently(self):
         r = run(self, r"""
-        const ts = ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'flash', 'flash-uncensored', 'flash-nvda', 'image', 'video', 'image-turbo'];
+        const ts = ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'flash', 'flash-uncensored', 'flash-nvda', 'image', 'video', 'image-turbo', 'arete'];
         report(ts.map(t => actionPhrase('switch', {target: t})));
         """)
         self.assertEqual(len(set(r)), len(r), r)
@@ -398,6 +398,7 @@ class SwitchPhrasesNameTheLane(unittest.TestCase):
         self.assertIn("Flash-Next abliterated", r[5])
         self.assertIn("MiniMax-H3", r[8])
         self.assertIn("Turbo", r[9])
+        self.assertIn("Arete 27B NVFP4 · atakans", r[10])
 
 
 class GibibytesAreSaidAsSuch(unittest.TestCase):

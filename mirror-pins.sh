@@ -43,7 +43,7 @@ RC=0
 
 # Same extraction as check-pins.sh (keep the two in sync on purpose: one
 # asks upstream, this one asks the mirror; both read the one pin block).
-pins="$(grep -E '^(STOCK|UNC|FP8|UNCFP8|FLASH|FLASH_NVDA|FLASH_UNC|DRAFT|DRAFT2)_(REPO|REV)=' "$REPO_DIR/install.sh")"
+pins="$(grep -E '^(STOCK|UNC|FP8|UNCFP8|ARETE|FLASH|FLASH_NVDA|FLASH_UNC|DRAFT|DRAFT2)_(REPO|REV)=' "$REPO_DIR/install.sh")"
 eval "$pins"
 img="$(grep -E '^(IMAGE|FLASH_IMAGE)=' "$REPO_DIR/install.sh")"
 eval "$img"
@@ -170,6 +170,7 @@ if [ "$MODE" != "--images" ]; then
   mirror_model "unc"        "$UNC_REPO"        "$UNC_REV"
   mirror_model "fp8"        "$FP8_REPO"        "$FP8_REV"
   mirror_model "uncfp8"     "$UNCFP8_REPO"     "$UNCFP8_REV"
+  mirror_model "arete"      "$ARETE_REPO"      "$ARETE_REV"
   mirror_model "flash"      "$FLASH_REPO"      "$FLASH_REV"
   mirror_model "flash-nvda" "$FLASH_NVDA_REPO" "$FLASH_NVDA_REV"
   mirror_model "flash-unc"  "$FLASH_UNC_REPO"  "$FLASH_UNC_REV"

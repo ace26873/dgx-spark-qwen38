@@ -16,7 +16,7 @@ import unittest
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SWITCH = (REPO / "switch-model.sh").read_text()
 INSTALL = (REPO / "install.sh").read_text()
-TARGETS = ("stock", "uncensored", "fp8", "uncensored-fp8", "flash", "flash-nvda", "flash-uncensored")
+TARGETS = ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-nvda", "flash-uncensored")
 ABLITERATED = ("uncensored", "uncensored-fp8", "flash-uncensored")
 
 
@@ -36,7 +36,7 @@ def run(lines, choice, var):
 
 def named_targets(out):
     """The targets a hint names as a switch, in the order it names them."""
-    return re.findall(r"(?<![\w-])(stock|uncensored-fp8|uncensored|fp8|flash-nvda|flash-uncensored|flash|image|video)(?![\w-])", out)
+    return re.findall(r"(?<![\w-])(stock|uncensored-fp8|uncensored|fp8|arete|flash-nvda|flash-uncensored|flash|image|video)(?![\w-])", out)
 
 
 class TheSwitchBackLine(unittest.TestCase):
@@ -80,7 +80,7 @@ class TheInstallersLineOnABoxThatBootsImagesOrVideo(unittest.TestCase):
                 self.assertIn("a first switch downloads about", out)   # 22 to 136 GB
 
     def test_a_standard_lane_keeps_its_load_and_its_switch(self):
-        for choice in ("stock", "fp8", "flash", "flash-nvda"):
+        for choice in ("stock", "fp8", "arete", "flash", "flash-nvda"):
             with self.subTest(choice):
                 out = run(self.LINES, choice, "MODEL_CHOICE")
                 self.assertIn("Load on that lane", out)

@@ -40,7 +40,7 @@ LANES = {
     # install.sh: IMAGE lmsysorg/sglang, UNIT_NAME qwen38-sglang.service, MODEL_CHOICE's 27B targets
     "27b": {"unit": "qwen38-sglang.service", "installer": "install.sh", "flags": True, "kind": "text",
             "engine": "sglang", "b12x": False,
-            "targets": ("stock", "uncensored", "fp8", "uncensored-fp8"), "heavy_64": ("fp8", "uncensored-fp8"),
+            "targets": ("stock", "uncensored", "fp8", "uncensored-fp8", "arete"), "heavy_64": ("fp8", "uncensored-fp8"),
             "served": "qwen3.8-27b", "provider": "qwen38", "ports": (TEXT_PORT,), "fits_64": True,
             "title": "Qwen3.8 27B"},
     # install.sh: FLASH_IMAGE lmsysorg/sglang, the launcher qwen38-flash-launch.sh.template serves it

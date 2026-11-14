@@ -95,10 +95,10 @@ jobs:
       - name: Pin contracts (every consumer's own block runs against install.sh)
         run: |
           scratch="${TMPDIR:-/tmp}"   # ci-local.sh gives each step its own; a runner has none
-          n=$(grep -cE '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|MODEL_CHOICE|CONTEXT_MODE|DRAFT2_REPO|DRAFT2_REV|DRAFT2_QUANT|DRAFT2_TOKENS|SERVE_IMAGE|PORT|HF_CACHE|CONFIG_DIR)=' install.sh)
-          [ "$n" -eq 19 ] || { echo "run.sh pin contract broken: $n != 19"; exit 1; }
-          n=$(grep -cE '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|FLASH_REPO|FLASH_REV|FLASH_IMAGE|FLASH_SERVE_IMAGE|MODEL_CHOICE|HF_CACHE|CONFIG_DIR)=' install.sh)
-          [ "$n" -eq 16 ] || { echo "switch-model.sh pin contract broken: $n != 16"; exit 1; }
+          n=$(grep -cE '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|ARETE_REPO|ARETE_REV|MODEL_CHOICE|CONTEXT_MODE|DRAFT2_REPO|DRAFT2_REV|DRAFT2_QUANT|DRAFT2_TOKENS|SERVE_IMAGE|PORT|HF_CACHE|CONFIG_DIR)=' install.sh)
+          [ "$n" -eq 21 ] || { echo "run.sh pin contract broken: $n != 21"; exit 1; }
+          n=$(grep -cE '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|ARETE_REPO|ARETE_REV|FLASH_REPO|FLASH_REV|FLASH_IMAGE|FLASH_SERVE_IMAGE|MODEL_CHOICE|HF_CACHE|CONFIG_DIR)=' install.sh)
+          [ "$n" -eq 18 ] || { echo "switch-model.sh pin contract broken: $n != 18"; exit 1; }
           # This check must mirror the grep switch-model.sh actually runs, or a
           # renamed pin passes CI and breaks the switch at runtime. It did: the
           # four FP8 names were read by the script and guarded by nothing.
@@ -108,7 +108,7 @@ jobs:
           # arms that consume it.
           SW_PAT="$(grep -E '^PINS=' switch-model.sh)"
           for v in IMAGE STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV \
-                   UNCFP8_REPO UNCFP8_REV FLASH_REPO FLASH_REV FLASH_IMAGE \
+                   UNCFP8_REPO UNCFP8_REV ARETE_REPO ARETE_REV FLASH_REPO FLASH_REV FLASH_IMAGE \
                    FLASH_SERVE_IMAGE MODEL_CHOICE HF_CACHE CONFIG_DIR; do
             grep -qE "^$v=" install.sh || { echo "install.sh no longer defines $v"; exit 1; }
             case "|$SW_PAT|" in
@@ -542,6 +542,9 @@ jobs:
           [ "$(l fp8 1m)" = "480000 160000 local, 1M" ] || { echo "fp8 1m limits drifted"; exit 1; }
           [ "$(l uncensored-fp8 1m)" = "480000 160000 local, 1M" ] || { echo "uncensored-fp8 1m drifted"; exit 1; }
           [ "$(l fp8 native)" = "173000 64000 local" ] || { echo "fp8 native drifted"; exit 1; }
+          # Arete's NVFP4 serves the NVFP4 pool (905,941 tokens at 0.76, measured 2026-11-14): the 27B's pair
+          [ "$(l arete 1m)" = "700000 200000 local, 1M" ] || { echo "arete 1m drifted"; exit 1; }
+          [ "$(l arete native)" = "173000 64000 local" ] || { echo "arete native drifted"; exit 1; }
           # Every flash target, every tier: the default tier was never asserted
           # before (the old gate fell through to the throughput arm).
           for t in flash flash-uncensored flash-nvda; do
@@ -702,7 +705,7 @@ jobs:
               [ "$OUT" -le "$CAP" ] || { echo "$c/$t asks for $OUT, above the ceiling $CAP"; exit 1; }
             done
           done
-          for c in stock uncensored fp8 uncensored-fp8; do
+          for c in stock uncensored fp8 uncensored-fp8 arete; do
             for t in native 1m; do
               read -r _ OUT _ <<<"$(l "$c" "$t")"
               [ "$OUT" -le "$CAP" ] || { echo "$c/$t asks for $OUT, above the ceiling $CAP"; exit 1; }
@@ -1152,7 +1155,7 @@ jobs:
                       return line[len(pre):-2]
               return None
 
-          for var in ("STOCK_REPO", "UNC_REPO", "FP8_REPO", "UNCFP8_REPO",
+          for var in ("STOCK_REPO", "UNC_REPO", "FP8_REPO", "UNCFP8_REPO", "ARETE_REPO",
                       "FLASH_REPO", "FLASH_NVDA_REPO", "FLASH_UNC_REPO", "DRAFT2_REPO"):
               val = pin_repo(var)
               if not val or val not in un:

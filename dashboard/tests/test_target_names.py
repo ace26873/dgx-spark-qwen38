@@ -12,6 +12,7 @@ BASE = (REPO / "dashboard/static/js/base.js").read_text()
 # target -> (installer, variable): the repository each version loads
 PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC_REPO"),
         "fp8": ("install.sh", "FP8_REPO"), "uncensored-fp8": ("install.sh", "UNCFP8_REPO"),
+        "arete": ("install.sh", "ARETE_REPO"),
         "flash": ("install.sh", "FLASH_REPO"), "flash-uncensored": ("install.sh", "FLASH_UNC_REPO"),
         "flash-nvda": ("install.sh", "FLASH_NVDA_REPO"), "flash-local": ("install-flash-local.sh", "FLASH_LOCAL_REPO"),
         "kolibri": ("install-kolibri.sh", "KOLIBRI_FP8_REPO"), "kolibri-nvfp4": ("install-kolibri.sh", "KOLIBRI_NVFP4_REPO"),
@@ -24,7 +25,7 @@ PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC
 # a repository's owner on Hugging Face, written as its own pages write its name
 PUBLISHER = {"RadixArk": "RadixArk", "edp1096": "edp1096", "Qwen": "Qwen", "nvidia": "NVIDIA", "dealignai": "dealignai",
              "Aleph-Alpha": "Aleph Alpha", "Quantinine": "Quantinine", "ornith-ai": "Ornith AI", "MiniMaxAI": "MiniMax",
-             "unsloth": "Unsloth"}
+             "unsloth": "Unsloth", "atakans": "atakans"}
 # a precision the repository's name does not say: Aleph Alpha's own release of Kolibri-1 is its FP8 build, and
 # Unsloth's GGUF repository holds every quantization of the model, the lane serving its UD-Q4_K_XL folder
 UNSAID = {"kolibri": {"fp8"}, "flash-unsloth": {"ud", "q4", "k", "xl"}}
@@ -68,8 +69,8 @@ class EachVersionHasItsOfficialName(unittest.TestCase):
                 self.assertEqual("abliterated" in model.lower(), "abliterated" in name, (name, repo))
 
     def test_a_versions_button_says_its_precision_and_its_publisher_where_its_lane_has_several(self):
-        for target in ("stock", "uncensored", "fp8", "uncensored-fp8", "flash", "flash-uncensored", "flash-nvda",
-                       "kolibri", "kolibri-nvfp4"):
+        for target in ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-uncensored",
+                       "flash-nvda", "kolibri", "kolibri-nvfp4"):
             with self.subTest(target=target):
                 pub = self.name[target].rsplit(" · ", 1)[1]
                 self.assertTrue(self.short[target].endswith(" · " + pub), self.short[target])

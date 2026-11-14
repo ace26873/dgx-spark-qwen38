@@ -39,7 +39,7 @@ no_answer() {  # $1 http code ("000": none), [$2 x-ratelimit-remaining]: 0 when 
 }
 said() { [ "${1:-000}" = 000 ] && echo "no answer" || echo "HTTP $1"; }
 
-pins="$(grep -E '^(STOCK|UNC|FP8|UNCFP8|FLASH|FLASH_NVDA|FLASH_UNC|DRAFT|DRAFT2)_(REPO|REV)=' "$REPO_DIR/install.sh")"
+pins="$(grep -E '^(STOCK|UNC|FP8|UNCFP8|ARETE|FLASH|FLASH_NVDA|FLASH_UNC|DRAFT|DRAFT2)_(REPO|REV)=' "$REPO_DIR/install.sh")"
 eval "$pins"
 # The pins that do not live in the pin block: opencode's release and its digest, and the
 # image lane's checkpoint, source commit and wheel. None of them was checked, so a release
@@ -394,6 +394,7 @@ check_model stock          "$STOCK_REPO"      "$STOCK_REV"
 check_model uncensored     "$UNC_REPO"        "$UNC_REV"
 check_model fp8            "$FP8_REPO"        "$FP8_REV"
 check_model uncensored-fp8 "$UNCFP8_REPO"     "$UNCFP8_REV"
+check_model arete          "$ARETE_REPO"      "$ARETE_REV"
 check_model flash          "$FLASH_REPO"      "$FLASH_REV"
 check_model flash-nvda     "$FLASH_NVDA_REPO" "$FLASH_NVDA_REV"
 check_model flash-unc      "$FLASH_UNC_REPO"  "$FLASH_UNC_REV"

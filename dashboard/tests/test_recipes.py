@@ -137,7 +137,7 @@ class Builtins(unittest.TestCase):
     def test_every_builtin_recipe_is_valid(self):
         recs = rc.builtins(ASSIGNS, TEMPLATES)
         self.assertEqual([r["id"] for r in recs],
-                         ["stock", "uncensored", "fp8", "uncensored-fp8", "flash",
+                         ["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash",
                           "flash-nvda", "flash-uncensored"])
         for r in recs:
             errs = rc.validate(r) if r["lane"] == "flash" else rc.validate(
@@ -160,6 +160,16 @@ class Builtins(unittest.TestCase):
         self.assertIsNone(s["serve"].get("kv_cache_dtype"))
         self.assertEqual({k: v for k, v in f["serve"].items() if k != "kv_cache_dtype"},
                          s["serve"], "fp8 must differ from stock by the KV cache alone")
+
+    def test_arete_differs_from_stock_only_by_model(self):
+        # its fp8 KV cache is declared in its config (patch-kv.py), not by the flag the FP8 targets pass:
+        # its unit is stock's, so a box serving it reports no drift
+        a, s = rc.builtin("arete", ASSIGNS, TEMPLATES), rc.builtin("stock", ASSIGNS, TEMPLATES)
+        self.assertEqual(a["lane"], "27b")
+        self.assertEqual(a["model"], {"repo": ASSIGNS["ARETE_REPO"], "revision": ASSIGNS["ARETE_REV"]})
+        self.assertIsNone(a["serve"].get("kv_cache_dtype"))
+        for k in ("engine", "drafter", "serve", "switches", "env"):
+            self.assertEqual(a[k], s[k], k)
 
     def test_uncensored_fp8_differs_from_fp8_only_by_model(self):
         a, b = rc.builtin("fp8", ASSIGNS, TEMPLATES), rc.builtin("uncensored-fp8", ASSIGNS, TEMPLATES)
@@ -924,7 +934,7 @@ class SwitchRewrite27B(unittest.TestCase):
     exercised in both directions."""
 
     KV = {"stock": "", "uncensored": "", "fp8": "--kv-cache-dtype fp8_e4m3 ",
-          "uncensored-fp8": "--kv-cache-dtype fp8_e4m3 "}
+          "uncensored-fp8": "--kv-cache-dtype fp8_e4m3 ", "arete": ""}
 
     @classmethod
     def setUpClass(cls):
