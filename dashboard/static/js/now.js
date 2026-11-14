@@ -44,7 +44,7 @@ function renderPool(){
   let sub = '';
   if (s && (s[1].state === 'ready' || s[1].state === 'degraded')){
     sub = s[0] === VIDEO_UNIT ? `${laneName} maps its weights from the drive and streams them at every step: they sit in the page cache, and its working memory grows with the length and size of the video.`
-      : s[0] === IMAGE_UNIT ? `${laneName} holds its encoder, DiT and VAE; each image adds its working memory while it is made.`
+      : isImageLane(s[0]) ? `${laneName} holds its encoder, DiT and VAE; each image adds its working memory while it is made.`
       : `${laneName} holds its weights and its KV pool: ${fmtGiB(p.lane)} on the GPU side of the pool.`;
   } else if (s && TRANSITIONAL.has(s[1].state)) sub = `${laneName} is loading: the pool fills as it boots.`;
   else if (s && s[1].state === 'stopping') sub = `${laneName} is stopping: its memory comes back in a moment.`;
@@ -148,6 +148,7 @@ function renderRack(){
     if (seated && e && e.elapsed && (st === 'ready' || st === 'degraded')) fact('up', fmtDur(e.elapsed));
     if (unit === VIDEO_UNIT) fact('4 s clip', 'about 11 min');
     if (unit === IMAGE_UNIT) fact('1024 image', laneTarget(IMAGE_UNIT) === 'image-turbo' ? 'about 7.5 s' : 'about 34 s');
+    if (unit === IMAGE_H3_UNIT) fact('2048 image', 'about 16 s');
     const en = (F.units[unit] || {}).enabled;
     // installed on demand: a lane whose runtime is not built yet says its first Load builds it
     const unbuilt = has && SIDE_LANE[unit] && (F.lanesReady || {})[SIDE_LANE[unit]] === false;
@@ -209,7 +210,7 @@ function renderServing(){
   let sub = '';
   const l = F.load || {};
   if ((st === 'ready' || st === 'degraded') && unit === VIDEO_UNIT) sub = VID_NOW.label || 'idle, one video at a time';
-  else if ((st === 'ready' || st === 'degraded') && unit === IMAGE_UNIT) sub = IMG_NOW.label || 'idle, one image at a time';
+  else if ((st === 'ready' || st === 'degraded') && isImageLane(unit)) sub = IMG_NOW.label || 'idle, one image at a time';
   else if (st === 'ready' || st === 'degraded') sub = (loadWords(l) || 'idle') + (F.pool ? `, KV pool ${Math.round(100 * physTokens(l) / F.pool)} %` : '') + (e.elapsed ? `, up ${fmtDur(e.elapsed)}` : '');
   else if (TRANSITIONAL.has(st)){ const eta = e.eta || READY_DEFAULT[unit]; sub = `${fmtDur(e.elapsed)} elapsed` + (eta && e.elapsed ? `, about ${fmtDur(Math.max(0, eta - e.elapsed))} left` : ''); }
   else if (st === 'stopping') sub = `${e.state_elapsed != null ? fmtDur(e.state_elapsed) : ''} elapsed`;
@@ -310,7 +311,7 @@ function renderActivity(){
     drawSpark($('act-spark'), 'act', cssVar('--brand'), 100, {empty: 'no video yet in this window'});
     return;
   }
-  if (unit === IMAGE_UNIT){
+  if (isImageLane(unit)){
     setText('act-title', 'Images'); setText('act-v', IMG_NOW.label ? 'Busy' : 'Idle'); setText('act-k', IMG_NOW.label || 'one image at a time on this lane');
     facts(fx, [['Up', e.elapsed ? fmtDur(e.elapsed) : null], ['Listens on', `127.0.0.1:${IMG_NOW.port || 30020}, behind this cockpit`]]);
     return;

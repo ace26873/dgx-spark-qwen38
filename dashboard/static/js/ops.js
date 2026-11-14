@@ -595,7 +595,7 @@ function wireLogs(){
 function defaultLogSource(){
   const s = servingEngine(); const u = LOGS_WANT.src || (s ? s[0] : enabledUnit());
   const e = engines()[u] || {};
-  if (u === IMAGE_UNIT || u === VIDEO_UNIT || u === PROXY_UNIT || e.state === 'failed' || e.restarting) return u;
+  if (isImageLane(u) || u === VIDEO_UNIT || u === PROXY_UNIT || e.state === 'failed' || e.restarting) return u;
   return u === UFLASH ? 'qwen38-flash' : u === KOLIBRI_UNIT ? 'qwen38-kolibri' : u === NEMOTRON_UNIT ? 'qwen38-nemotron'
     : u === NEMOTRON_SUPER_UNIT ? 'qwen38-nemotron-super' : u === FLASH_LOCAL_UNIT ? 'qwen38-flash-local'
     : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth' : 'qwen38-sglang';

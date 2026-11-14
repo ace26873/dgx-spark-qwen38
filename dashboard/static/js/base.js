@@ -98,10 +98,13 @@ const U27 = 'qwen38-sglang.service', UFLASH = 'qwen38-flash.service', IMAGE_UNIT
       VIDEO_UNIT = 'qwen38-video.service', KOLIBRI_UNIT = 'qwen38-kolibri.service', NEMOTRON_UNIT = 'qwen38-nemotron.service',
       NEMOTRON_SUPER_UNIT = 'qwen38-nemotron-super.service', FLASH_LOCAL_UNIT = 'qwen38-flash-local.service',
       ORNITH_UNIT = 'qwen38-ornith-122b.service', FLASH_UNSLOTH_UNIT = 'qwen38-flash-unsloth.service',
+      IMAGE_H3_UNIT = 'qwen38-image-h3.service',
       PROXY_UNIT = 'qwen38-keepalive.service', AGENT_UNIT = 'opencode-web.service';
 // the order of the Now view's rack and the Lanes view's cards: Ornith before Kolibri and the Nemotron lanes (Hasan, 2026-10-22);
 // the flash model's builds side by side, Unsloth's GGUF after NVIDIA's FP4-Local (v1.48)
-const LANE_UNITS = [U27, UFLASH, FLASH_LOCAL_UNIT, FLASH_UNSLOTH_UNIT, ORNITH_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, IMAGE_UNIT, VIDEO_UNIT];
+const LANE_UNITS = [U27, UFLASH, FLASH_LOCAL_UNIT, FLASH_UNSLOTH_UNIT, ORNITH_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, IMAGE_UNIT, IMAGE_H3_UNIT, VIDEO_UNIT];
+// the image lanes, Qwen-Image 2.1 and MiniMax-H3-Image: one Image view addresses the one that serves (image.js, imgUnit)
+const isImageLane = u => u === IMAGE_UNIT || u === IMAGE_H3_UNIT;
 // the two Nemotron lanes, Bolt and Super VL: one vLLM image, the same routes and the same limits
 const isNemotron = u => u === NEMOTRON_UNIT || u === NEMOTRON_SUPER_UNIT;
 // the vLLM lanes on b12x, the two Nemotron lanes, the Qwen3.8 Flash-Next FP4-Local lane and the Ornith lane: the
@@ -116,7 +119,7 @@ const llamacppName = u => `the ${LANE_NAME[u]} lane`;
 const LANE_NAME = {[U27]: 'Qwen3.8 27B', [UFLASH]: 'Qwen3.8 Flash-Next', [FLASH_LOCAL_UNIT]: 'Qwen3.8 Flash-Next FP4-Local',
                    [KOLIBRI_UNIT]: 'Kolibri-1', [NEMOTRON_UNIT]: 'Nemotron 3.5 Bolt', [NEMOTRON_SUPER_UNIT]: 'Nemotron 3.5 Super VL',
                    [ORNITH_UNIT]: 'Ornith 1.5 122B', [FLASH_UNSLOTH_UNIT]: 'Qwen3.8 Flash-Next Unsloth GGUF',
-                   [IMAGE_UNIT]: 'Qwen-Image 2.1', [VIDEO_UNIT]: 'MiniMax-H3'};
+                   [IMAGE_UNIT]: 'Qwen-Image 2.1', [IMAGE_H3_UNIT]: 'MiniMax-H3-Image', [VIDEO_UNIT]: 'MiniMax-H3'};
 // What each lane is, for people: the kind of work it does and the one line that says so.
 // `lane` names the lane's hue in the stylesheet (--lane-<lane>); `maker` its mark in img/logos.
 const LANE_META = {
@@ -129,6 +132,7 @@ const LANE_META = {
   [ORNITH_UNIT]: {title: 'Ornith 1.5 122B', kind: 'Text, images and video, 1M tokens', desc: 'Ornith AI’s mixture of experts, 122B with 8 of its 256 experts active, in its authors’ NVFP4 build, served by vLLM with b12x and its MTP head. Reasoning, tool calls and vision.', view: 'agent', lane: 'ornith-122b', maker: 'ornith'},
   [FLASH_UNSLOTH_UNIT]: {title: 'Qwen3.8 Flash-Next Unsloth GGUF', kind: 'Text, 262K tokens of context', desc: 'The same 176B model in Unsloth’s dynamic GGUF (UD-IQ3_XXS or UD-Q4_K_XL), served by llama.cpp with an n-gram lookup and a DFlash2 draft, its n-gram (PLE) table read from the disk. Reasoning and tool calls.', view: 'agent', lane: 'flash-unsloth', maker: 'unsloth'},
   [IMAGE_UNIT]: {title: 'Qwen-Image 2.1', kind: 'Images', desc: 'Create, edit with up to ten references, cut out with a real alpha channel.', view: 'image', lane: 'image', maker: 'qwen'},
+  [IMAGE_H3_UNIT]: {title: 'MiniMax-H3-Image', kind: 'Images, up to 16.9 megapixels', desc: 'MiniMax’s image model in six steps: create, or edit with up to ten references, at 2K in about 16 s and 4K in about 82 s. Its licence is not granted in the EU, the UK, South Korea or the US.', view: 'image', lane: 'image-h3', maker: 'minimax'},
   [VIDEO_UNIT]: {title: 'MiniMax-H3', kind: 'Video with sound', desc: 'Video and audio made together, from a prompt or from keyframes.', view: 'video', lane: 'video', maker: 'minimax'}};
 // a lane's maker's mark, as an image the stylesheet sizes (the marks belong to their owners, img/logos/NOTICE.md)
 function makerMark(unit, cls = 'mark'){
@@ -139,8 +143,8 @@ function makerMark(unit, cls = 'mark'){
 // How long each lane takes to answer after a start, before the box has seen one of its
 // boots (measured on the reference box). Once a lane booted in front of the cockpit, the
 // median of its own boots replaces these.
-const READY_DEFAULT = {[U27]: 540, [UFLASH]: 780, [FLASH_LOCAL_UNIT]: 1020, [KOLIBRI_UNIT]: 600, [NEMOTRON_UNIT]: 450, [NEMOTRON_SUPER_UNIT]: 660, [ORNITH_UNIT]: 420, [FLASH_UNSLOTH_UNIT]: 420, [IMAGE_UNIT]: 70, [VIDEO_UNIT]: 720};
-const TARGET_UNIT = t => t === 'image' || t === 'image-turbo' ? IMAGE_UNIT : t === 'video' ? VIDEO_UNIT
+const READY_DEFAULT = {[U27]: 540, [UFLASH]: 780, [FLASH_LOCAL_UNIT]: 1020, [KOLIBRI_UNIT]: 600, [NEMOTRON_UNIT]: 450, [NEMOTRON_SUPER_UNIT]: 660, [ORNITH_UNIT]: 420, [FLASH_UNSLOTH_UNIT]: 420, [IMAGE_UNIT]: 70, [IMAGE_H3_UNIT]: 451, [VIDEO_UNIT]: 720};
+const TARGET_UNIT = t => t === 'image' || t === 'image-turbo' ? IMAGE_UNIT : t === 'image-h3' ? IMAGE_H3_UNIT : t === 'video' ? VIDEO_UNIT
   : String(t).startsWith('kolibri') ? KOLIBRI_UNIT : t === 'nemotron-super' ? NEMOTRON_SUPER_UNIT : String(t).startsWith('nemotron') ? NEMOTRON_UNIT
   : t === 'flash-local' ? FLASH_LOCAL_UNIT : t === 'ornith-122b' ? ORNITH_UNIT : String(t).startsWith('flash-unsloth') ? FLASH_UNSLOTH_UNIT
   : String(t).startsWith('flash') ? UFLASH : U27;
@@ -148,7 +152,7 @@ const LANE_TARGETS = {[U27]: ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'a
                       [FLASH_LOCAL_UNIT]: ['flash-local'],
                       [KOLIBRI_UNIT]: ['kolibri', 'kolibri-nvfp4'], [NEMOTRON_UNIT]: ['nemotron'], [NEMOTRON_SUPER_UNIT]: ['nemotron-super'],
                       [ORNITH_UNIT]: ['ornith-122b'], [FLASH_UNSLOTH_UNIT]: ['flash-unsloth-iq3', 'flash-unsloth'], [IMAGE_UNIT]: ['image', 'image-turbo'],
-                      [VIDEO_UNIT]: ['video']};
+                      [IMAGE_H3_UNIT]: ['image-h3'], [VIDEO_UNIT]: ['video']};
 // Each version's official name: the model, its precision, and who publishes it, read off the repository its
 // installer pins (decisions 1180 and 1185: "abliterated", the word of those builds' own makers, never "uncensored"
 // nor "stock"; the targets' ids, in commands, do not change). dashboard/tests/test_target_names.py reads each
@@ -162,14 +166,16 @@ const TARGET_NAME = {stock: 'Qwen3.8 27B NVFP4 · RadixArk', uncensored: 'Qwen3.
                      kolibri: 'Kolibri-1 FP8 · Aleph Alpha', 'kolibri-nvfp4': 'Kolibri-1 NVFP4 · Quantinine',
                      nemotron: 'Nemotron 3.5 Bolt 24GB · NVIDIA', 'nemotron-super': 'Nemotron 3.5 Super VL NVFP4 · NVIDIA',
                      'ornith-122b': 'Ornith 1.5 122B NVFP4 · Ornith AI', 'flash-unsloth': 'Qwen3.8 Flash-Next UD-Q4_K_XL GGUF · Unsloth',
-                     'flash-unsloth-iq3': 'Qwen3.8 Flash-Next UD-IQ3_XXS GGUF · Unsloth'};
+                     'flash-unsloth-iq3': 'Qwen3.8 Flash-Next UD-IQ3_XXS GGUF · Unsloth',
+                     'image-h3': 'MiniMax-H3-Image · MiniMax'};
 // A version's name on its button in Lanes, and the line that tells it apart once chosen. A
 // target is declared in the tables of this block: a page test fails when one lacks a name or a line.
 const TARGET_SHORT_NAME = {stock: 'NVFP4 · RadixArk', uncensored: 'Abliterated NVFP4 · edp1096', fp8: 'FP8 · Qwen',
   'uncensored-fp8': 'Abliterated FP8 · edp1096', arete: 'Arete NVFP4 · atakans', flash: 'NVFP4 · RadixArk', 'flash-uncensored': 'Abliterated NVFP4 · dealignai',
   'flash-nvda': 'NVFP4 · NVIDIA', image: 'Base', 'image-turbo': 'Turbo', video: 'H3', kolibri: 'FP8 · Aleph Alpha',
   'kolibri-nvfp4': 'NVFP4 · Quantinine', nemotron: 'Bolt', 'nemotron-super': 'Super VL', 'flash-local': 'FP4-Local',
-  'ornith-122b': '122B', 'flash-unsloth': 'UD-Q4_K_XL · Unsloth', 'flash-unsloth-iq3': 'UD-IQ3_XXS · Unsloth'};
+  'ornith-122b': '122B', 'flash-unsloth': 'UD-Q4_K_XL · Unsloth', 'flash-unsloth-iq3': 'UD-IQ3_XXS · Unsloth',
+  'image-h3': 'H3-Image'};
 const TARGET_LINE = {
   stock: 'The default: smallest and fastest', uncensored: 'Refusals removed, same size and speed',
   fp8: "Qwen's own weights: the most faithful, and heavier", 'uncensored-fp8': 'Refusals removed, and heavier',
@@ -182,7 +188,8 @@ const TARGET_LINE = {
   'flash-local': 'The one version: NVIDIA’s FP4 build and its MTP head',
   'ornith-122b': 'The one version: its authors’ NVFP4 build and its MTP head',
   'flash-unsloth': 'Unsloth’s dynamic 4-bit GGUF, with an n-gram lookup and a DFlash2 draft: two requests at once',
-  'flash-unsloth-iq3': 'The default: its experts in 3-bit, faster, four requests at once'};
+  'flash-unsloth-iq3': 'The default: its experts in 3-bit, faster, four requests at once',
+  'image-h3': 'The one version: six steps, up to 16.9 megapixels'};
 const TARGET_NOTE = {
   stock: 'The NVFP4 quantization this repo pins by default: smallest and fastest of the 27B targets.',
   uncensored: 'The abliterated NVFP4 checkpoint: same size and speed as RadixArk’s NVFP4, refusals removed.',
@@ -202,7 +209,8 @@ const TARGET_NOTE = {
   'flash-local': 'NVIDIA’s own FP4 build of the flash model, served as its model card says for a DGX Spark: vLLM with b12x, its experts and its n-gram table in NVFP4 after a quantization-aware distillation from the full precision (GPQA Diamond 91.5 % against 92.2 % on NVIDIA’s card), an MTP head drafting 4 tokens, 262,144 tokens of context and a KV cache of about 920,000 tokens, reasoning on at lean as on the other Qwen lanes unless a request asks for another level (xhigh by default with FLASH_LOCAL_EFFORT=xhigh). Its table is read at every token: with the HF cache on another disk, its first Load copies the table’s files (32 GB) beside your home directory. The first boot tunes b12x’s kernels for this GPU, about 17 min; the next ones take about 6. The first switch downloads about 102 GB.',
   'ornith-122b': 'Ornith AI’s Ornith 1.5 122B (MIT) in its authors’ NVFP4 build, served by vLLM with b12x in the Qwen3.8 Flash-Next FP4-Local lane’s image: its experts and output head in NVFP4, its projections in FP8, an MTP head drafting 2 tokens, 1,048,576 tokens of context (its own 262,144 stretched four times with YaRN), temperature 0.6, top_p 0.95, top_k 20, reasoning on (off with effort none or minimal). It reads images and video. The first switch downloads about 78 GB.',
   'flash-unsloth': 'Unsloth’s dynamic GGUF of the flash model (UD-Q4_K_XL, 76.9 GiB of weights), served by llama.cpp’s own server with its n-gram lookup and ggml-org’s DFlash2 draft (Q8_0), its weights copied into the GPU’s memory and its n-gram (PLE) table (26.8 GiB) read from the disk as the tokens need it: 262,144 tokens of context for each of two requests at once (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer), the model card’s sampling (temperature 1.0, top_p 0.95, top_k 20), reasoning on at lean as on the other Qwen lanes unless a request asks for another level. Measured on this box at that sampling, one request, on its image (llama.cpp b12316, 2026-11-12, each text’s first pass): 51.8 tokens/s on code, 56.9 in reasoning, 31.5 on prose and 123.7 on a rewrite of code (27.9, 27.7, 27.3 and 27.4 without the lookup and the draft, on the image before it); two requests at once, 63.2 tokens/s in all. The first switch downloads about 112 GB.',
-  'flash-unsloth-iq3': 'Unsloth’s UD-IQ3_XXS GGUF of the same model, served the same way (llama.cpp’s own server, its n-gram lookup and ggml-org’s DFlash2 draft, the same chat template and sampling): its experts in 3-bit, 51.1 GiB of weights where UD-Q4_K_XL has 76.9, and the same n-gram (PLE) table, read from the disk. The room it leaves goes to more requests at once: 262,144 tokens of context for each of four, the KV cache in q8_0 (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer). Measured on this box, one request at temperature 0 on its image (llama.cpp b12316, 2026-11-14, each text’s first pass, two windows of 262,144 for both quantizations, the GPU capped at 2,400 MHz): 69.4 tokens/s on code, 76.4 in reasoning, 37.7 on prose and 171.7 on a rewrite of code, where UD-Q4_K_XL gave 55.6, 60.5, 32.0 and 129.8; with its four windows, 66.2 tokens/s for one request and 71.5 in all with four (the GPU capped at 2,000 MHz). At the medium effort and temperature 0, four requests at once (llama.cpp b12291 built on this box, 2026-11-14): GSM8K 98.8 % (250 questions; 98.4 % for UD-Q4_K_XL on the same bench) and HumanEval 98.2 % (164 problems; 99.4 %), the box keeping 28.7 GiB available at the lowest. The lane’s default since v1.49.0. The first switch downloads about 85 GB, 55 when UD-Q4_K_XL is there (the n-gram table is one file for the two).'};
+  'flash-unsloth-iq3': 'Unsloth’s UD-IQ3_XXS GGUF of the same model, served the same way (llama.cpp’s own server, its n-gram lookup and ggml-org’s DFlash2 draft, the same chat template and sampling): its experts in 3-bit, 51.1 GiB of weights where UD-Q4_K_XL has 76.9, and the same n-gram (PLE) table, read from the disk. The room it leaves goes to more requests at once: 262,144 tokens of context for each of four, the KV cache in q8_0 (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer). Measured on this box, one request at temperature 0 on its image (llama.cpp b12316, 2026-11-14, each text’s first pass, two windows of 262,144 for both quantizations, the GPU capped at 2,400 MHz): 69.4 tokens/s on code, 76.4 in reasoning, 37.7 on prose and 171.7 on a rewrite of code, where UD-Q4_K_XL gave 55.6, 60.5, 32.0 and 129.8; with its four windows, 66.2 tokens/s for one request and 71.5 in all with four (the GPU capped at 2,000 MHz). At the medium effort and temperature 0, four requests at once (llama.cpp b12291 built on this box, 2026-11-14): GSM8K 98.8 % (250 questions; 98.4 % for UD-Q4_K_XL on the same bench) and HumanEval 98.2 % (164 problems; 99.4 %), the box keeping 28.7 GiB available at the lowest. The lane’s default since v1.49.0. The first switch downloads about 85 GB, 55 when UD-Q4_K_XL is there (the n-gram table is one file for the two).',
+  'image-h3': 'MiniMax’s MiniMax-H3-Image, served by SGLang Diffusion from its main branch: text to image and editing with up to ten references, six steps fixed by the checkpoint with no guidance, from 2048 × 2048 to 16.9 megapixels (4736 × 3552, 6272 × 2688), one image per call. Measured on the reference box at this lane’s SGLang commit: 2048 × 2048 in 15.6 s, 4736 × 3552 in 81 s, an edit at 2048 × 2048 with a 1024-pixel reference in 24 s, the engine at 92.3 GB at its peak: it fits beside no other lane. Its text encoder is MiniMax-H3’s, the video lane’s, fetched with it when the video lane has not. Its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States; elsewhere commercial use above USD 1 million of annual revenue, or as a service hosted for others, needs MiniMax’s written authorization. The first switch downloads about 69 GB, and 67 more without the video lane.'};
 // What installs a lane this box does not have. Since v1.20 a plain ./install.sh installs
 // every lane, so one missing here was left out (a --no-<lane> on the last run) or did not fit:
 // --with-<lane> installs it beside the lane that serves, which keeps serving. A text lane comes with
@@ -211,7 +219,7 @@ const LANE_INSTALL = {[U27]: './install.sh --with-27b', [UFLASH]: './install.sh 
                       [VIDEO_UNIT]: './install.sh --with-video', [KOLIBRI_UNIT]: './install.sh --with-kolibri',
                       [NEMOTRON_UNIT]: './install.sh --with-nemotron', [NEMOTRON_SUPER_UNIT]: './install.sh --with-nemotron-super',
                       [FLASH_LOCAL_UNIT]: './install.sh --with-flash-local', [ORNITH_UNIT]: './install.sh --with-ornith-122b',
-                      [FLASH_UNSLOTH_UNIT]: './install.sh --with-flash-unsloth'};
+                      [FLASH_UNSLOTH_UNIT]: './install.sh --with-flash-unsloth', [IMAGE_H3_UNIT]: './install.sh --with-image-h3'};
 // A lane a 64 GB DGX Spark cannot hold (boxmem.py, which the machine panel carries): where another
 // lane names the command that installs it, it says it needs a 128 GB box. Unknown is no refusal.
 const laneFits = unit => {
@@ -249,8 +257,8 @@ const bootKnown = () => LANE_UNITS.every(n => F.units && F.units[n] && F.units[n
 function servingReady(){ const s = servingEngine(); return !!(s && ['ready', 'degraded', 'wedged'].includes(s[1].state)); }
 // A TEXT engine is up: the pool, the context window, flush, abort and smoke all talk to
 // the text engine on :30000, and with a diffusion lane serving that port is closed.
-function textReady(){ const s = servingEngine(); return servingReady() && !!s && s[0] !== IMAGE_UNIT && s[0] !== VIDEO_UNIT; }
-const imageServing = () => { const s = servingEngine(); return !!s && s[0] === IMAGE_UNIT; };
+function textReady(){ const s = servingEngine(); return servingReady() && !!s && !isImageLane(s[0]) && s[0] !== VIDEO_UNIT; }
+const imageServing = () => { const s = servingEngine(); return !!s && isImageLane(s[0]); };
 const videoServing = () => { const s = servingEngine(); return !!s && s[0] === VIDEO_UNIT; };
 function bootSeconds(unit){
   const b = ((engines()[unit] || {}).boots || []).slice().sort((a, c) => a - c), n = b.length;
@@ -268,7 +276,7 @@ const ownTarget = unit => F.target && TARGET_UNIT(F.target) === unit ? F.target 
 function servedTarget(unit){
   const s = servingEngine(), age = lastAges.engine_info;
   if (!s || s[0] !== unit || unit === VIDEO_UNIT) return null;
-  if (unit === IMAGE_UNIT) return s[1].served_target || null;
+  if (isImageLane(unit)) return s[1].served_target || null;
   return s[1].elapsed != null && age != null && age < s[1].elapsed ? ownTarget(unit) : null;
 }
 function laneTarget(unit){
@@ -581,7 +589,7 @@ function noEngineWhy(){
   if (imageServing()) return 'The image lane is serving: this talks to the text engine, which is not running.';
   if (videoServing()) return 'The video lane is serving: this talks to the text engine, which is not running.';
   const u = bootUnit();
-  return 'No text engine is serving. Start one first' + (u && u !== IMAGE_UNIT && u !== VIDEO_UNIT ? ` (it answers in ${readyIn(u)}).` : ' from Lanes.');
+  return 'No text engine is serving. Start one first' + (u && !isImageLane(u) && u !== VIDEO_UNIT ? ` (it answers in ${readyIn(u)}).` : ' from Lanes.');
 }
 function busyWhy(){
   if (offline) return 'The cockpit is unreachable: actions wait until the connection is back.';
@@ -603,7 +611,7 @@ const EXPLAIN = {
     return `systemd starts ${lane}: it loads its weights and answers in ${readyIn(p.unit)}. Follow the boot in the dock and on the Now view.`;
   },
   switch: p => (TARGET_NOTE[p.target] ? TARGET_NOTE[p.target] + '\n\n' : '') +
-    `switch-model.sh verifies the checkpoint, makes this lane the one enabled at boot and ${TARGET_UNIT(p.target) === VIDEO_UNIT ? 'changes nothing else'
+    `switch-model.sh verifies the checkpoint, makes this lane the one enabled at boot and ${TARGET_UNIT(p.target) === VIDEO_UNIT || TARGET_UNIT(p.target) === IMAGE_H3_UNIT ? 'changes nothing else'
       : TARGET_UNIT(p.target) === IMAGE_UNIT ? 'points its unit at this checkpoint'
       : TARGET_UNIT(p.target) === KOLIBRI_UNIT ? `points its unit at this checkpoint and its memory share, and makes ${LANE_NAME[KOLIBRI_UNIT]} opencode's default model, with its compaction`
       : TARGET_UNIT(p.target) === FLASH_LOCAL_UNIT ? `puts in its unit for this checkpoint, with its chat template and, when the HF cache is on another disk, the copies of its n-gram table, and makes ${LANE_NAME[FLASH_LOCAL_UNIT]} opencode's default model, with its compaction`
@@ -773,7 +781,7 @@ async function sheetGo(){
   try{
     const r = await runAction(name, params);
     if (r.ok){
-      if (name === 'unit' && params.unit === IMAGE_UNIT && params.verb !== 'start') IMG_INTERRUPTED_AT.t = Date.now();
+      if (name === 'unit' && isImageLane(params.unit) && params.verb !== 'start') IMG_INTERRUPTED_AT.t = Date.now();
       if (name === 'unit' && params.unit === VIDEO_UNIT && params.verb !== 'start') VID_INTERRUPTED_AT.t = Date.now();
       SHEET.running = false; closeSheet(!0);
       toast(`${cap1(actionPhrase(name, params))}: running${r.out.dry_run ? ' (dry run)' : ''}. The dock follows it.`, 'ok');
@@ -794,6 +802,7 @@ const IMG_INTERRUPTED_AT = {t: 0}, VID_INTERRUPTED_AT = {t: 0};
 const LANE_RUNTIME = {flash: 'its SGLang image (about 16 GB to download), its checkpoint (about 136 GB) and its reduced draft vocabulary',
   '27b': 'its SGLang image (about 15 GB to download), its DFlash2 draft (about 2 GB) and its checkpoint (22 to 31 GB)',
   image: 'a venv and SGLang Diffusion, about 12 GB, about 10 minutes',
+  'image-h3': 'a venv and SGLang Diffusion from its main branch, with FlashInfer’s kernels, about 15 GB, about 10 minutes',
   video: 'a venv and SGLang Diffusion, about 12 GB, about 10 minutes, and the Turbo adapter',
   kolibri: 'its vLLM image, about 10 GB to download (23 GB on disk), pulled and built here',
   nemotron: 'its vLLM image, about 11 GB to download (25 GB on disk), pulled and built here',
@@ -803,7 +812,7 @@ const LANE_RUNTIME = {flash: 'its SGLang image (about 16 GB to download), its ch
   'flash-unsloth': 'llama.cpp’s own server image for arm64 with CUDA, about 2.7 GB to download (4.5 GB on disk), pulled as its project publishes it'};
 const SIDE_LANE = {[IMAGE_UNIT]: 'image', [VIDEO_UNIT]: 'video', [KOLIBRI_UNIT]: 'kolibri', [NEMOTRON_UNIT]: 'nemotron',
                    [NEMOTRON_SUPER_UNIT]: 'nemotron-super', [FLASH_LOCAL_UNIT]: 'flash-local', [ORNITH_UNIT]: 'ornith-122b',
-                   [FLASH_UNSLOTH_UNIT]: 'flash-unsloth', [UFLASH]: 'flash', [U27]: '27b'};
+                   [FLASH_UNSLOTH_UNIT]: 'flash-unsloth', [IMAGE_H3_UNIT]: 'image-h3', [UFLASH]: 'flash', [U27]: '27b'};
 // The lanes whose clients follow the window their unit starts with (FLASH_LOCAL_CONTEXT=1m, FLASH_UNSLOTH_CONTEXT=1m):
 // switch-model.sh sets opencode, pi and claude-local for that window, and nothing else does. The Load of such a lane as
 // the boot lane started or restarted its unit alone, so a window chosen with --units-only reached the engine and not
@@ -835,7 +844,7 @@ function laneJourneySteps(target){
   if (sv0 && sv0[0] === unit && laneTarget(unit) === target && updateOwed(unit))
     return steps.concat(!WINDOW_CLIENTS.has(unit) ? [] : bootUnit() === unit ? [clientsStep(unit, target)] : [clientsOnlyStep(unit, target)],
                         [{name: 'unit', params: {verb: 'restart', unit}, title: `Restart ${LANE_NAME[unit]} on what the update installed`,
-             desc: `It answers again in ${readyIn(unit)}.` + (unit === IMAGE_UNIT || unit === VIDEO_UNIT ? ' A generation in flight is lost.' : '')}]);
+             desc: `It answers again in ${readyIn(unit)}.` + (isImageLane(unit) || unit === VIDEO_UNIT ? ' A generation in flight is lost.' : '')}]);
   const serving = servingEngine();
   // none enabled: the switch step makes this one the boot lane, as it does from any other
   const enabled = bootUnit();
@@ -856,7 +865,7 @@ function laneJourneySteps(target){
   const pointed = steps.length > switchAt;
   if (serving && serving[0] !== unit)
     steps.push({name: 'unit', params: {verb: 'stop', unit: serving[0]}, title: `Stop ${laneLabel(serving[0])}`,
-      desc: serving[0] === IMAGE_UNIT || serving[0] === VIDEO_UNIT ? 'A generation in flight is lost.' : 'Clients on :30001 see the engine unavailable until the next one answers.'});
+      desc: isImageLane(serving[0]) || serving[0] === VIDEO_UNIT ? 'A generation in flight is lost.' : 'Clients on :30001 see the engine unavailable until the next one answers.'});
   // The engine serves what it loaded when it started; a switch since then (a journey that
   // stopped after its first step, switch-model.sh from a terminal) changed only what the
   // next start loads, and the restart is still owed. Read against the unit's file alone, the
@@ -866,14 +875,14 @@ function laneJourneySteps(target){
   // The image engine says what it serves (cockpit.py, once per life of its unit): a switch
   // that only points the unit at the checkpoint it already serves owes no restart, which
   // would end a generation for nothing.
-  const switched = unit === IMAGE_UNIT && served ? owed : steps.length || owed;
+  const switched = isImageLane(unit) && served ? owed : steps.length || owed;
   // An update that changed what this engine starts with, while it served, owes a restart
   // too: what it brought applies at the next start (cockpit.py, stale_engines).
   const updated = !!updateOwed(unit);
   if (serving && serving[0] === unit && (switched || updated))
     steps.push({name: 'unit', params: {verb: 'restart', unit},
       title: switched ? `Restart ${LANE_NAME[unit]} on the new checkpoint` : `Restart ${LANE_NAME[unit]} on what the update installed`,
-      desc: `It answers again in ${readyIn(unit)}.` + (unit === IMAGE_UNIT || unit === VIDEO_UNIT ? ' A generation in flight is lost.' : '')});
+      desc: `It answers again in ${readyIn(unit)}.` + (isImageLane(unit) || unit === VIDEO_UNIT ? ' A generation in flight is lost.' : '')});
   else if (!serving || serving[0] !== unit)
     steps.push({name: 'unit', params: {verb: 'start', unit}, title: `Start ${LANE_NAME[unit]}`, desc: `It loads and answers in ${readyIn(unit)}.`});
   // a boot lane whose clients follow its window, started or restarted: they are set first, where its switch would be
@@ -913,7 +922,7 @@ function askJourney(target, opts = {}){
   if (serving && serving[0] === UFLASH && TRANSITIONAL.has(serving[1].state)) warns.push('Flash is booting: stopping now throws that boot away, and the next start takes a whole boot again.');
   if (serving && serving[0] !== unit && (serving[0] === U27 || serving[0] === UFLASH || serving[0] === KOLIBRI_UNIT || isB12x(serving[0]) || isLlamacpp(serving[0]))) warns.push('Agent clients on :30001 lose their engine until a text lane answers again.');
   // stopped for another lane, or restarted on its other checkpoint: either ends a generation
-  if (serving && (serving[0] === IMAGE_UNIT || serving[0] === VIDEO_UNIT) && steps.some(s => s.name === 'unit' && s.params.unit === serving[0]))
+  if (serving && (isImageLane(serving[0]) || serving[0] === VIDEO_UNIT) && steps.some(s => s.name === 'unit' && s.params.unit === serving[0]))
     warns.push('A generation in flight on ' + laneLabel(serving[0]) + ' is lost.');
   warns.forEach(x => w.append(el('p', null, x))); w.hidden = !warns.length;
   const j = $('sh-journey'); clear(j); j.hidden = false;
@@ -976,7 +985,7 @@ async function runJourney(){
       jLive(i, null);
       jStep(i, 'done');
       if (st.name === 'unit' && st.params.verb !== 'start'){
-        if (st.params.unit === IMAGE_UNIT) IMG_INTERRUPTED_AT.t = Date.now();
+        if (isImageLane(st.params.unit)) IMG_INTERRUPTED_AT.t = Date.now();
         if (st.params.unit === VIDEO_UNIT) VID_INTERRUPTED_AT.t = Date.now();
         // the next start is refused until the stopped lane reads down: wait for it.
         // A dry run never moves the engine state, so the wait would burn its whole
@@ -1169,7 +1178,7 @@ function renderBanners(state, errors){
   // the engine serves another, and nothing else on the page said so.
   const sv = servingEngine();
   // degraded too: it still serves what it loaded, and the update banner below keeps quiet then
-  if (sv && (sv[0] === U27 || sv[0] === UFLASH || sv[0] === KOLIBRI_UNIT || isB12x(sv[0]) || isLlamacpp(sv[0]) || sv[0] === IMAGE_UNIT) && (sv[1].state === 'ready' || sv[1].state === 'degraded')){
+  if (sv && (sv[0] === U27 || sv[0] === UFLASH || sv[0] === KOLIBRI_UNIT || isB12x(sv[0]) || isLlamacpp(sv[0]) || isImageLane(sv[0])) && (sv[1].state === 'ready' || sv[1].state === 'degraded')){
     const served = servedTarget(sv[0]), next = sv[1].target;
     if (served && next && served !== next)
       add('info', `${TARGET_NAME[served]} is serving, and the lane's next start loads ${TARGET_NAME[next]}.`,

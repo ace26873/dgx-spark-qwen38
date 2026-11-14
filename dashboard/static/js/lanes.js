@@ -58,7 +58,7 @@ function laneCard(unit){
     const e = engines()[unit] || {};
     const warns = [];
     if (TRANSITIONAL.has(e.state) && unit === UFLASH) warns.push('This boot is thrown away: every flash boot writes its 47.7 GiB table from scratch, so the next start takes a whole boot again (' + readyIn(unit) + ').');
-    if (e.state === 'ready') warns.push(unit === IMAGE_UNIT ? 'An image being made right now is lost.' : unit === VIDEO_UNIT ? 'A video being made right now is lost: the runtime cancels it as it stops.'
+    if (e.state === 'ready') warns.push(isImageLane(unit) ? 'An image being made right now is lost.' : unit === VIDEO_UNIT ? 'A video being made right now is lost: the runtime cancels it as it stops.'
       : 'Clients on :30001 get "engine unavailable" until an engine answers again.');
     askAction('unit', {verb: 'stop', unit}, warns);
   });

@@ -64,6 +64,9 @@ ENGINES = {
                              "pin": "sglang[diffusion]==0.5.21"},
     "qwen38-video.service": {"engine": "SGLang Diffusion", "version": "0.5.21", "reports": None,
                              "pin": "sglang[diffusion]==0.5.21"},
+    # install-image-h3.sh PIN and WHEEL: SGLang's main at a commit, over the v0.5.23 wheel, in the lane's own venv
+    "qwen38-image-h3.service": {"engine": "SGLang Diffusion", "version": "main 49f1a44", "reports": None,
+                                "pin": "sglang[diffusion]==0.5.23 at 49f1a44ee348"},
 }
 
 

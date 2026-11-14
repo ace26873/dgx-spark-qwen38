@@ -1,9 +1,13 @@
 "use strict";
-/* Image: Qwen-Image 2.1, every control it actually has.
+/* Image: Qwen-Image 2.1 and MiniMax-H3-Image, every control each actually has.
 
-   Defaults are the model's own, read out of its config: 1024x1024, 40 steps, one image,
-   CFG off, the RNG on the CPU. The lane serves one request at a time and cannot abort one:
-   cancelling restarts it. Its phase comes from its journal (cockpit.py image_progress). */
+   The view addresses the image lane that serves, else the one installed (imgUnit), and
+   takes that lane's controls, sizes and rules. Qwen-Image 2.1's defaults are the model's
+   own, read out of its config: 1024x1024, 40 steps, one image, CFG off, the RNG on the CPU.
+   MiniMax-H3-Image's: 2048x2048, its six steps fixed by the checkpoint, one image per call,
+   no guidance and no negative prompt (its sampling parameters refuse both). Each lane serves
+   one request at a time and cannot abort one: cancelling restarts it. Its phase comes from
+   its journal (cockpit.py image_progress). */
 
 const IMG_DEFAULTS = {mode: 't2i', size: '1024x1024', w: 1024, h: 1024, steps: 40, n: 1, bg: 'auto', fmt: 'png', seed: '', cfg: '', shift: '', dev: 'cpu', neg: '', prompt: ''};
 // Qwen publishes seven aspect ratios, each a multiple of 32, offered at the cookbook's
@@ -23,13 +27,33 @@ const IMG_EXAMPLES = {
 // The most pixels one call may ask for, its images together: the largest call measured
 // on this box (one 2752x1536 image, 45.5 GiB at its peak). cockpit.py refuses the same.
 const IMG_MAX_PIXELS = 2752 * 1536;
+// MiniMax-H3-Image's sizes: its model card's 16-megapixel sizes up to the largest measured on this box
+// (6272 x 2688, cockpit.py IMAGE_H3_MAX_PIXELS refuses past it; the card's 5024 x 3360 is just over),
+// and 2048 x 2048, its quickest: a size under that area is made at it and resized (min_generation_area).
+const IMG_H3_SIZES = [['2048x2048', 'Square, 2048 × 2048, the quickest (about 16 s)'], ['4096x4096', 'Square, 4096 × 4096, 16.8 megapixels'],
+  ['4736x3552', '4:3, 4736 × 3552'], ['3552x4736', '3:4, 3552 × 4736'], ['5472x3072', '16:9, 5472 × 3072'], ['3072x5472', '9:16, 3072 × 5472'],
+  ['6272x2688', '21:9, 6272 × 2688, the largest measured here'], ['1024x1024', 'Square, 1024 × 1024, made at 2048 × 2048 then resized'],
+  ['custom', 'Custom, any multiple of 32']];
+const IMG_H3_MAX_PIXELS = 6272 * 2688;
+const IMG_H3_STEPS = 6;
+// The image lane this view addresses, by cockpit.py's rule (image_unit): the one up or on its way up,
+// one coming up before one stopping, else the one installed, Qwen-Image 2.1 first.
+function imgUnit(){
+  const en = engines(), units = [IMAGE_UNIT, IMAGE_H3_UNIT], up = units.filter(u => en[u] && !UNIT_DOWN.has(en[u].state));
+  if (up.length) return up.find(u => en[u].state !== 'stopping') || up[0];
+  return units.find(u => en[u]) || IMAGE_UNIT;
+}
+const imgH3 = () => imgUnit() === IMAGE_H3_UNIT;
+const imgSizes = () => imgH3() ? IMG_H3_SIZES : IMG_SIZES;
+const imgMaxPixels = () => imgH3() ? IMG_H3_MAX_PIXELS : IMG_MAX_PIXELS;
 // The Turbo checkpoint (./switch-model.sh image-turbo) samples on the eight-step sigma grid
 // its model_index.json carries, whatever num_inference_steps a request says, so the field is
 // left out of its requests (as the cookbook says) and the slider stops offering a choice.
 const IMG_TURBO_STEPS = 8;
 // what the engine serves when it says so, what its unit's next start loads otherwise
-const imgTurbo = () => laneTarget(IMAGE_UNIT) === 'image-turbo';
-const imgSteps = () => imgTurbo() ? IMG_TURBO_STEPS : Number($('img-steps').value);
+const imgTurbo = () => !imgH3() && laneTarget(IMAGE_UNIT) === 'image-turbo';
+const imgSteps = () => imgH3() ? IMG_H3_STEPS : imgTurbo() ? IMG_TURBO_STEPS : Number($('img-steps').value);
+const imgCount = () => imgH3() ? 1 : Number($('img-n').value);
 const IS = {mode: 't2i', refs: [], inflight: null, run: null, busy: false, available: false, busyLabel: '', stageAt: {stage: '', at: 0}, watching: null, history: [], port: 30020, host: '127.0.0.1'};
 const imgVal = id => ($(id) ? $(id).value.trim() : '');
 function imgSize(){
@@ -44,11 +68,12 @@ function imgProblem(){
   if (!w || !h) return 'Set a width and a height.';
   if (w % 32 || h % 32) return `${w} × ${h} is not a multiple of 32, which the engine refuses. Nearest: ${Math.max(32, Math.round(w / 32) * 32)} × ${Math.max(32, Math.round(h / 32) * 32)}.`;
   const steps = imgSteps(); if (!(steps >= 1 && steps <= 100)) return 'Steps run from 1 to 100; the model default is 40.';
-  const n = Number($('img-n').value); if (!(n >= 1 && n <= 10)) return 'Between 1 and 10 images per call.';
-  if (n * w * h > IMG_MAX_PIXELS) return `${n} image${n > 1 ? 's' : ''} of ${w} × ${h} is ${(n * w * h / 1e6).toFixed(1)} megapixels in one call; the largest measured here is ${(IMG_MAX_PIXELS / 1e6).toFixed(1)} (45.5 GiB at its peak). The images of a call run as one batch, and running out of memory hangs this machine. Ask for fewer or smaller images.`;
+  const n = imgCount(); if (!(n >= 1 && n <= 10)) return 'Between 1 and 10 images per call.';
+  const max = imgMaxPixels();
+  if (n * w * h > max) return `${n} image${n > 1 ? 's' : ''} of ${w} × ${h} is ${(n * w * h / 1e6).toFixed(1)} megapixels in one call; the largest measured here is ${(max / 1e6).toFixed(1)} (${imgH3() ? '92.3 GB for the engine' : '45.5 GiB'} at its peak). The images of a call run as one batch, and running out of memory hangs this machine. Ask for ${imgH3() ? 'a smaller image' : 'fewer or smaller images'}.`;
   const cfg = Number(imgVal('img-cfg') || 1);
-  if (cfg > 1 && !imgVal('img-neg')) return 'A CFG scale above 1 does nothing without a negative prompt: the engine needs both.';
-  if (imgVal('img-neg') && cfg <= 1) return 'A negative prompt does nothing without a CFG scale above 1: the engine needs both.';
+  if (!imgH3() && cfg > 1 && !imgVal('img-neg')) return 'A CFG scale above 1 does nothing without a negative prompt: the engine needs both.';
+  if (!imgH3() && imgVal('img-neg') && cfg <= 1) return 'A negative prompt does nothing without a CFG scale above 1: the engine needs both.';
   if (imgEditing() && !IS.refs.length) return 'Editing needs at least one reference image.';
   const seed = imgVal('img-seed'); if (seed && !/^\d+$/.test(seed)) return 'The seed is a whole number, or empty for a random one.';
   return '';
@@ -58,12 +83,17 @@ function imgProblem(){
 // within 4.9 % of all twelve: a part per image (the text encoding, the VAE decode) and a part
 // per step (the denoiser), px = pixels / 1024^2. An edit adds about 1.6 s per reference and
 // 0.15 s per reference and step (one reference measured at 8 and at 40 steps).
+// MiniMax-H3-Image's, fitted to what the reference box measured at this lane's SGLang commit (2026-11-11):
+// 2048 x 2048 in 15.6 s, 4736 x 3552 in 81.1 s and 6272 x 2688 in 82.3 s, a size under 2048 x 2048 made at
+// that area; an edit of a 2048 x 2048 image with one reference 1024 pixels wide in 23.6 s, about 8 s a reference.
 function imgEstimate(q){
   q = q || imgFormRequest(); if (!q.w || !q.h || !q.steps) return null;
-  const px = (q.w * q.h) / (1024 * 1024), refs = q.editing ? Math.max(1, q.refs || 0) : 0;
+  const refs = q.editing ? Math.max(1, q.refs || 0) : 0;
+  if (q.h3) return (15.6 * Math.pow(Math.max(q.w * q.h, 2048 * 2048) / (4 * 1024 * 1024), 1.19) + refs * 8) * (q.n || 1);
+  const px = (q.w * q.h) / (1024 * 1024);
   return (0.42 + 0.25 * Math.pow(px, 2.08) + q.steps * 0.883 * Math.pow(px, 1.16) + refs * (1.6 + 0.15 * q.steps)) * (q.n || 1);
 }
-function imgFormRequest(){ const {w, h} = imgSize(); return {w, h, steps: imgSteps() || 0, n: Number($('img-n').value) || 1, editing: imgEditing(), refs: IS.refs.length}; }
+function imgFormRequest(){ const {w, h} = imgSize(); return {w, h, steps: imgSteps() || 0, n: imgCount() || 1, editing: imgEditing(), refs: IS.refs.length, h3: imgH3()}; }
 function imgPayload(){
   const {w, h} = imgSize();
   // output_format is always explicit: left out, the engine falls back to JPEG, this model
@@ -71,6 +101,13 @@ function imgPayload(){
   const p = {prompt: imgVal('img-prompt'), width: w, height: h, num_inference_steps: Number($('img-steps').value), n: Number($('img-n').value),
              output_format: $('img-fmt').value, response_format: 'b64_json', generator_device: $('img-dev').value};
   if (imgTurbo()) delete p.num_inference_steps;
+  // MiniMax-H3-Image: its six steps and one image are the checkpoint's, and it has no background,
+  // guidance, flow shift or negative prompt to take
+  if (imgH3()){
+    delete p.num_inference_steps; delete p.n;
+    if (imgVal('img-seed') !== '') p.seed = Number(imgVal('img-seed'));
+    return p;
+  }
   if ($('img-bg').value !== 'auto') p.background = $('img-bg').value;
   if (imgVal('img-seed') !== '') p.seed = Number(imgVal('img-seed'));
   if (imgVal('img-cfg') !== '') p.true_cfg_scale = Number(imgVal('img-cfg'));
@@ -81,7 +118,7 @@ function imgPayload(){
 }
 function imgCurl(){
   const p = imgPayload(), base = `http://${IS.host}:${IS.port}/v1/images`;
-  const where = '# run this ON the box: the image lane listens on loopback and has no API key\n';
+  const where = `# run this ON the box: the ${LANE_NAME[imgUnit()]} lane listens on loopback and has no API key\n`;
   let text;
   if (!imgEditing()) text = where + `curl -sS ${base}/generations \\\n  -H 'Content-Type: application/json' \\\n  -d ${shq(JSON.stringify(p, null, 2))}`;
   else {
@@ -95,7 +132,18 @@ function imgCurl(){
   }
   setText('img-curl', text);
 }
+// The size list of the lane the view addresses, filled again when that lane changes: the size chosen stays
+// when the other lane has it, else that lane's default.
+function imgFillSizes(){
+  const unit = imgUnit(); if (IS.sizesOf === unit) return;
+  const sel = $('img-size'), was = sel.value; clear(sel);
+  imgSizes().forEach(([v, label]) => { const o = el('option', null, label); o.value = v; sel.append(o); });
+  IS.sizesOf = unit;
+  sel.value = imgSizes().some(([v]) => v === was) ? was : imgSizes()[0][0];
+}
 function imgSync(){
+  imgFillSizes();
+  const h3 = imgH3();
   const custom = $('img-size').value === 'custom'; show('img-custom', custom);
   if (!custom){ const [w, h] = $('img-size').value.split('x'); $('img-w').value = w; $('img-h').value = h; }
   document.querySelectorAll('#img-mode button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === IS.mode)));
@@ -104,12 +152,25 @@ function imgSync(){
   // Under the Turbo the slider shows the eight steps the checkpoint runs, its thumb too (it
   // stayed on the base's 40 beside an 8, seen on the reference box), and keeps the base's
   // setting aside for when the base comes back.
-  const turbo = imgTurbo(), st = $('img-steps');
-  if (turbo && st.value !== String(IMG_TURBO_STEPS)){ IS.baseSteps = st.value; st.value = String(IMG_TURBO_STEPS); }
-  else if (!turbo && IS.baseSteps != null){ st.value = IS.baseSteps; IS.baseSteps = null; }
-  st.disabled = turbo;
-  setText('img-steps-hint', turbo ? 'fixed at 8 by the Turbo checkpoint' : 'model default 40');
+  const turbo = imgTurbo(), fixed = turbo || h3, st = $('img-steps');
+  const fixedTo = String(h3 ? IMG_H3_STEPS : IMG_TURBO_STEPS);
+  if (fixed && st.value !== fixedTo){ if (IS.baseSteps == null) IS.baseSteps = st.value; st.value = fixedTo; }
+  else if (!fixed && IS.baseSteps != null){ st.value = IS.baseSteps; IS.baseSteps = null; }
+  st.disabled = fixed;
+  setText('img-steps-hint', h3 ? 'fixed at 6 by the checkpoint' : turbo ? 'fixed at 8 by the Turbo checkpoint' : 'model default 40');
   setText('img-steps-o', String(imgSteps())); setText('img-n-o', $('img-n').value);
+  // MiniMax-H3-Image takes none of these: one image per call, no background, guidance, flow shift or negative prompt
+  ['img-n-f', 'img-bg-f', 'img-cfg-f', 'img-shift-f', 'img-neg-f'].forEach(id => show(id, !h3));
+  document.querySelectorAll('#img-examples button').forEach(b => { b.hidden = h3 && !!(IMG_EXAMPLES[b.textContent] || {}).bg; });
+  setText('img-lede', h3 ? 'MiniMax-H3-Image on this box: create, or edit with up to ten references, from 2048 × 2048 to 16.9 megapixels in six steps.'
+    : 'Qwen-Image 2.1 on this box: create, edit with up to ten references, and cut out with a real alpha channel.');
+  // each lane's licence, as its model card states it: MiniMax-H3-Image's asks for its name in the product, which this view shows
+  if (IS.licenseOf !== imgUnit()){
+    IS.licenseOf = imgUnit(); const lic = $('img-license'); clear(lic);
+    if (h3) lic.append('MiniMax-H3-Image Community License: ', el('b', null, 'not granted in the European Union, the United Kingdom, South Korea or the United States'),
+      '; elsewhere, MiniMax’s written authorization above USD 1 million of annual revenue or for a service hosted for others. Nothing leaves this machine either way.');
+    else lic.append('Qwen Research License: research and evaluation, ', el('b', null, 'not commercial use'), '. Nothing leaves this machine either way.');
+  }
   [['img-steps', 1, 100], ['img-n', 1, 10]].forEach(([id, a, b]) => { const v = id === 'img-steps' ? imgSteps() : Number($(id).value); $(id).style.setProperty('--pct', (100 * (v - a) / (b - a)).toFixed(1) + '%'); });
   const problem = imgProblem();
   show('img-problem', !!problem && (IS.touched || !!imgVal('img-prompt'))); setText('img-problem', problem);
@@ -120,20 +181,22 @@ function imgSync(){
   const secs = imgEstimate(), {w, h} = imgSize();
   setText('img-cost-v', secs ? 'about ' + fmtDur(secs) : '…');
   setText('img-cost-k', w && h ? `${(w * h / 1e6).toFixed(2)} megapixels${Number($('img-n').value) > 1 ? ' each' : ''}` : '');
-  setText('img-cost-b', w * h >= 3.5e6 ? 'Peaks at 45.5 GiB instead of 34.8: four times the pixels cost five times the time.' : 'Fitted to six sizes of both checkpoints measured on this box.');
+  setText('img-cost-b', h3 ? 'Fitted to three sizes and an edit measured on this box; the engine holds 92.3 GB at its peak, alone on the box.'
+    : w * h >= 3.5e6 ? 'Peaks at 45.5 GiB instead of 34.8: four times the pixels cost five times the time.' : 'Fitted to six sizes of both checkpoints measured on this box.');
   const cnt = imgVal('img-prompt').length; setText('img-count', cnt ? cnt + ' characters' : '');
   imgCurl();
 }
 function imgLaneWhy(){
-  const e = engines()[IMAGE_UNIT];
+  const e = engines()[imgUnit()];
   if (!F.life) return 'Checking the lane…';
   if (!e) return 'The image lane is not installed on this box.';
   if (TRANSITIONAL.has(e.state)) return 'The lane is booting: Generate turns on by itself when it answers.';
   return 'The image lane is not serving. Load it first.';
 }
 function imgReset(){
-  const d = IMG_DEFAULTS; IS.mode = d.mode;
-  $('img-size').value = d.size; $('img-w').value = d.w; $('img-h').value = d.h; $('img-steps').value = d.steps; $('img-n').value = d.n;
+  const d = IMG_DEFAULTS; IS.mode = d.mode; imgFillSizes();
+  const size = imgSizes()[0][0], [sw, sh] = size.split('x');
+  $('img-size').value = size; $('img-w').value = sw; $('img-h').value = sh; $('img-steps').value = d.steps; $('img-n').value = d.n; IS.baseSteps = null;
   $('img-bg').value = d.bg; $('img-fmt').value = d.fmt; $('img-dev').value = d.dev; $('img-seed').value = d.seed; $('img-cfg').value = d.cfg;
   $('img-shift').value = d.shift; $('img-neg').value = d.neg; $('img-prompt').value = d.prompt; $('img-adv').open = false; IS.touched = false;
   imgSync();
@@ -141,7 +204,8 @@ function imgReset(){
 function imgLoadExample(name){
   const ex = IMG_EXAMPLES[name]; if (!ex) return;
   imgReset(); IS.mode = ex.mode; $('img-prompt').value = ex.prompt;
-  if (ex.size) $('img-size').value = ex.size; if (ex.bg){ $('img-bg').value = ex.bg; $('img-adv').open = true; }
+  if (ex.size && imgSizes().some(([v]) => v === ex.size)) $('img-size').value = ex.size;
+  if (ex.bg && !imgH3()){ $('img-bg').value = ex.bg; $('img-adv').open = true; }
   document.querySelectorAll('#img-examples button').forEach(b => b.setAttribute('aria-pressed', String(b.textContent === name)));
   imgSync();
 }
@@ -177,7 +241,7 @@ function imgShow(out, fmt){
   const sc = $('img-screen'); clear(sc); sc.dataset.mode = 'show';
   const imgs = out.data || [];
   const {w, h} = imgSize(), kind = fmt === 'webp' ? 'webp' : 'png', stamp = Date.now();
-  const name = i => `qwen-image-${stamp}${imgs.length > 1 ? '-' + (i + 1) : ''}.${fmt}`;
+  const name = i => `${imgH3() ? 'minimax-h3-image' : 'qwen-image'}-${stamp}${imgs.length > 1 ? '-' + (i + 1) : ''}.${fmt}`;
   // each image opens at full size, the size it says once decoded or the one asked for
   const zoomable = (im, i) => { im.addEventListener('click', () => openViewer(im.src, im.naturalWidth || w, im.naturalHeight || h, name(i))); return im; };
   if (imgs.length === 1){ const im = zoomable(el('img'), 0); im.src = `data:image/${kind};base64,${imgs[0].b64_json}`;
@@ -260,22 +324,27 @@ function imgWatch(on){
   if (want) IS.watching = setInterval(() => { if (!IS.inflight && (document.hidden || activeView !== 'image')){ clearInterval(IS.watching); IS.watching = null; return; } imgLane(); }, IS.inflight ? 1500 : 2000);
 }
 function imgRenderLane(){
-  const box = $('img-lane'), e = engines()[IMAGE_UNIT], s = servingEngine();
+  const unit = imgUnit(), box = $('img-lane'), e = engines()[unit], s = servingEngine();
   const ready = !!e && (e.state === 'ready' || e.state === 'degraded'); IS.available = ready;
-  const sig = !F.life ? 'wait' : !e ? (laneFits(IMAGE_UNIT) ? 'absent' : 'absent:64') : ready ? 'ready' : TRANSITIONAL.has(e.state) ? 'boot' : 'down:' + (s ? s[0] : '');
+  // every image lane installed, each with its Load when none serves
+  const others = [IMAGE_UNIT, IMAGE_H3_UNIT].filter(u => engines()[u]);
+  const st = !F.life ? 'wait' : !e ? (laneFits(unit) ? 'absent' : 'absent:64') : ready ? 'ready' : TRANSITIONAL.has(e.state) ? 'boot' : 'down:' + (s ? s[0] : '') + ':' + others.join(',');
+  const sig = st + '|' + unit;
   if (box.dataset.sig !== sig){
     box.dataset.sig = sig; clear(box);
     // on a 64 GB box the command would be refused: the lane needs a 128 GB one (review, 2026-10-23)
-    if (sig.startsWith('absent')){ const b = el('div', 'banner info'); b.append(el('span', 'lamp')); const d = el('div'); d.append(el('b', null, 'The image lane is not installed. '), el('span', null, sig === 'absent' ? 'On the box: ./install.sh --with-image (46 GB, about 25 min).' : `It ${NEEDS_128}, and this box is a 64 GB one.`)); b.append(d); box.append(b); }
-    if (sig === 'boot'){ const card = el('div', 'progress-card'); card.style.marginBottom = 'var(--s-5)'; const top = el('div', 'top'); top.append(el('b', null, 'Loading Qwen-Image'), el('span', 'eta'));
+    if (st.startsWith('absent')){ const b = el('div', 'banner info'); b.append(el('span', 'lamp')); const d = el('div'); d.append(el('b', null, 'The image lane is not installed. '), el('span', null, st === 'absent' ? 'On the box: ./install.sh --with-image (46 GB, about 25 min).' : `It ${NEEDS_128}, and this box is a 64 GB one.`)); b.append(d); box.append(b); }
+    if (st === 'boot'){ const card = el('div', 'progress-card'); card.style.marginBottom = 'var(--s-5)'; const top = el('div', 'top'); top.append(el('b', null, `Loading ${LANE_NAME[unit]}`), el('span', 'eta'));
       const m = el('div', 'meter'); m.append(el('i')); card.append(top, m); box.append(card); }
-    if (sig.startsWith('down')){ const card = el('div', 'banner info'); card.style.alignItems = 'center'; card.append(el('span', 'lamp' + (e.state === 'failed' ? ' err' : '')));
+    if (st.startsWith('down')){ const card = el('div', 'banner info'); card.style.alignItems = 'center'; card.append(el('span', 'lamp' + (e.state === 'failed' ? ' err' : '')));
       const d = el('div'); d.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3)';
       const t = el('span', null, e.state === 'failed' ? 'The image lane failed. Its journal is in Logs.' : s ? `${laneLabel(s[0])} holds the box. Loading the image lane stops it first.` : 'The image lane is stopped.'); t.style.cssText = 'flex:1; min-width:240px';
-      const b = el('button', 'btn primary', 'Load Qwen-Image'); b.type = 'button'; b.addEventListener('click', () => askJourney(laneTarget(IMAGE_UNIT) || 'image'));
-      d.append(t, b); card.append(d); box.append(card); }
+      d.append(t);
+      others.forEach((u, i) => { const b = el('button', i ? 'btn' : 'btn primary', u === IMAGE_H3_UNIT ? 'Load MiniMax-H3-Image' : 'Load Qwen-Image'); b.type = 'button';
+        b.addEventListener('click', () => askJourney(laneTarget(u) || LANE_TARGETS[u][0])); d.append(b); });
+      card.append(d); box.append(card); }
   }
-  if (sig === 'boot'){ const card = box.firstChild, eta = e.eta || READY_DEFAULT[IMAGE_UNIT], pct = eta && e.elapsed ? Math.min(97, 100 * e.elapsed / eta) : 6;
+  if (st === 'boot'){ const card = box.firstChild, eta = e.eta || READY_DEFAULT[unit], pct = eta && e.elapsed ? Math.min(97, 100 * e.elapsed / eta) : 6;
     card.querySelector('.meter i').style.width = pct.toFixed(1) + '%'; setText(card.querySelector('.eta'), e.elapsed && eta ? `about ${fmtDur(Math.max(0, eta - e.elapsed))} left` : ''); }
   cap('img-cap', !e ? 'not installed' : ready ? (IS.busy || IS.inflight ? 'making an image' : 'ready') : STATE_LABEL[e.state] || e.state,
       !e ? '' : ready ? (IS.busy || IS.inflight ? 'warn' : 'ok') : stateKind(e.state), ready && (IS.busy || IS.inflight) ? 'live' : e ? stateLive(e.state) : false);
@@ -314,8 +383,9 @@ async function imgRun(){
   }
 }
 function imgCancel(){
-  askAction('unit', {verb: 'restart', unit: IMAGE_UNIT},
-    [(IS.busy && !IS.inflight ? 'This image is not yours: someone else started it. ' : '') + `The runtime cannot abort a request, so cancelling restarts the lane: the image being made is lost, and the lane answers again in ${readyIn(IMAGE_UNIT)}.`], {danger: true});
+  const unit = imgUnit();
+  askAction('unit', {verb: 'restart', unit},
+    [(IS.busy && !IS.inflight ? 'This image is not yours: someone else started it. ' : '') + `The runtime cannot abort a request, so cancelling restarts the lane: the image being made is lost, and the lane answers again in ${readyIn(unit)}.`], {danger: true});
 }
 // The sample is a generation like any other: the same frame, the same bar, the same lock.
 // Its subject is the cookbook's own edit example, so "Local edit" describes what is in it.
@@ -323,12 +393,12 @@ async function imgSample(){
   const wait = laneWorkWaits(); if (wait) return toast(wait, 'warn');
   if (IS.refs.length >= 10) return toast('Ten references is the maximum.', 'warn');
   if (IS.inflight || IS.busy) return toast('The lane is already making an image; one at a time.', 'warn');
-  const t0 = Date.now(); IS.inflight = t0; IS.run = {w: 1024, h: 1024, steps: imgTurbo() ? IMG_TURBO_STEPS : 20, n: 1, editing: false};
+  const t0 = Date.now(); IS.inflight = t0; IS.run = {w: 1024, h: 1024, steps: imgH3() ? IMG_H3_STEPS : imgTurbo() ? IMG_TURBO_STEPS : 20, n: 1, editing: false, h3: imgH3()};
   imgWorking('Making a sample reference: a red teapot'); imgSync(); imgWatch(true);
   try{
     const body = {prompt: 'A bright daylight photograph of a red teapot on a wooden table next to a window, even natural light',
       width: 1024, height: 1024, num_inference_steps: 20, n: 1, output_format: 'png', response_format: 'b64_json', generator_device: 'cpu', seed: 42};
-    if (imgTurbo()) delete body.num_inference_steps;   // its grid sets the steps, as for any request
+    if (imgTurbo() || imgH3()) delete body.num_inference_steps;   // its grid, or its checkpoint, sets the steps, as for any request
     const {status, ok, out} = await postJSON('/api/image/generate', body);
     if (!ok) return toast(status === 409 ? out.error : 'Could not make a sample: ' + (out.error || status), status === 409 ? 'warn' : 'err', 7000);
     const first = ((out.image || out).data || [])[0]; if (!first || !first.b64_json) return toast('The lane answered with no image in it.', 'err');
@@ -340,12 +410,12 @@ async function imgSample(){
   finally{ IS.inflight = null; IS.run = null; $('img-prog').hidden = true; imgLane(); }
 }
 function wireImage(){
-  IMG_SIZES.forEach(([v, label]) => { const o = el('option', null, label); o.value = v; $('img-size').append(o); });
+  imgFillSizes();
   Object.keys(IMG_EXAMPLES).forEach(name => { const b = el('button', null, name); b.type = 'button'; b.setAttribute('aria-pressed', 'false'); b.addEventListener('click', () => imgLoadExample(name)); $('img-examples').append(b); });
   ['img-size', 'img-w', 'img-h', 'img-steps', 'img-n', 'img-bg', 'img-fmt', 'img-dev', 'img-seed', 'img-cfg', 'img-shift', 'img-neg', 'img-prompt'].forEach(id => {
     const e = $(id); e.addEventListener('input', () => { if (id !== 'img-prompt') IS.touched = true; imgSync(); }); e.addEventListener('change', imgSync); });
   document.querySelectorAll('#img-mode button').forEach(b => b.addEventListener('click', () => { IS.mode = b.dataset.mode; imgSync(); }));
-  $('img-reset').addEventListener('click', () => { IS.refs = []; imgDrawRefs(); imgReset(); toast(`Back to the model’s defaults: 1024 × 1024, ${imgTurbo() ? 'the Turbo’s 8 steps' : '40 steps'}, one image, CFG off.`, 'ok', 2600); });
+  $('img-reset').addEventListener('click', () => { IS.refs = []; imgDrawRefs(); imgReset(); toast(imgH3() ? 'Back to the model’s defaults: 2048 × 2048, its 6 steps, one image.' : `Back to the model’s defaults: 1024 × 1024, ${imgTurbo() ? 'the Turbo’s 8 steps' : '40 steps'}, one image, CFG off.`, 'ok', 2600); });
   $('img-reffile').addEventListener('change', e => { imgAddFiles(e.target.files); e.target.value = ''; });
   $('img-refsample').addEventListener('click', imgSample);
   $('img-run').addEventListener('click', imgRun);

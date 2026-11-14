@@ -83,6 +83,26 @@ VIDEO_MARKERS = [
     ("fired up and ready to roll", "warming-up", "ready"),
 ]
 
+# ── The MiniMax-H3-Image lane speaks it too ────────────────────────────────────
+# The same server again, at another commit (SGLang main): the component lines below are the
+# ones it printed in the study that measured it on the reference box (2026-11-11, boot 03:55:13
+# to 04:02:25 local, 451 s from the external SSD): the text encoder 48.09 GB, the DiT 38.6 GB,
+# the VAE 1.42 GB, as SGLang logs them (its "GB" being 1024**3 bytes). Its VAE is loaded as the
+# shared H3 stages' video_vae. Then one throwaway 512 x 512 image, made on a 2048 x 2048 canvas.
+IMAGE_H3_STAGES = ("init", "loading-weights", "warming-up")
+IMAGE_H3_MARKERS = [
+    # (substring, stage it opens, what is being loaded while that line is the latest)
+    ("Starting server...", "init", "starting the server"),
+    ("Loading ", "loading-weights", "loading a pipeline component"),
+    ("Loading pipeline modules...", "loading-weights", "reading the checkpoint layout"),
+    ("Loading text_encoder from", "loading-weights", "the 48 GiB text encoder"),
+    ("Loading MiniMaxH3DiTModel from", "loading-weights", "the 38.6 GiB DiT"),
+    ("Loading video_vae from", "loading-weights", "the 1.4 GiB VAE"),
+    ("Pipeline instantiated", "loading-weights", "building the pipeline"),
+    ("Starting FastAPI server", "warming-up", "one throwaway image"),
+    ("fired up and ready to roll", "warming-up", "ready"),
+]
+
 
 # ── The Kolibri lane speaks vLLM ────────────────────────────────────────────────
 # vLLM 0.29.0 serving Kolibri-1 on the reference box, one boot from the container's start to
@@ -386,6 +406,12 @@ def parse_image_boot_log(lines: list[str]) -> dict:
     return _parse_diffusion_boot_log(lines, IMAGE_MARKERS, IMAGE_STAGES)
 
 
+def parse_image_h3_boot_log(lines: list[str]) -> dict:
+    """The MiniMax-H3-Image lane's journal, reduced to the same shape parse_boot_log returns, by
+    the image lane's latest-boot rule."""
+    return _parse_diffusion_boot_log(lines, IMAGE_H3_MARKERS, IMAGE_H3_STAGES)
+
+
 def parse_video_boot_log(lines: list[str]) -> dict:
     """The video lane's journal, reduced to the same shape parse_boot_log returns.
 
@@ -529,12 +555,14 @@ TRANSITIONAL = BUSY_STATES - {"ready", "degraded", "orphan", "wedged"}
 # rest of its share, 97 GiB, in KV cache; and the Ornith 1.5 122B lane, 72.6 GiB of weights at a
 # share of 97 GiB too; and the Qwen3.8 Flash-Next Unsloth GGUF lane, llama.cpp's, 76.9 GiB of weights and a KV cache
 # for each of its two windows, 95.3 GiB of GPU memory in all with its draft (97,552 MiB by nvidia-smi on the reference
-# box, 2026-11-12; 100,881 MiB in its 1M mode), its n-gram table read from the disk.
+# box, 2026-11-12; 100,881 MiB in its 1M mode), its n-gram table read from the disk. And the MiniMax-H3-Image lane,
+# a second image lane: 92.3 GB at its peak on the reference box, its recipe asking 106 GiB free at its start.
 ENGINE_UNITS = ("qwen38-sglang.service", "qwen38-flash.service",
                 "qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service",
                 "qwen38-nemotron.service", "qwen38-nemotron-super.service", "qwen38-flash-local.service",
-                "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service")
+                "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service", "qwen38-image-h3.service")
 IMAGE_UNIT = "qwen38-image.service"
+IMAGE_H3_UNIT = "qwen38-image-h3.service"
 VIDEO_UNIT = "qwen38-video.service"
 KOLIBRI_UNIT = "qwen38-kolibri.service"
 NEMOTRON_UNIT = "qwen38-nemotron.service"
@@ -552,7 +580,7 @@ FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
 # FP4-Local lane and the Ornith lane, vLLM too, and the Unsloth GGUF lane, llama.cpp's.
 TEXT_UNITS = tuple(u for u in ENGINE_UNITS
                    if u not in (IMAGE_UNIT, VIDEO_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT,
-                                ORNITH_UNIT, FLASH_UNSLOTH_UNIT))
+                                ORNITH_UNIT, FLASH_UNSLOTH_UNIT, IMAGE_H3_UNIT))
 
 
 def blocked_reasons(action: str, params: dict, states: dict) -> list[str]:
@@ -603,6 +631,10 @@ def warn_reasons(action: str, params: dict, states: dict,
             # the proxy on :30001 is a text door; nothing reaches this lane through it
             warns.append("an image being generated right now is lost, and the Image "
                           "tab has nothing to talk to until this lane is back (about 70 s)")
+        elif unit == IMAGE_H3_UNIT and state == "ready":
+            # the same, with the boot of the MiniMax-H3-Image lane (451 s from the external SSD)
+            warns.append("an image being generated right now is lost, and the Image "
+                          "tab has nothing to talk to until this lane is back (about 8 min)")
         elif unit == VIDEO_UNIT and state == "ready":
             # same text-door reason as the image lane; a video boot is the long one
             warns.append("a video being generated right now is lost, and the Video "

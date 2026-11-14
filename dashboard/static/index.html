@@ -374,7 +374,7 @@
     <!-- ══ IMAGE ════════════════════════════════════════════════════════════ -->
     <section class="view" id="view-image" aria-labelledby="h-image">
       <div class="vhead">
-        <div class="vhead-title"><h1 id="h-image">Image</h1><p>Qwen-Image 2.1 on this box: create, edit with up to ten references, and cut out with a real alpha channel.</p></div>
+        <div class="vhead-title"><h1 id="h-image">Image</h1><p id="img-lede">Qwen-Image 2.1 on this box: create, edit with up to ten references, and cut out with a real alpha channel.</p></div>
         <div class="side"><span class="cap" id="img-cap">…</span></div>
       </div>
       <div id="img-lane"></div>
@@ -406,19 +406,19 @@
             <div class="field"><span class="lbl">Steps <span class="hint" id="img-steps-hint">model default 40</span></span>
               <div class="slider"><input type="range" id="img-steps" min="1" max="100" value="40" aria-label="Steps"><output id="img-steps-o" for="img-steps">40</output>
                 <div class="ends"><span>1, fast draft</span><span>100, slow</span></div></div></div>
-            <div class="field"><span class="lbl">Images per call</span>
+            <div class="field" id="img-n-f"><span class="lbl">Images per call</span>
               <div class="slider"><input type="range" id="img-n" min="1" max="10" value="1" aria-label="Images per call"><output id="img-n-o" for="img-n">1</output></div></div>
             <details class="why" id="img-adv"><summary>More controls</summary>
               <div>
                 <div class="pairs">
                   <div class="field"><label for="img-seed">Seed <span class="hint">empty is random</span></label><input class="input num" id="img-seed" inputmode="numeric" placeholder="random"></div>
-                  <div class="field"><label for="img-bg">Background</label><select class="input" id="img-bg"><option value="auto">auto</option><option value="transparent">transparent</option><option value="opaque">opaque</option></select></div>
+                  <div class="field" id="img-bg-f"><label for="img-bg">Background</label><select class="input" id="img-bg"><option value="auto">auto</option><option value="transparent">transparent</option><option value="opaque">opaque</option></select></div>
                   <div class="field"><label for="img-fmt">Format</label><select class="input" id="img-fmt"><option value="png">png</option><option value="webp">webp</option></select></div>
                   <div class="field"><label for="img-dev">Noise on</label><select class="input" id="img-dev"><option value="cpu">cpu (the default)</option><option value="cuda">gpu</option></select></div>
-                  <div class="field"><label for="img-cfg">CFG scale <span class="hint">needs a negative prompt</span></label><input class="input num" id="img-cfg" inputmode="decimal" placeholder="off"></div>
-                  <div class="field"><label for="img-shift">Flow shift <span class="hint">create only</span></label><input class="input num" id="img-shift" inputmode="decimal" placeholder="model default"></div>
+                  <div class="field" id="img-cfg-f"><label for="img-cfg">CFG scale <span class="hint">needs a negative prompt</span></label><input class="input num" id="img-cfg" inputmode="decimal" placeholder="off"></div>
+                  <div class="field" id="img-shift-f"><label for="img-shift">Flow shift <span class="hint">create only</span></label><input class="input num" id="img-shift" inputmode="decimal" placeholder="model default"></div>
                 </div>
-                <div class="field"><label for="img-neg">Negative prompt</label><input class="input" id="img-neg" placeholder="what to steer away from"></div>
+                <div class="field" id="img-neg-f"><label for="img-neg">Negative prompt</label><input class="input" id="img-neg" placeholder="what to steer away from"></div>
               </div>
             </details>
           </div>
@@ -431,7 +431,7 @@
               <button class="btn ghost" id="img-reset" type="button">Reset</button>
             </div>
             <p class="why-off" id="img-why" hidden></p>
-            <p class="help">Qwen Research License: research and evaluation, <b>not commercial use</b>. Nothing leaves this machine either way.</p>
+            <p class="help" id="img-license">Qwen Research License: research and evaluation, <b>not commercial use</b>. Nothing leaves this machine either way.</p>
           </div>
         </div>
         <div class="stagebox">
@@ -592,7 +592,7 @@
           <label class="sr" for="log-src">Source</label>
           <select class="input" id="log-src">
             <optgroup label="Serving containers"><option value="qwen38-flash">Qwen3.8 Flash-Next container</option><option value="qwen38-sglang">Qwen3.8 27B container</option><option value="qwen38-kolibri">Kolibri-1 container</option><option value="qwen38-nemotron">Nemotron 3.5 Bolt container</option><option value="qwen38-nemotron-super">Nemotron 3.5 Super VL container</option><option value="qwen38-flash-local">Qwen3.8 Flash-Next FP4-Local container</option><option value="qwen38-ornith-122b">Ornith 1.5 122B container</option><option value="qwen38-flash-unsloth">Qwen3.8 Flash-Next Unsloth GGUF container</option></optgroup>
-            <optgroup label="Unit journals"><option value="qwen38-flash.service">Qwen3.8 Flash-Next journal</option><option value="qwen38-sglang.service">Qwen3.8 27B journal</option><option value="qwen38-image.service">Qwen-Image 2.1 journal</option><option value="qwen38-video.service">MiniMax-H3 journal</option><option value="qwen38-kolibri.service">Kolibri-1 journal</option><option value="qwen38-nemotron.service">Nemotron 3.5 Bolt journal</option><option value="qwen38-nemotron-super.service">Nemotron 3.5 Super VL journal</option><option value="qwen38-flash-local.service">Qwen3.8 Flash-Next FP4-Local journal</option><option value="qwen38-ornith-122b.service">Ornith 1.5 122B journal</option><option value="qwen38-flash-unsloth.service">Qwen3.8 Flash-Next Unsloth GGUF journal</option><option value="qwen38-keepalive.service">proxy journal</option><option value="opencode-web.service" id="log-opt-agent">agent server journal</option></optgroup>
+            <optgroup label="Unit journals"><option value="qwen38-flash.service">Qwen3.8 Flash-Next journal</option><option value="qwen38-sglang.service">Qwen3.8 27B journal</option><option value="qwen38-image.service">Qwen-Image 2.1 journal</option><option value="qwen38-image-h3.service">MiniMax-H3-Image journal</option><option value="qwen38-video.service">MiniMax-H3 journal</option><option value="qwen38-kolibri.service">Kolibri-1 journal</option><option value="qwen38-nemotron.service">Nemotron 3.5 Bolt journal</option><option value="qwen38-nemotron-super.service">Nemotron 3.5 Super VL journal</option><option value="qwen38-flash-local.service">Qwen3.8 Flash-Next FP4-Local journal</option><option value="qwen38-ornith-122b.service">Ornith 1.5 122B journal</option><option value="qwen38-flash-unsloth.service">Qwen3.8 Flash-Next Unsloth GGUF journal</option><option value="qwen38-keepalive.service">proxy journal</option><option value="opencode-web.service" id="log-opt-agent">agent server journal</option></optgroup>
           </select>
           <label class="switch"><input type="checkbox" id="log-follow"> Follow</label>
           <input class="input grow" id="log-filter" type="search" placeholder="Filter lines" aria-label="Filter lines">

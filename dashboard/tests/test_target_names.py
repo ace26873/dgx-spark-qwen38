@@ -22,7 +22,7 @@ PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC
         "flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
         "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
         "image": ("install-image.sh", "IMAGE_MODEL_PIN"), "image-turbo": ("install-image.sh", "IMAGE_TURBO_PIN"),
-        "video": ("install-video.sh", "VIDEO_MODEL_PIN")}
+        "video": ("install-video.sh", "VIDEO_MODEL_PIN"), "image-h3": ("install-image-h3.sh", "IMAGE_H3_MODEL_PIN")}
 # a repository's owner on Hugging Face, written as its own pages write its name
 PUBLISHER = {"RadixArk": "RadixArk", "edp1096": "edp1096", "Qwen": "Qwen", "nvidia": "NVIDIA", "dealignai": "dealignai",
              "Aleph-Alpha": "Aleph Alpha", "Quantinine": "Quantinine", "ornith-ai": "Ornith AI", "MiniMaxAI": "MiniMax",

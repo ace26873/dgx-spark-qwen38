@@ -44,6 +44,10 @@ PIN_MODELS = {
     # two targets at this one revision) and its draft's
     "FLASH_UNSLOTH_REV": "unsloth/Qwen3.8-Flash-Next-GGUF",
     "FLASH_UNSLOTH_DRAFT_REV": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+    # the MiniMax-H3-Image lane's: its checkpoint, and the text encoder it loads from MiniMax-H3 (the video lane's
+    # model, at the revision that lane pins)
+    "IMAGE_H3_MODEL_PIN_REV": "MiniMaxAI/MiniMax-H3-Image",
+    "IMAGE_H3_ENCODER_PIN_REV": "MiniMaxAI/MiniMax-H3",
 }
 
 # Where the pins are written: the text lanes' in the switch and the installer, every other
@@ -51,7 +55,7 @@ PIN_MODELS = {
 PIN_FILES = ("switch-model.sh", "run.sh", "install.sh",
              "install-image.sh", "install-video.sh", "install-kolibri.sh", "install-nemotron.sh",
              "install-nemotron-super.sh", "install-flash-local.sh", "install-ornith-122b.sh",
-             "install-flash-unsloth.sh")
+             "install-flash-unsloth.sh", "install-image-h3.sh")
 
 PIN_RE = re.compile(r'^\s*([A-Z][A-Z0-9_]*REV)="?\$?\{?[A-Z0-9_:-]*?([0-9a-f]{40})',
                     re.MULTILINE)
