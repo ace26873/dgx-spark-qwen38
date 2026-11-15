@@ -104,8 +104,6 @@ class TheLicenceIsSaidPlainly(unittest.TestCase):
         self.assertNotIn("Read it before commercial use", (REPO / "docs/video-lane.md").read_text())
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TheFlashinferGate(unittest.TestCase):
@@ -184,7 +182,9 @@ class TheNowViewNamesTheServingImagePort(unittest.TestCase):
     def test_no_default_port_for_an_image_lane(self):
         js = (REPO / "dashboard/static/js/now.js").read_text()
         self.assertNotIn("IMG_NOW.port || 30020", js)
-        self.assertIn("const IMG_NOW = {label: '', port: null};", js)
+        self.assertIn("const IMG_NOW = {label: '', port: null, unit: null};", js)
+        # each lane's own default until the route answers, never the other's (its behaviour: test_page_details)
+        self.assertIn("unit === IMAGE_H3_UNIT ? 30026 : 30020", js)
         self.assertIn("fetch('/api/image')", js)
 
 
@@ -226,3 +226,7 @@ class TheEncoderRuleIsReadOnce(unittest.TestCase):
         self.assertEqual(ask(), "rc=0", "a partition folder holds the same blobs")
         (snap / "FL2VA" / "text_encoder" / "e2.safetensors").unlink()
         self.assertEqual(ask(), "rc=1", "a missing shard is not the encoder")
+
+
+if __name__ == "__main__":
+    unittest.main()

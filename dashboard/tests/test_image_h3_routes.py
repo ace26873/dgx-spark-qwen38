@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_image_routes import Base  # noqa: E402
+# its module fixtures too: they put back the environment Base's cockpit changes (the suite's isolation check)
+from test_image_routes import Base, setUpModule, tearDownModule  # noqa: E402,F401
 
 H3 = "qwen38-image-h3.service"
 QWEN = "qwen38-image.service"
