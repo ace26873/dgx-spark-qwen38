@@ -270,18 +270,25 @@ class FetchOnly(unittest.TestCase):
         self.assertEqual((runs, calls), ([], []))
 
     def test_every_lane_stops_right_after_its_own_download(self):
-        # the seven branches that fetch (Kolibri, Nemotron, Flash FP4-Local, Ornith, image, video, the text lanes): each
-        # one's fetch command is followed at once by the --fetch stop, before anything it writes;
+        # the nine fetch calls of the switch: the seven branches that fetch (Kolibri, Nemotron, Flash FP4-Local, Ornith,
+        # image, video, the text lanes) and MiniMax-H3-Image's two (its checkpoint, then its text encoder), that pair
+        # ending with ONE stop (v1.50); each call is followed at once by the --fetch stop, before anything it writes;
         # the Nemotron lane's loop over its model and its drafter ends first, with nothing else in it
         calls = [m.start() for m in re.finditer(r"ckpt-fetch\.py\"? \"\$", SWITCH)]
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 9)
         for at in calls:
             rest = SWITCH[at:]
             die = rest.index("|| die ")
             after = rest[rest.index("\n", die) + 1:].splitlines()
             while after and re.fullmatch(r"\s*(NEM_ASK=1|done|#.*)", after[0]):
                 after.pop(0)
-            self.assertTrue(after[0].lstrip().startswith("fetched "), after[:3])
+            if after and after[0].lstrip().startswith('HF_HOME="${H3_HF:-$HF_CACHE}"'):
+                # the checkpoint's fetch is followed by its encoder's own call: the stop comes after that second one
+                rest2 = "\n".join(after)
+                after = rest2[rest2.index("\n", rest2.index("|| die ")) + 1:].splitlines()
+                while after and re.fullmatch(r"\s*(#.*|done)", after[0]):
+                    after.pop(0)
+            self.assertTrue(after and after[0].lstrip().startswith("fetched "), after[:3])
 
 
 if __name__ == "__main__":
