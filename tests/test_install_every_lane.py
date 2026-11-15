@@ -1136,7 +1136,8 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         # the lane on demand (v1.50), as every side lane: its unit on a new box, its first Load builds it
         rc, out, calls = self.end(want_unsloth=1, want_h3=1)
         self.assertEqual(rc, 0, out)
-        self.assertEqual(calls[5:7], ["install-flash-unsloth.sh --units-only", "install-image-h3.sh --units-only"])
+        # after the Unsloth lane's installer, its clients follow its unit (v1.49.0), then this lane's
+        self.assertEqual(calls[5:8], ["install-flash-unsloth.sh --units-only", "clients follow", "install-image-h3.sh --units-only"])
         self.assertIn("h3=units", out)
         rc, out, calls = self.end(want_unsloth=1, want_h3=1, all_weights=1)
         self.assertEqual(rc, 0, out)
