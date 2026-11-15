@@ -15,9 +15,9 @@ Environment=PATH=__PATH__
 # The Basic credentials the cockpit relay presents (OPENCODE_SERVER_USERNAME and
 # OPENCODE_SERVER_PASSWORD), generated once by install-agent.sh, mode 0600.
 EnvironmentFile=__HOME__/.config/qwen38/opencode-web.env
-# Same cap as the oc launcher: without it long thinking is cut at 32000 tokens
-# and the turn ends silently.
-Environment=OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=__OUTPUT_TOKEN_MAX__
+# The output ceiling, or (OpenCode 2) the word that there is none to lift: this whole
+# block is rendered by install-agent.sh for the OpenCode that runs.
+__CAP_LINE__
 # The box's own providers and default model, whatever your global opencode config
 # says: opencode loads this file over it (a missing file is ignored). Without it a
 # fresh box's Agent tab had only opencode's hosted provider and answered with its free
@@ -25,13 +25,16 @@ Environment=OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=__OUTPUT_TOKEN_MAX__
 Environment=OPENCODE_CONFIG=__HOME__/.config/qwen38/opencode.json
 # Tool permissions. opencode's own defaults ask before a tool touches a path outside
 # the session's project and on a repeated identical call; AGENT_AUTO=1 at install
-# approves every tool call instead, the same autonomy as the oc launcher's --yolo.
-# Its "*" comes after the rules of your opencode config, deny included, unless your
-# config has a "*" of its own. This repo's shell rules for Alibaba Cloud's hosts
-# and the cloud metadata addresses come again after it (SECURITY.md).
+# approves every tool call instead, the same autonomy as the oc launcher's --yolo
+# (1.x) or --auto (2.x). install-agent.sh renders this line for the OpenCode that
+# runs: 1.x reads OPENCODE_PERMISSION, merged after the config files; 2.x ignores that
+# variable entirely and reads OPENCODE_CONFIG_CONTENT, merged after them too, where the
+# wildcard allow comes first and this repo's shell rules for the hosts of Alibaba Cloud
+# and the cloud metadata addresses come again after it (SECURITY.md, and measured on
+# 2.3.0 the 2026-11-14: the denies hold under the wildcard).
 __AUTO_LINE__
 # Loopback only: the cockpit relay is the one thing that reaches this server.
-ExecStart=__OPENCODE_BIN__ serve --hostname 127.0.0.1 --port __OPENCODE_PORT__ --print-logs --log-level INFO
+ExecStart=__OPENCODE_BIN__ serve --hostname 127.0.0.1 --port __OPENCODE_PORT__ __SERVE_FLAGS__
 Restart=always
 RestartSec=3
 # A stop takes the MCP servers and any tool the agent still runs down with it.

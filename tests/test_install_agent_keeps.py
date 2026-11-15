@@ -95,12 +95,14 @@ class AReRunKeepsTheInstalledTab(unittest.TestCase):
         self.assertEqual((oc, port, bind), ("4096", "30091", "tailscale"))
 
 
-class OpenCode2IsNotServedByTheAgentTab(unittest.TestCase):
-    """OpenCode 2 has a serve of its own that takes --hostname too (2.0.28, read 2026-10-22),
-    which the relay and the health check are not written for: a unit pointed at it lost the
-    Agent tab and the opencode it ran before. The script stops before the render, so the
-    installed unit is never touched."""
-    def run_with(self, version_line):
+class OpenCode2IsServedOnlyByTheChosenBox(unittest.TestCase):
+    """OpenCode 2 has a serve of its own that takes --hostname too (2.0.28, read 2026-10-22).
+    The tab speaks 2.x since the 2026-11-14 (relay on /api/info, ordered permissions, the
+    {file:...} answers scrubbed), but a stray 2.x on the PATH (Homebrew Core's formula is
+    one) must not hijack the unit of a box that never chose it: without OPENCODE_MAJOR=2 the
+    script stops before the render, so the installed unit is never touched (decision 455);
+    with the choice it renders."""
+    def run_with(self, version_line, **extra_env):
         with tempfile.TemporaryDirectory(prefix="agent-oc2-") as d:
             t = pathlib.Path(d)
             (t / "qwen38-dashboard.service").write_text(DASH_CUSTOM)
@@ -114,17 +116,31 @@ class OpenCode2IsNotServedByTheAgentTab(unittest.TestCase):
                 f.chmod(0o755)
             script = HEAD.replace("/etc/systemd/system", str(t)) + 'echo "RESULT|rendered"\n'
             r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
-                               cwd=REPO / "dashboard", env={"PATH": f"{fake}:/usr/bin:/bin", "HOME": str(t)})
+                               cwd=REPO / "dashboard",
+                               env={"PATH": f"{fake}:/usr/bin:/bin", "HOME": str(t), **extra_env})
             return r.returncode, r.stdout + r.stderr, (t / "opencode-web.service").read_text()
 
-    def test_opencode_2_is_refused_before_the_render(self):
+    def test_opencode_2_is_refused_before_the_render_without_the_choice(self):
         for line in ("opencode v2.0.28", "2.1.3", "10.0.0"):
             with self.subTest(line=line):
                 rc, out, unit = self.run_with(line)
                 self.assertNotEqual(rc, 0)
                 self.assertNotIn("RESULT|rendered", out)
-                self.assertIn("OpenCode 2, which the Agent view is not written for yet", out)
+                self.assertIn("OpenCode 2, which this box did not choose", out)
+                self.assertIn("--opencode 2", out, "the message says how to ask for it")
                 self.assertEqual(unit, OC_CUSTOM, "the installed unit is left as it was")
+
+    def test_opencode_2_is_served_when_the_box_chose_it(self):
+        for line in ("opencode v2.3.0", "2.3.0"):
+            with self.subTest(line=line):
+                rc, out, _ = self.run_with(line, OPENCODE_MAJOR="2")
+                self.assertIn("RESULT|rendered", out, out)
+
+    def test_the_choice_does_not_falsely_upgrade_a_1x_binary(self):
+        # OPENCODE_MAJOR=2 alongside a 1.x binary is just the wrong choice, not a
+        # license to serve anything: it renders 1.x as before (the binary decides)
+        rc, out, _ = self.run_with("1.19.5", OPENCODE_MAJOR="2")
+        self.assertIn("RESULT|rendered", out, out)
 
     def test_opencode_1_goes_on(self):
         for line in ("1.19.4", "1.18.35", "opencode v1.99.0"):

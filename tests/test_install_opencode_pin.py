@@ -350,9 +350,9 @@ class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
 
     def test_the_oc_launcher_says_so_instead_of_failing_on_a_path(self):
         text = INSTALL.read_text()
-        start = text.index('cat > "$OC_BIN" <<OCWRAP')
+        start = text.index('cat > "$OC_BIN" <<OCWRAP\n')
         body = text[start:text.index("\nOCWRAP\n", start) + len("\nOCWRAP\n")]
-        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-launch-"))
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-render-"))
         (t / "home").mkdir()
         render = (f'OC_BIN="{t}/oc"; OC_OUT_CAP=200000; REPO_DIR=/opt/repo; OPENCODE_VERSION={PINNED}; '
                   f'CONFIG_DIR="{t}/cfg"\n' + body)
@@ -363,11 +363,53 @@ class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
         self.assertIn("oc: opencode is not installed", r.stderr)
         self.assertIn(f"Re-run ./install.sh in /opt/repo: it installs the opencode this repo tests ({PINNED})", r.stderr)
 
+    def test_the_v2_launcher_ends_with_auto_and_carries_no_dead_cap(self):
+        # ./install.sh --opencode 2 writes its own launcher: --yolo does not exist in
+        # OpenCode 2 and OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX is read by nobody there
+        # (both measured on 2.3.0 the 2026-11-14), and --auto goes last like --yolo did
+        text = INSTALL.read_text()
+        start = text.index('cat > "$OC_BIN" <<OCWRAP2')
+        body = text[start:text.index("\nOCWRAP2\n", start) + len("\nOCWRAP2\n")]
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-render2-"))
+        (t / "home").mkdir()
+        (t / "bin").mkdir()
+        calls = t / "calls.log"
+        (t / "bin" / "opencode").write_text(
+            '#!/bin/sh\nif [ "$1" = --version ]; then echo "opencode v2.3.0"; exit 0; fi\n'
+            f'printf \'%s\\n\' "$@" >> "{calls}"\n')
+        (t / "bin" / "opencode").chmod(0o755)
+        render = (f'OC_BIN="{t}/oc"; REPO_DIR=/opt/repo; OPENCODE2_VERSION=2.3.0; '
+                  f'OPENCODE_MAJOR=2; CONFIG_DIR="{t}/cfg"\n' + body)
+        subprocess.run(["bash", "-c", render], check=True)
+        r = subprocess.run(["bash", str(t / "oc"), "run", "hi"], capture_output=True, text=True,
+                           env={"HOME": str(t / "home"), "PATH": f"{t}/bin:/usr/bin:/bin"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        sent = calls.read_text().strip().splitlines()
+        self.assertEqual(sent, ["run", "hi", "--auto"], "--auto last, no --yolo, no env cap")
+        self.assertNotIn("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX", body)
+        self.assertIn("--yolo is not a flag of OpenCode 2", body)
+
+    def test_the_v2_launcher_says_when_the_binary_is_not_opencode_2(self):
+        text = INSTALL.read_text()
+        start = text.index('cat > "$OC_BIN" <<OCWRAP2')
+        body = text[start:text.index("\nOCWRAP2\n", start) + len("\nOCWRAP2\n")]
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-render2b-"))
+        (t / "home").mkdir()
+        (t / "bin").mkdir()
+        (t / "bin" / "opencode").write_text("#!/bin/sh\n[ \"$1\" = --version ] && echo 1.19.5\nexit 0\n")
+        (t / "bin" / "opencode").chmod(0o755)
+        render = (f'OC_BIN="{t}/oc"; REPO_DIR=/opt/repo; OPENCODE2_VERSION=2.3.0; '
+                  f'OPENCODE_MAJOR=2; CONFIG_DIR="{t}/cfg"\n' + body)
+        subprocess.run(["bash", "-c", render], check=True)
+        r = subprocess.run(["bash", str(t / "oc"), "--version"], capture_output=True, text=True,
+                           env={"HOME": str(t / "home"), "PATH": f"{t}/bin:/usr/bin:/bin"})
+        self.assertIn("is not OpenCode 2", r.stderr)
+
     def summary(self, launcher, on_path, opencode=True):
         """The installer's last opencode line, rendered in a throwaway HOME."""
         text = INSTALL.read_text()
         start = text.index('      OC_NOW="$( { opencode --version')
-        end = text.index("\n      fi\n", text.index("(this repo tests $OPENCODE_VERSION); start it with", start)) + 9
+        end = text.index("\n      fi\n", text.index("(this repo tests ${OC_TARGET_VER:-$OPENCODE_VERSION}); start it with", start)) + 9
         t = pathlib.Path(tempfile.mkdtemp(prefix="oc-summary-"))
         (t / "bin").mkdir()
         (t / ".local" / "bin").mkdir(parents=True)
@@ -433,7 +475,7 @@ class TheBoxsModelIsWhatOcAndTheAgentTabUse(unittest.TestCase):
 
     def launcher(self, t):
         text = INSTALL.read_text()
-        start = text.index('cat > "$OC_BIN" <<OCWRAP')
+        start = text.index('cat > "$OC_BIN" <<OCWRAP\n')
         body = text[start:text.index("\nOCWRAP\n", start) + len("\nOCWRAP\n")]
         (t / "bin").mkdir()
         (t / "bin" / "opencode").write_text('#!/bin/sh\necho "OPENCODE_CONFIG=${OPENCODE_CONFIG:-unset}"\n')

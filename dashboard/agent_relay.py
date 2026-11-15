@@ -50,6 +50,25 @@ CHUNK = 64 * 1024
 CONNECT_TIMEOUT = 5.0
 HANDSHAKE_LIMIT = 64 * 1024
 INJECT_LIMIT = 256 * 1024         # an HTML document we rewrite must stay this small (the SPA index is ~3 KB)
+# OpenCode 2's /api/config, /api/provider and /api/model return the provider options after
+# resolving {file:...} references: the box's API key in clear (seen on 2.3.0, 2026-11-13, and
+# again in the sandbox of 2026-11-14: the canary key came back from each of those three).
+# /api/credential is documented to list stored integration credentials "including its secret
+# value" (empty on a box that signed into none: we scrub it the same, the answer is nobody's
+# to read in a browser). The SPA only GETs these; scrub them here, before the browser sees
+# one. A secret-bearing answer we cannot read (compressed, not JSON, larger than this) is
+# refused, not passed.
+SECRET_PATHS = ("/config", "/config/providers", "/provider", "/model",
+                "/api/config", "/api/provider", "/api/model", "/api/credential",
+                "/api/experimental/config", "/api/experimental/artifacts/providers",
+                "/api/integration")
+SECRET_KEYS = frozenset({"apikey", "api_key", "api-key", "authorization", "password",
+                         "secret", "client_secret", "clientsecret", "access_token",
+                         "refresh_token", "token"})
+# Keys that are only secret on one path: "value" carries a credential in /api/credential's
+# items, but it is a plain member everywhere else (models, costs) and must keep its shape.
+SECRET_KEYS_EXTRA = {"/api/credential": frozenset({"value"})}
+SCRUB_LIMIT = 4 * 1024 * 1024
 # A client that sends nothing for this long, mid-request or between two, is let go. With
 # no limit a request sent in part held its thread, and a descriptor, for good: 100 of
 # them held 100 threads, in a process whose 1,024 descriptors its collectors and memory
@@ -189,6 +208,40 @@ def split_upstream(url: str) -> tuple[str, int]:
     return u.hostname or "127.0.0.1", u.port or 80
 
 
+def is_secret_path(path: str) -> bool:
+    """A path whose JSON answer can carry provider credentials."""
+    p = path.split("?", 1)[0]
+    return any(p == s or p.startswith(s + "/") for s in SECRET_PATHS)
+
+
+def secret_keys_for(path: str) -> frozenset:
+    """The member names to replace on this path: the usual ones, plus the extras of every
+    secret-bearing prefix it falls under (/api/credential and its items, measured 2026-11-14)."""
+    p = path.split("?", 1)[0]
+    extra = frozenset()
+    for prefix, keys in SECRET_KEYS_EXTRA.items():
+        if p == prefix or p.startswith(prefix + "/"):
+            extra |= keys
+    return SECRET_KEYS | extra
+
+
+def scrub_secrets(value, keys: frozenset = SECRET_KEYS):
+    """value with every credential-bearing member replaced, recursively. The shape is kept:
+    the SPA reads providers and models, never the key it would send."""
+    if isinstance(value, dict):
+        return {k: ("***" if str(k).lower() in keys else scrub_secrets(v, keys))
+                for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub_secrets(v, keys) for v in value]
+    return value
+
+
+def scrub_json(raw: bytes, keys: frozenset = SECRET_KEYS) -> bytes:
+    """The JSON document in raw with its credentials replaced; ValueError when it is not one."""
+    return json.dumps(scrub_secrets(json.loads(raw or b"null"), keys),
+                      separators=(",", ":")).encode()
+
+
 def injected_asset(path: str) -> tuple[str, str] | None:
     """(filename, content-type) when the request asks for one of the cockpit's
     own injected assets, else None."""
@@ -257,26 +310,36 @@ class RelayConfig:
 
 
 def health(cfg: RelayConfig, timeout: float = 3.0) -> dict:
-    """GET /global/health on the upstream with the credentials: what the Agent
-    panel shows as the server state."""
+    """What the Agent panel shows as the server state. OpenCode 2 has /api/info (version,
+    pid, capabilities) and no JSON /global/health; 1.x has /global/health and no /api/info.
+    A 200 that is not JSON answers nothing (OpenCode 2 serves its HTML page on every path it
+    does not know, issue #55704, measured on 2.3.0 the 2026-11-14): counting that as healthy
+    would say a dead server is up."""
     creds = cfg.credentials()
     if not creds:
         return {"healthy": False, "error": "no credentials file"}
-    conn = http.client.HTTPConnection(*cfg.upstream, timeout=timeout)
-    try:
-        conn.request("GET", "/global/health", headers={"Authorization": basic_auth(*creds)})
-        resp = conn.getresponse()
-        raw = resp.read(4096)
-        if resp.status == 401:
-            return {"healthy": False, "error": "credentials refused (restart opencode-web.service after editing the env file)"}
-        if resp.status != 200:
-            return {"healthy": False, "error": f"HTTP {resp.status}"}
-        data = json.loads(raw or b"{}")
-        return {"healthy": bool(data.get("healthy")), "version": data.get("version")}
-    except (OSError, http.client.HTTPException, ValueError) as e:
-        return {"healthy": False, "error": f"{type(e).__name__}: {str(e)[:80]}"}
-    finally:
-        conn.close()
+    for path in ("/api/info", "/global/health"):
+        conn = http.client.HTTPConnection(*cfg.upstream, timeout=timeout)
+        try:
+            conn.request("GET", path, headers={"Authorization": basic_auth(*creds)})
+            resp = conn.getresponse()
+            raw = resp.read(4096)
+            if resp.status == 401:
+                return {"healthy": False, "error": "credentials refused (restart opencode-web.service after editing the env file)"}
+            if resp.status == 200:
+                if "json" not in (resp.getheader("Content-Type") or "").lower():
+                    continue        # the SPA page on a path this version does not know
+                data = json.loads(raw or b"{}")
+                if path == "/api/info":
+                    return {"healthy": True, "version": data.get("version")}
+                return {"healthy": bool(data.get("healthy")), "version": data.get("version")}
+            if resp.status != 404:
+                return {"healthy": False, "error": f"HTTP {resp.status}"}
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            return {"healthy": False, "error": f"{type(e).__name__}: {str(e)[:80]}"}
+        finally:
+            conn.close()
+    return {"healthy": False, "error": "no JSON health answer (HTTP 404 on every probe)"}
 
 
 def upstream_json(cfg: RelayConfig, path: str, timeout: float = 3.0):
@@ -304,6 +367,76 @@ def permission_is_auto(permission) -> bool:
     if permission == "allow":
         return True
     return isinstance(permission, dict) and permission.get("*") == "allow"
+
+
+def _v2_wild(text: str, pattern: str) -> bool:
+    """OpenCode 2's wildcard (read in packages/core/src/util/wildcard.ts of v2.3.0): "*"
+    matches any run of characters, every other character is itself. No fnmatch classes:
+    a command with brackets must not match differently than the server would."""
+    if "*" not in pattern:
+        return text == pattern
+    parts = pattern.split("*")
+    if not text.startswith(parts[0]):
+        return False
+    rest = text[len(parts[0]):]
+    for seg in parts[1:-1]:
+        i = rest.find(seg)
+        if i < 0:
+            return False
+        rest = rest[i + len(seg):]
+    return rest.endswith(parts[-1])
+
+
+def _v2_rule_matches(rule, action: str, resource: str) -> bool:
+    """A rule matches when both its action and its resource wildcard-match
+    (measured in the sandbox of 2026-11-14: {action:"shell",resource:"*host*",effect:"deny"}
+    holds a command naming that host and nothing else)."""
+    a, r = rule.get("action"), rule.get("resource")
+    if not isinstance(a, str) or not isinstance(r, str):
+        return False
+    return _v2_wild(action, a) and _v2_wild(resource, r)
+
+
+def config_docs_auto_state(entries, deny_patterns=None) -> dict | None:
+    """What OpenCode 2's served /api/config says about tool calls, for the Agent line.
+    The documents merge in the order the server lists them and the last matching rule
+    wins (measured 2026-11-14): the unit's injected content is the document with no path.
+    Returns {"auto": is a shell call allowed, "deny_ok": every guard still denies} or
+    None when the answer is not documents we can read. deny_patterns are the command
+    patterns our guard denies: they must still evaluate to deny whoever allowed what after."""
+    if not isinstance(entries, list) or not entries:
+        return None
+    rules = []
+    for e in entries:
+        if not isinstance(e, dict):
+            return None
+        if "info" not in e:
+            continue        # a directory entry carries no document (measured on 2.3.0)
+        info = e.get("info")
+        if not isinstance(info, dict):
+            return None
+        perms = info.get("permissions")
+        if perms is None:
+            continue
+        if not isinstance(perms, list) or not all(isinstance(r, dict) for r in perms):
+            return None
+        rules.extend(perms)
+
+    def evaluate(action: str, resource: str):
+        got = None
+        for rule in rules:
+            if _v2_rule_matches(rule, action, resource):
+                effect = rule.get("effect")
+                if effect in ("allow", "deny", "ask"):
+                    got = effect
+        return got     # None: no rule matched, the server's own default applies (ask)
+
+    auto = evaluate("shell", "echo x") == "allow"
+    deny_ok = True
+    for p in (deny_patterns or ()):
+        if evaluate("shell", p) != "deny":
+            deny_ok = False
+    return {"auto": auto, "deny_ok": deny_ok}
 
 
 # ── the relay ────────────────────────────────────────────────────────────────
@@ -424,6 +557,41 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
             except (OSError, http.client.HTTPException) as e:
                 conn.close()
                 return self.refuse(502, f"agent server unreachable ({type(e).__name__}); is opencode-web.service running?")
+            if self.command == "GET" and resp.status == 200 and is_secret_path(self.path):
+                # OpenCode 2 resolves {file:...} in the answers to these GETs: the key came
+                # back in clear from /api/config, /api/provider and /api/model on 2.3.0.
+                # Read that answer here, scrub it, and send the length of what we send.
+                try:
+                    ctype = (resp.getheader("Content-Type") or "").lower()
+                    enc = (resp.getheader("Content-Encoding") or "").strip().lower()
+                    if "json" not in ctype or enc not in ("", "identity"):
+                        raise ValueError("not plain JSON")
+                    declared = resp.length
+                    if declared is None and not resp.chunked:
+                        raise ValueError("length unknown")
+                    if declared is not None and declared > SCRUB_LIMIT:
+                        raise ValueError("larger than the scrub limit")
+                    want = declared if declared is not None else SCRUB_LIMIT + 1
+                    raw = resp.read(want)
+                    if declared is None and (len(raw) > SCRUB_LIMIT or resp.read(1)):
+                        raise ValueError("larger than the scrub limit")
+                    if declared is not None and len(raw) != want:
+                        raise ValueError("cut short")
+                    payload = scrub_json(raw, secret_keys_for(self.path))
+                except (OSError, http.client.HTTPException, ValueError) as e:
+                    # fail closed: an answer we cannot read is one we cannot scrub
+                    return self.refuse(502, "the agent server sent an unreadable answer for a "
+                                       f"secret-bearing path ({type(e).__name__}: {str(e)[:80]}); not relayed")
+                self.send_response(resp.status, resp.reason)
+                for k, v in forward_response_headers(resp.getheaders(),
+                                                     drop=("cache-control", "content-encoding")):
+                    self.send_header(k, v)
+                self.own_headers()
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             rewrite = wants_html_rewrite(self.command, resp.status,
                                          resp.getheader("Content-Type"),
                                          resp.getheader("Content-Encoding"),

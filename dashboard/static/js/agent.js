@@ -88,6 +88,7 @@ on('agent', d => {
   if (d.binary && sv.version && d.binary !== sv.version) parts.push(`binary ${d.binary} installed, restart to serve it`);
   if (d.pinned && sv.version && sv.version !== d.pinned) parts.push(verCmp(sv.version, d.pinned) < 0 ? `this repo tests ${d.pinned}: ./install.sh brings it in line` : `newer than the ${d.pinned} this repo tests`);
   if (d.auto_live != null) parts.push(d.auto_live ? 'tool calls run without asking' : 'asks before risky tool calls');
+  if (d.guard_ok === false) parts.push('the exfiltration guard is NOT in force on the server');
   if (d.auto != null && d.auto_live != null && d.auto !== d.auto_live) parts.push('permission mode changed in the unit, restart to apply');
   if (!ready && unitOn && sv.error) parts.push(sv.error);
   setText('ag-line', parts.join(', '));

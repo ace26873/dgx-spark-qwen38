@@ -2537,26 +2537,53 @@ def agent_binary_version() -> str | None:
         return None
     if AGENT_BINARY["key"] != key:
         out = run([str(binary), "--version"], timeout=15).strip().splitlines()
-        AGENT_BINARY.update(key=key, version=(out[-1].strip() if out else None) or None)
+        raw = (out[-1].strip() if out else None) or None
+        # OpenCode 2 prints "opencode v2.3.0" where 1.x prints the number alone (measured
+        # 2026-11-14): compared raw, the panel would say "restart to serve it" forever.
+        m = re.search(r"\d+\.\d+\.\d+", raw or "")
+        AGENT_BINARY.update(key=key, version=m.group(0) if m else raw)
     return AGENT_BINARY["version"]
 
 
 _OC_PIN_CACHE: dict = {}
 
 
-def opencode_pinned() -> str | None:
-    """The opencode version install.sh pins (OPENCODE_VERSION), read from that file, so
-    the page and the installer cannot name two different versions."""
+def opencode_pinned(binary_version: str | None = None) -> str | None:
+    """The opencode version install.sh pins, of the OpenCode this box runs: 1.x is pinned
+    by OPENCODE_VERSION, the --opencode 2 choice by OPENCODE2_VERSION (both are GitHub
+    release assets, digested the same way). The binary answers when the panel can see it;
+    the choice marker from install.sh answers otherwise; 1.x remains the word when neither
+    speaks. The page and the installer must never name two versions of the same thing."""
+    major = "2" if (binary_version or "").split(".")[0] == "2" else None
+    if major is None:
+        try:
+            first = (CONFIG_DIR / "opencode.major").read_text().splitlines()[0].strip()
+            major = "2" if first == "2" else "1"
+        except (OSError, IndexError):
+            major = "1"
+    var = "OPENCODE2_VERSION" if major == "2" else "OPENCODE_VERSION"
     path = REPO_DIR / "install.sh"
     try:
-        key = path.stat().st_mtime_ns
+        key = (path.stat().st_mtime_ns, major)
     except OSError:
         return None
     if _OC_PIN_CACHE.get("key") != key:
-        m = re.search(r'^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-([0-9.]+)\}"',
+        m = re.search(r'^%s="\$\{%s:-([0-9.]+)\}"' % (var, var),
                       path.read_text(errors="replace"), re.M)
         _OC_PIN_CACHE.update(key=key, version=m.group(1) if m else None)
     return _OC_PIN_CACHE.get("version")
+
+
+def _ocm_module():
+    if "mod" not in _OCM:
+        try:
+            spec = importlib.util.spec_from_file_location("ocm_for_cockpit", REPO_DIR / "oc-merge-limits.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _OCM["mod"] = mod
+        except Exception:                               # noqa: BLE001 (an older checkout)
+            _OCM["mod"] = None
+    return _OCM["mod"]
 
 
 @guard
@@ -2579,16 +2606,34 @@ def collect_agent():
     cfg = agent_config()
     out["server"] = ar.health(cfg)
     out["binary"] = agent_binary_version()
-    out["pinned"] = opencode_pinned()
+    out["pinned"] = opencode_pinned(out["server"].get("version") or out["binary"])
     # permission mode: what the unit file says (applies at the next start) and what
-    # the running server actually serves; they differ until a restart
+    # the running server actually serves; they differ until a restart. 1.x takes its
+    # approvals in OPENCODE_PERMISSION, OpenCode 2 ignores that variable entirely and
+    # reads the merged content (measured 2026-11-14); either line means AGENT_AUTO.
     try:
-        out["auto"] = any(ln.startswith("Environment=") and "OPENCODE_PERMISSION=" in ln
+        out["auto"] = any(ln.startswith("Environment=") and ("OPENCODE_PERMISSION=" in ln
+                          or "OPENCODE_CONFIG_CONTENT=" in ln)
                           for ln in AGENT_UNIT_PATH.read_text().splitlines())
     except OSError:
         out["auto"] = None
-    served = ar.upstream_json(cfg, "/config") if out["server"].get("healthy") else None
-    out["auto_live"] = ar.permission_is_auto(served.get("permission")) if isinstance(served, dict) else None
+    if out["server"].get("healthy"):
+        v = out["server"].get("version") or ""
+        mod = _ocm_module()
+        deny = list(mod.DENY_BASH) if mod is not None else None
+        if v.split(".")[0] == "2":
+            # /config answers the HTML page on 2.x (a 200 that is not JSON), and its
+            # effective rules are the documents /api/config lists, last match wins;
+            # guard_ok says our exfiltration denies still deny (relay helper)
+            docs = ar.upstream_json(cfg, "/api/config")
+            st = ar.config_docs_auto_state(docs, deny) if isinstance(docs, list) else None
+            out["auto_live"] = st.get("auto") if st else None
+            out["guard_ok"] = st.get("deny_ok") if st else None
+        else:
+            served = ar.upstream_json(cfg, "/config")
+            out["auto_live"] = ar.permission_is_auto(served.get("permission")) if isinstance(served, dict) else None
+    else:
+        out["auto_live"] = None
     return out
 
 
@@ -4226,7 +4271,7 @@ STATE["config"] = {"data": {"usable_frac": USABLE_FRAC, "version": VERSION, "dry
                                               "recommended": f"cd {REPO_DIR} && curl -fsSL https://raw."
                                                              "githubusercontent.com/hasso5703/alzeo/main/get.sh"
                                                              " | bash -s -- --recommended",
-                                              "install_agent": f"cd {REPO_DIR} && dashboard/install-agent.sh"}},
+                                              "install_agent": f'cd {REPO_DIR} && OPENCODE_MAJOR="$(head -1 "$HOME/.config/qwen38/opencode.major" 2>/dev/null || echo 1)" dashboard/install-agent.sh'}},
                    "ts": time.time()}
 
 

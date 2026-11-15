@@ -84,13 +84,21 @@ OPENCODE_BIN="${OPENCODE_BIN:-$(command -v opencode || true)}"
 SERVE_HELP="$("$OPENCODE_BIN" serve --help 2>&1 || true)"
 case "$SERVE_HELP" in *--hostname*) ;; *) die "this opencode has no 'serve --hostname' option; upgrade it (opencode upgrade)" ;; esac
 OC_VERSION="$("$OPENCODE_BIN" --version 2>/dev/null || true)"; OC_VERSION="${OC_VERSION##*$'\n'}"
-# OpenCode 2 has a serve of its own, --hostname included, which this tab's relay and checks are
-# not written for (its /global/health is the web page, 2.0.28): a unit pointed at it lost the
-# Agent tab, the opencode it ran before with it. Refused before anything is rendered, so the
-# installed unit keeps its opencode (found in review, 2026-10-22).
+# (the version 2.x wraps itself in "opencode v2.3.0"; the grep takes the number out of
+# either spelling, measured on the two lines 1.19.5 and 2.3.0 answer with)
 OC_MAJOR="$(printf '%s' "$OC_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d. -f1 || true)"
+# OpenCode 2 speaks the tab's language now (the relay probes /api/info, reads the ordered
+# "permissions" and scrubs the answers that resolve {file:...} keys, measured on 2.3.0 the
+# 2026-11-14) - but only on a box that chose it: ./install.sh --opencode 2 hands
+# OPENCODE_MAJOR=2 down here. A stray 2.x found on the PATH (Homebrew Core's formula is
+# one) is still refused before anything renders, so the installed unit keeps the opencode
+# it runs (decision 455, 2026-10-22).
+OC_PROFILE=1
 if [ -n "$OC_MAJOR" ] && [ "$OC_MAJOR" -ge 2 ]; then
-  die "$OPENCODE_BIN is opencode ${OC_VERSION##* }, OpenCode 2, which the Agent view is not written for yet: opencode-web keeps the opencode it runs. Put the opencode 1.x this repo pins first on your PATH (./install.sh installs it in ~/.opencode/bin), or set OPENCODE_BIN to it (docs/opencode.md)."
+  if [ "${OPENCODE_MAJOR:-1}" != "2" ]; then
+    die "$OPENCODE_BIN is opencode ${OC_VERSION##* }, OpenCode 2, which this box did not choose: run ./install.sh --opencode 2 (it serves it under the Agent view's own guards), or put the opencode 1.x this repo pins first on your PATH (./install.sh installs it in ~/.opencode/bin), or set OPENCODE_BIN to it (docs/opencode.md)."
+  fi
+  OC_PROFILE=2
 fi
 
 # ── where the cockpit listens decides where the relay may listen ───────────
@@ -128,6 +136,25 @@ chmod 600 "$ENV_FILE"
 grep -qE '^OPENCODE_SERVER_PASSWORD=.+' "$ENV_FILE" || die "$ENV_FILE has no OPENCODE_SERVER_PASSWORD line"
 CRED_USER="$({ grep -m1 -E '^OPENCODE_SERVER_USERNAME=' "$ENV_FILE" || true; } | cut -d= -f2-)"; CRED_USER="${CRED_USER:-opencode}"
 CRED_PW="$({ grep -m1 -E '^OPENCODE_SERVER_PASSWORD=' "$ENV_FILE" || true; } | cut -d= -f2-)"
+if [ "$OC_PROFILE" = 2 ] && [ "$CRED_USER" != "opencode" ]; then
+  # OpenCode 2 hardcodes the Basic username to "opencode" and ignores OPENCODE_SERVER_USERNAME
+  # (read in packages/server/src/auth.ts of 2.3.0, and measured: the password alone opens
+  # /api/*). A box installed in 1.x times with another name must present the one it accepts,
+  # or every probe lands in 401. The password is kept exactly; nothing of it is printed.
+  OC_ENV_FILE="$ENV_FILE" python3 - <<'PYEOF' || die "could not rewrite the username line of $ENV_FILE"
+import os
+path = os.environ["OC_ENV_FILE"]
+lines = open(path).read().splitlines(True)
+out = ["OPENCODE_SERVER_USERNAME=opencode\n" if ln.startswith("OPENCODE_SERVER_USERNAME=") else ln for ln in lines]
+if not any(ln.startswith("OPENCODE_SERVER_USERNAME=") for ln in lines):
+    out.insert(0, "OPENCODE_SERVER_USERNAME=opencode\n")
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    f.write("".join(out))
+PYEOF
+  CRED_USER=opencode
+  note "$ENV_FILE now names opencode's fixed Basic user (OpenCode 2 ignores OPENCODE_SERVER_USERNAME); the password is the one it always held."
+fi
 
 # ── the output ceiling: the limits table's maximum ─────────────────────────
 # opencode sends max_tokens = min(limit.output, this ceiling). limit.output is
@@ -145,21 +172,52 @@ OUT_MAX="${OUT_MAX:-200000}"
 [[ "$OUT_MAX" =~ ^[0-9]+$ ]] || die "AGENT_OUTPUT_TOKEN_MAX must be a number"
 
 # ── permissions: opencode's defaults, or every tool call approved ──────────
-if [ -z "${AGENT_AUTO:-}" ] && grep -q "^Environment='OPENCODE_PERMISSION=" "/etc/systemd/system/$UNIT" 2>/dev/null; then
-  AGENT_AUTO=1      # remembered from the installed unit
+if [ -z "${AGENT_AUTO:-}" ] && grep -qE "^Environment='(OPENCODE_PERMISSION|OPENCODE_CONFIG_CONTENT)=" "/etc/systemd/system/$UNIT" 2>/dev/null; then
+  AGENT_AUTO=1      # remembered from the installed unit, whichever OpenCode wrote it
 fi
 case "${AGENT_AUTO:-0}" in
   # opencode merges OPENCODE_PERMISSION after every rule of the config files and its last
   # matching rule wins, so a bare {"*":"allow"} overrode their deny rules too: an echo naming
   # an aliyuncs.com host ran under it (2026-10-28). The value repeats the rules for the hosts
   # of Cohere's report after its "*" (docs/agents-and-network.md).
-  1) PERM="$(python3 "$HERE/../oc-merge-limits.py" --agent-auto-permission)" \
-       || die "could not build AGENT_AUTO's permission (oc-merge-limits.py --agent-auto-permission)"
-     AUTO_LINE="Environment='OPENCODE_PERMISSION=$PERM'"
-     note "AGENT_AUTO=1: the web server approves every tool call but a shell command naming an Alibaba Cloud host or a cloud metadata address. Its \"*\" overrides your own deny rules unless your config has a \"*\" of its own (docs/agents-and-network.md)." ;;
-  0|"") AUTO_LINE="# (opencode's own permission defaults; re-run with AGENT_AUTO=1 to approve every tool call)" ;;
+  1) if [ "$OC_PROFILE" = 2 ]; then
+       # OpenCode 2 ignores OPENCODE_PERMISSION entirely (absent from the 2.3.0 binary, and
+       # issue #36990 lists it as "completely ignored" by design). The content it merges last
+       # over every file is the way: --agent-auto-config-content puts the wildcard allow
+       # first and this repo's shell denies after it - the last matching rule wins, so the
+       # denies hold under the allow (measured on 2.3.0 the 2026-11-14: a shell command
+       # naming a denied host did not run while an ordinary one did).
+       CONTENT="$(python3 "$HERE/../oc-merge-limits.py" --agent-auto-config-content)" \
+         || die "could not build AGENT_AUTO's content (oc-merge-limits.py --agent-auto-config-content)"
+       AUTO_LINE="Environment='OPENCODE_CONFIG_CONTENT=$CONTENT'"
+       note "AGENT_AUTO=1 on OpenCode 2: the web server approves every tool call but a shell command naming an Alibaba Cloud host or a cloud metadata address. Its allow overrides your own deny rules unless your config has one after it - the guard denies are written last, in the content and in the configs (docs/agents-and-network.md)."
+     else
+       PERM="$(python3 "$HERE/../oc-merge-limits.py" --agent-auto-permission)" \
+         || die "could not build AGENT_AUTO's permission (oc-merge-limits.py --agent-auto-permission)"
+       AUTO_LINE="Environment='OPENCODE_PERMISSION=$PERM'"
+       note "AGENT_AUTO=1: the web server approves every tool call but a shell command naming an Alibaba Cloud host or a cloud metadata address. Its \"*\" overrides your own deny rules unless your config has a \"*\" of its own (docs/agents-and-network.md)."
+     fi ;;
+  0|"") if [ "$OC_PROFILE" = 2 ]; then
+          AUTO_LINE="# (OpenCode 2's own permission defaults; re-run with AGENT_AUTO=1 to approve every tool call)"
+        else
+          AUTO_LINE="# (opencode's own permission defaults; re-run with AGENT_AUTO=1 to approve every tool call)"
+        fi ;;
   *) die "AGENT_AUTO must be 1 or 0" ;;
 esac
+# The output ceiling (1.x) and the log-level case: OpenCode 2 reads neither the variable
+# nor the capital (measured on 2.3.0 the 2026-11-14: --log-level INFO kills the boot,
+# "info" starts it and journals at info; max_tokens follows the model's limit.output).
+if [ "$OC_PROFILE" = 2 ]; then
+  CAP_LINE="# OpenCode 2 sends max_completion_tokens from the model's limit.output in the config"
+  CAP_LINE="$CAP_LINE"$'\n'"# (measured on 2.3.0 the 2026-11-14): there is no 32000 ceiling to lift here, and"
+  CAP_LINE="$CAP_LINE"$'\n'"# OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX is read by nobody of it."
+  SERVE_FLAGS="--print-logs --log-level info"
+else
+  CAP_LINE="# Same cap as the oc launcher: without it long thinking is cut at 32000 tokens"
+  CAP_LINE="$CAP_LINE"$'\n'"# and the turn ends silently."
+  CAP_LINE="$CAP_LINE"$'\n'"Environment=OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OUT_MAX"
+  SERVE_FLAGS="--print-logs --log-level INFO"
+fi
 
 # ── PATH for the service: yours, deduplicated, the opencode dir first ──────
 # (AGENT_PATH= overrides it, for an install run from a wrapper or an odd shell), and the
@@ -200,11 +258,24 @@ stale_since(){
 # ── render and install the unit ────────────────────────────────────────────
 TMP_UNIT="$(mktemp)"
 trap 'rm -f "$TMP_UNIT"' EXIT   # however this ends, as install-dashboard.sh does
-sed -e "s|__USER__|$(id -un)|g" -e "s|__GROUP__|$(id -gn "$(id -un)")|g" -e "s|__HOME__|$HOME|g" \
-    -e "s|__OPENCODE_BIN__|$OPENCODE_BIN|g" -e "s|__OPENCODE_PORT__|$OPENCODE_PORT|g" \
-    -e "s|__PATH__|$SVC_PATH|g" -e "s|__OUTPUT_TOKEN_MAX__|$OUT_MAX|g" \
-    -e "s|__AUTO_LINE__|$AUTO_LINE|g" \
-    "$HERE/opencode-web.service.template" > "$TMP_UNIT"
+# rendered by python, not sed: the values carry quotes, JSON and now newlines
+# (CAP_LINE, AUTO_LINE), and a delimiter appearing in a path or a permission value
+# would silently rewrite the wrong thing (each value goes through its own env var)
+OC_TPL="$HERE/opencode-web.service.template" OC_OUT_UNIT="$TMP_UNIT" \
+R_USER="$(id -un)" R_GROUP="$(id -gn "$(id -un)")" R_HOME="$HOME" R_OPENCODE_BIN="$OPENCODE_BIN" \
+R_OPENCODE_PORT="$OPENCODE_PORT" R_PATH="$SVC_PATH" R_CAP_LINE="$CAP_LINE" \
+R_AUTO_LINE="$AUTO_LINE" R_SERVE_FLAGS="$SERVE_FLAGS" \
+python3 - <<'PYEOF' || die "could not render the unit"
+import os, sys
+repl = {"__USER__": "R_USER", "__GROUP__": "R_GROUP", "__HOME__": "R_HOME",
+        "__OPENCODE_BIN__": "R_OPENCODE_BIN", "__OPENCODE_PORT__": "R_OPENCODE_PORT",
+        "__PATH__": "R_PATH", "__CAP_LINE__": "R_CAP_LINE", "__AUTO_LINE__": "R_AUTO_LINE",
+        "__SERVE_FLAGS__": "R_SERVE_FLAGS"}
+text = open(os.environ["OC_TPL"]).read()
+for mark, var in repl.items():
+    text = text.replace(mark, os.environ[var])
+open(os.environ["OC_OUT_UNIT"], "w").write(text)
+PYEOF
 grep -q '__[A-Z][A-Z0-9_]*__' "$TMP_UNIT" && die "unsubstituted placeholder in the unit render"
 AGENT_CHANGED=0
 cmp -s "$TMP_UNIT" "/etc/systemd/system/$UNIT" \
@@ -214,8 +285,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now "$UNIT"
 # ── the server answers with the credentials (never on the command line) ────
 health(){
-  printf 'user = "%s:%s"\nsilent\nmax-time = 3\nurl = "http://127.0.0.1:%s/global/health"\n' \
-    "$CRED_USER" "$CRED_PW" "$OPENCODE_PORT" | curl -K - 2>/dev/null || true
+  # the JSON answer of whichever OpenCode runs: 2.x answers its identity on /api/info and
+  # its HTML page on every other path (issue #55704, measured on 2.3.0); 1.x answers
+  # {"healthy":true,...} on /global/health. Only an answer carrying one of those keys is
+  # a health answer: a page is not health, whoever served it.
+  local out path
+  out=""
+  for path in /api/info /global/health; do
+    out="$(printf 'user = "%s:%s"\nsilent\nmax-time = 3\nurl = "http://127.0.0.1:%s%s"\n' \
+      "$CRED_USER" "$CRED_PW" "$OPENCODE_PORT" "$path" | curl -K - 2>/dev/null || true)"
+    printf '%s' "$out" | grep -qE '"(healthy|pid)":' && { printf '%s' "$out"; return 0; }
+  done
+  printf '%s' "$out"
 }
 # A re-run with a new port, cap or binary must take effect; one that changed nothing must
 # not end the turn the Agent tab is in, which it did at every ./install.sh (49 starts of
@@ -255,7 +336,7 @@ fi
 
 HEALTHY=""
 for _ in $(seq 1 30); do
-  case "$(health)" in *'"healthy":true'*) HEALTHY=1; break ;; esac
+  case "$(health)" in *'"healthy":true'*|*'"pid":'*) HEALTHY=1; break ;; esac
   sleep 1
 done
 [ -n "$HEALTHY" ] || die "opencode did not answer on 127.0.0.1:$OPENCODE_PORT within 30 s (journalctl -u $UNIT -n 40)"

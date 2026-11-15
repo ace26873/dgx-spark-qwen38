@@ -363,6 +363,88 @@ def main() -> None:
     assert [m._bash_action(merged, c) for c in (oss, meta, other)] == ["deny", "deny", "allow"], merged
     assert m.deny_permission() == {"bash*": rules}
 
+    # 11. OpenCode 2 reads an ordered "permissions" array, not the 1.x "permission" object: a
+    #     "bash*" action is inert there (the v2 shell tool is "shell"). --deny-permissions writes
+    #     the array, the rules last since the last match wins; --deny-bash keeps writing ONLY the
+    #     1.x block, because 1.19.5 refuses to start on a config that holds "permissions"
+    #     ("V2 permissions are not supported by OpenCode V1", measured against the box's binary
+    #     the 2026-11-14) and a rollback removes OUR array with --remove-permissions.
+    def deny2(path):
+        r = subprocess.run([sys.executable, SCRIPT, path, "--deny-permissions"],
+                           capture_output=True, text=True)
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    def perms_rm(path):
+        r = subprocess.run([sys.executable, SCRIPT, path, "--remove-permissions"],
+                           capture_output=True, text=True)
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    expected2 = [{"action": "shell", "resource": p, "effect": "deny"} for p in m.DENY_BASH]
+
+    def acts2(path, *commands):
+        perms = jsonc(path).get("permissions")
+        return [m._v2_action(perms, "shell", c) for c in commands]
+
+    r = subprocess.run([sys.executable, SCRIPT, "--deny-permissions"], capture_output=True, text=True)
+    assert r.returncode == 0 and json.loads(r.stdout) == expected2, r.stdout
+    assert m.deny_permissions_v2() == expected2
+
+    # --deny-bash alone must never add the v2 key: it would kill a 1.x reading the file.
+    p = write(tmp, json.dumps({"permission": {"bash*": rules}}))
+    rc, out = deny(p)
+    assert rc == 0 and "permissions" not in jsonc(p), f"--deny-bash wrote v2 keys: {jsonc(p)}"
+
+    # a config with only the 1.x block gains the array (kept intact), and a second run
+    # is a no-op (the array is not duplicated).
+    p = write(tmp, json.dumps({"permission": {"bash*": rules}}))
+    rc, out = deny2(p)
+    assert rc == 0 and "put last in its permissions" in out, out
+    assert jsonc(p)["permission"] == {"bash*": rules}, jsonc(p)
+    assert jsonc(p)["permissions"] == expected2, jsonc(p)["permissions"]
+    assert acts2(p, oss, meta, other) == ["deny", "deny", None], acts2(p, oss, meta, other)
+    before = open(p).read()
+    rc, out = deny2(p)
+    assert rc == 0 and "hold already" in out and open(p).read() == before, out
+    # the rollback removes our array and keeps the 1.x block (the box goes back to 1.x)
+    rc, out = perms_rm(p)
+    assert rc == 0 and "was removed" in out, out
+    assert "permissions" not in jsonc(p) and jsonc(p)["permission"] == {"bash*": rules}, jsonc(p)
+    rc, out = perms_rm(p)
+    assert rc == 0 and "no v2 permissions array" in out, out
+
+    # an array we did not write is nobody's to delete
+    p = write(tmp, json.dumps({"permissions": [{"action": "shell", "resource": "*", "effect": "ask"}]}))
+    before = open(p).read()
+    rc, out = perms_rm(p)
+    assert rc == 1 and "not this box's deny array" in out and open(p).read() == before, out
+
+    # an existing v2 array is kept; ours go after its last rule (a "*" before them cannot win),
+    # and a comment beside the array survives.
+    p = write(tmp, '{\n  // mine\n  "permissions": [\n'
+                   '    {"action": "*", "resource": "*", "effect": "allow"}\n'
+                   '  ]\n}\n')
+    rc, out = deny2(p)
+    assert rc == 0 and "put last" in out, out
+    assert jsonc(p)["permissions"][0] == {"action": "*", "resource": "*", "effect": "allow"}
+    assert jsonc(p)["permissions"][1:] == expected2, jsonc(p)["permissions"]
+    assert acts2(p, oss, meta, other) == ["deny", "deny", "allow"], acts2(p, oss, meta, other)
+    assert "// mine" in open(p).read(), "a comment was dropped"
+
+    # a rule added after ours that allows the host is overridden again at the next run.
+    body = jsonc(p)
+    body["permissions"].append({"action": "shell", "resource": "*aliyuncs.com*", "effect": "allow"})
+    open(p, "w").write(json.dumps(body, indent=2) + "\n")
+    assert acts2(p, oss) == ["allow"], acts2(p, oss)
+    rc, out = deny2(p)
+    assert rc == 0 and "put last" in out and acts2(p, oss) == ["deny"], out
+
+    # a "permissions" that is not an array of rules is not guessed at.
+    for value in ("allow", [{"action": "shell", "resource": "*", "effect": 1}], ["x"]):
+        body = json.dumps({"permissions": value})
+        p = write(tmp, body)
+        rc, out = deny2(p)
+        assert rc == 1 and "refused" in out and open(p).read() == body, f"{value!r}: {rc} {out}"
+
     print("test_oc_merge_limits: OK")
 
 

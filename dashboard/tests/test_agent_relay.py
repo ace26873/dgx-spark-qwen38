@@ -184,10 +184,52 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
         if path == "/cookie":
             return self._json({"ok": True}, extra=(("Set-Cookie", "cockpit=evil; Path=/"),
                                                     ("Set-Cookie", "theme=dark; Path=/")))
+        if path == "/api/info":
+            mode = getattr(type(self), "INFO_MODE", "404")
+            if mode == "404":
+                return self._json({"error": "not found"}, 404)
+            if mode == "html":       # OpenCode 2 answers its page on paths it does not know
+                body = SPA_DOC
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            return self._json({"version": "2.3.0", "pid": 4242, "capabilities": {"persistentPty": True}})
         if path == "/global/health":
+            mode = getattr(type(self), "GH_MODE", "json")
+            if mode == "html":
+                body = SPA_DOC
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if mode == "404":
+                return self._json({"error": "not found"}, 404)
             return self._json({"healthy": True, "version": "9.9.9"})
         if path == "/config":
             return self._json({"permission": {"*": "allow"}, "model": "x/y"})
+        if path == "/api/config":
+            return self._json({"info": {"providers": {"local": {
+                "options": {"apiKey": "sk-live", "headers": {"Authorization": "Bearer sk-live"}},
+                "models": {"m": {"name": "m", "value": "keepme"}}}}}, "apiKey": "sk-live"})
+        if path == "/api/credential":
+            return self._json([{"name": "gh", "value": "sk-live", "token": "tok-live", "note": "ok"}])
+        if path == "/api/provider":
+            return self._json([{"id": "local", "apiKey": "sk-live"}])
+        if path == "/api/model":
+            return self._json({"data": [{"id": "m", "apiKey": "sk-live"}]})
+        if path == "/api/config/bad":
+            body = b'{"apiKey": "sk-live"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self._json({"error": "not found"}, 404)
 
     def do_HEAD(self):
@@ -706,6 +748,69 @@ class RelayTests(unittest.TestCase):
         self.assertFalse(ar.permission_is_auto(None))
         self.assertFalse(ar.permission_is_auto("ask"))
 
+    # ---- credentials in OpenCode 2's config answers ----
+    def test_is_secret_path(self):
+        for p in ("/config", "/config?x=1", "/config/providers", "/provider/local",
+                  "/api/config", "/api/config?x=1", "/api/config/shell", "/api/provider",
+                  "/api/provider/local", "/api/model", "/api/model/x",
+                  "/api/credential", "/api/credential/x",
+                  "/api/experimental/config", "/api/integration"):
+            self.assertTrue(ar.is_secret_path(p), p)
+        for p in ("/configfoo", "/api/configuration", "/api/session", "/api/agent",
+                  "/api/models", "/global/health", "/"):
+            self.assertFalse(ar.is_secret_path(p), p)
+
+    def test_scrub_secrets_keeps_the_shape(self):
+        doc = {"info": {"providers": {"local": {
+            "options": {"apiKey": "sk-live", "api_key": "sk-live",
+                        "headers": {"Authorization": "Bearer sk-live", "X-Trace": "ok"}},
+            "secret": {"nested": "sk-live"}, "models": {"m": {"token": "sk-live"}}}}},
+            "list": [{"password": "sk-live", "keep": 1}], "keep": "visible"}
+        out = ar.scrub_secrets(doc)
+        self.assertEqual(out["keep"], "visible")
+        o = out["info"]["providers"]["local"]["options"]
+        self.assertEqual(o["apiKey"], "***")
+        self.assertEqual(o["api_key"], "***")
+        self.assertEqual(o["headers"]["Authorization"], "***")
+        self.assertEqual(o["headers"]["X-Trace"], "ok")
+        self.assertEqual(out["info"]["providers"]["local"]["secret"], "***")
+        self.assertEqual(out["info"]["providers"]["local"]["models"]["m"]["token"], "***")
+        self.assertEqual(out["list"], [{"password": "***", "keep": 1}])
+
+    def test_a_secret_bearing_answer_is_scrubbed_before_the_browser(self):
+        for path in ("/api/config", "/api/provider", "/api/model"):
+            code, hdr, body = self.get(path)
+            self.assertEqual(code, 200, path)
+            self.assertNotIn(b"sk-live", body, path)
+            self.assertIn(b"***", body, path)
+            self.assertEqual(hdr.get("Cache-Control"), "no-store", path)
+            self.assertEqual(int(hdr["Content-Length"]), len(body), path)
+            self.assertNotIn("Transfer-Encoding", hdr, path)
+
+    def test_a_secret_bearing_answer_that_is_not_json_is_refused(self):
+        code, _, body = self.get("/api/config/bad")
+        self.assertEqual(code, 502)
+        self.assertNotIn(b"sk-live", body)
+        self.assertIn("not relayed", json.loads(body)["error"])
+
+    def test_credential_values_are_scrubbed_before_the_browser(self):
+        # OpenCode 2 lists stored credentials "including its secret value" (2026-11-14)
+        code, hdr, body = self.get("/api/credential")
+        self.assertEqual(code, 200)
+        self.assertNotIn(b"sk-live", body)
+        self.assertNotIn(b"tok-live", body)
+        self.assertIn(b"***", body)
+        self.assertEqual(json.loads(body)[0]["note"], "ok", "the shape is kept")
+        self.assertEqual(hdr.get("Cache-Control"), "no-store")
+
+    def test_value_is_only_scrubbed_where_it_carries_a_credential(self):
+        # "value" is a plain member of models and costs: scrubbing it everywhere would
+        # lie to the SPA about its own shapes
+        code, _, body = self.get("/api/config")
+        self.assertEqual(code, 200)
+        self.assertIn(b"keepme", body, "value kept where it is not a credential")
+        self.assertNotIn(b"sk-live", body)
+
     # ---- health probe ----
     def test_health_uses_the_credentials(self):
         self.assertEqual(ar.health(self.cfg), {"healthy": True, "version": "9.9.9"})
@@ -714,8 +819,76 @@ class RelayTests(unittest.TestCase):
         self.assertFalse(out["healthy"])
         self.assertIn("refused", out["error"])
 
+    def test_health_reads_the_v2_info(self):
+        FakeOpencode.INFO_MODE = "json"
+        try:
+            self.assertEqual(ar.health(self.cfg), {"healthy": True, "version": "2.3.0"})
+        finally:
+            del FakeOpencode.INFO_MODE
+
+    def test_health_the_page_on_global_health_is_not_health(self):
+        # OpenCode 2 answers its SPA page on every path it does not know (issue #55704,
+        # measured on 2.3.0 the 2026-11-14): the truth is /api/info, a 200 page is nothing.
+        FakeOpencode.INFO_MODE = "json"
+        FakeOpencode.GH_MODE = "html"
+        try:
+            self.assertEqual(ar.health(self.cfg), {"healthy": True, "version": "2.3.0"})
+        finally:
+            del FakeOpencode.INFO_MODE
+            del FakeOpencode.GH_MODE
+
+    def test_health_pages_answer_nothing(self):
+        FakeOpencode.INFO_MODE = "html"
+        FakeOpencode.GH_MODE = "html"
+        try:
+            out = ar.health(self.cfg)
+            self.assertFalse(out["healthy"])
+            self.assertIn("no JSON", out["error"])
+        finally:
+            del FakeOpencode.INFO_MODE
+            del FakeOpencode.GH_MODE
+
 
 class PureHelpers(unittest.TestCase):
+    def test_v2_wild_no_fnmatch_classes(self):
+        # OpenCode 2's "*" only: brackets must match literally (read in wildcard.ts of 2.3.0)
+        self.assertFalse(ar._v2_wild("echo b", "echo [abc]"))
+        self.assertTrue(ar._v2_wild("echo [abc]", "echo [abc]"))
+        self.assertTrue(ar._v2_wild("curl https://a.example/x", "*a.example*"))
+        self.assertFalse(ar._v2_wild("curl https://b.example/x", "*a.example*"))
+        self.assertFalse(ar._v2_wild("ECHO", "echo"), "matching is case-sensitive on Linux")
+        self.assertTrue(ar._v2_wild("anything", "*"))
+
+    def test_config_docs_auto_state(self):
+        d = lambda perms, path="/f.json": {"type": "document", "path": path,
+                                           "info": {"permissions": perms}}
+        guard = [{"action": "shell", "resource": "*a.example*", "effect": "deny"}]
+        # the unit's injected content (the document with no path) allows all, its own
+        # denies come last: auto, and the guard holds
+        entries = [d(guard, path="/f.json"),
+                   d([{"action": "*", "resource": "*", "effect": "allow"}] + guard, path=None)]
+        self.assertEqual(ar.config_docs_auto_state(entries, ["*a.example*"]),
+                         {"auto": True, "deny_ok": True})
+        # allow * without our denies after it: the guard was overridden
+        self.assertEqual(ar.config_docs_auto_state(
+            [d([{"action": "*", "resource": "*", "effect": "allow"}], path=None)],
+            ["*a.example*"]), {"auto": True, "deny_ok": False})
+        # a later rule allowing the guarded host wins over ours (last match): not deny_ok
+        self.assertEqual(ar.config_docs_auto_state(
+            [d([{"action": "*", "resource": "*", "effect": "allow"}] + guard
+               + [{"action": "shell", "resource": "*a.example*", "effect": "allow"}], path=None)],
+            ["*a.example*"]), {"auto": True, "deny_ok": False})
+        # nothing matching a shell call: the server default is ask, so not auto
+        self.assertEqual(ar.config_docs_auto_state([d(guard)], ["*a.example*"]),
+                         {"auto": False, "deny_ok": True})
+        # directory entries (no info) are skipped, unknown effects never match
+        self.assertEqual(ar.config_docs_auto_state(
+            [{"type": "directory", "path": "/x"}, d(guard),
+             d([{"action": "shell", "resource": "*", "effect": "yes-please"}])],
+            ["*a.example*"]), {"auto": False, "deny_ok": True})
+        for bad in ([], None, ["x"], [d("not-a-list")], [{"type": "document", "info": 3}]):
+            self.assertIsNone(ar.config_docs_auto_state(bad, []), bad)
+
     def test_host_name(self):
         self.assertEqual(ar.host_name("100.64.0.1:30090"), "100.64.0.1")
         self.assertEqual(ar.host_name("spark.tail.ts.net"), "spark.tail.ts.net")

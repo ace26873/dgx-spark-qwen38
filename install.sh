@@ -521,6 +521,22 @@ _ENV_OPENCODE_SHA256="${OPENCODE_SHA256:-}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-1.19.6}"
 OPENCODE_SHA256="${OPENCODE_SHA256:-5b68c1f4c5e75b4134e664cc8f36d634d64208d4fcfe5bcf3b48bab699c2dbac}"
 OPENCODE_PIN="${OPENCODE_PIN:-1}"
+# OpenCode 2, offered by ./install.sh --opencode 2 and never the default (Hasan's plan
+# of 2026-10-22: prove it as an option first). From v2.2.0 GitHub publishes release assets
+# again (checked on the API the 2026-11-14), so the same recipe pins it: the arm64 asset
+# opencode-linux-arm64.tar.gz by its GitHub digest. Four things were read out of the 2.3.0
+# binary and the sandbox of 2026-11-14 (/home/hasan/qa-tools/opencode-v2-migration/
+# reprise-20261114/MESURES.md): serve refuses --log-level in capitals and dies at boot
+# (lowercase passes); OPENCODE_PERMISSION and OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX are
+# gone (the answer is the ordered "permissions" array and OPENCODE_CONFIG_CONTENT, merged
+# last), the health probe must be GET /api/info (every unknown path, /global/health
+# included, answers the HTML page in 200 - issue #55704); and /api/config, /api/provider
+# and /api/model answer with {file:...} resolved, the key in clear, which the Agent
+# relay scrubs before the browser sees it.
+_ENV_OPENCODE2_VERSION="${OPENCODE2_VERSION:-}"
+_ENV_OPENCODE2_SHA256="${OPENCODE2_SHA256:-}"
+OPENCODE2_VERSION="${OPENCODE2_VERSION:-2.3.0}"
+OPENCODE2_SHA256="${OPENCODE2_SHA256:-3207fb5cdec448d479242c0f1a14f4f7bdfcad3a79209b5eb8f9003725e93711}"
 PORT="${PORT:-30000}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 CONFIG_DIR="$HOME/.config/qwen38"
@@ -540,6 +556,7 @@ NO_START=0
 NO_SERVICE=0
 NO_OPENCODE=0
 WITH_OPENCODE=0
+OPENCODE_MAJOR_WANT=""
 NO_COCKPIT=0
 WITH_COCKPIT=0
 WITH_IMAGE=0
@@ -586,6 +603,7 @@ for arg in "$@"; do
     --no-service) NO_SERVICE=1 ;;
     --no-opencode) NO_OPENCODE=1 ;;
     --with-opencode) WITH_OPENCODE=1 ;;
+    --opencode) OPENCODE_MAJOR_WANT="${2:-}"; shift ;;
     --no-cockpit) NO_COCKPIT=1 ;;
     --with-cockpit) WITH_COCKPIT=1 ;;
     --with-image) WITH_IMAGE=1 ;;
@@ -683,6 +701,11 @@ without a terminal.
                         default model alone). Remembered by later runs, each of
                         which says so.
   --with-opencode       re-enable it after a --no-opencode
+  --opencode 2|1        which OpenCode this box serves: 1 is the tested pin and the
+                        default; 2 opts the box into OpenCode 2 (the pinned
+                        OPENCODE2_VERSION): the oc launcher, the Agent view and its
+                        guards follow the choice. Remembered by later runs; --opencode 1
+                        goes back (it takes our v2 deny array out of your global config).
   --no-cockpit          skip the web cockpit and its Agent view (no dashboard
                         unit, no sudoers allowlist). Remembered by later runs,
                         each of which says so.
@@ -1419,10 +1442,26 @@ elif [ "$WITH_OPENCODE" -eq 0 ] && [ -f "$OC_OFF_MARK" ]; then
   OPENCODE=0
   echo "Keeping the opencode integration off (your earlier --no-opencode). Pass --with-opencode to re-enable."
 fi
+# Which OpenCode this box serves. The choice persists like the on/off one, by a marker
+# in CONFIG_DIR written when the step below actually puts a matching binary in place (a
+# failed download never opts a box in). 1 is the tested pin; 2 is the opt-in OpenCode 2
+# (Hasan's plan of 2026-10-22: option first, default only after proofs on both boxes).
+OPENCODE_MAJOR=1
+if [ -n "$OPENCODE_MAJOR_WANT" ]; then
+  case "$OPENCODE_MAJOR_WANT" in
+    1|2) OPENCODE_MAJOR="$OPENCODE_MAJOR_WANT" ;;
+    *) printf -- '--opencode takes 1 or 2 (which OpenCode to serve), not %s\n' "$OPENCODE_MAJOR_WANT" >&2; exit 1 ;;
+  esac
+elif [ -s "$CONFIG_DIR/opencode.major" ] && [ "$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || true)" = "2" ]; then
+  OPENCODE_MAJOR=2
+fi
 # Before anything is pulled or downloaded: this was refused at step 7, after the image,
 # the checkpoints and the engine's configs (found in review, 2026-09-24).
 if [ "$OPENCODE" -eq 1 ] && [ -n "$_ENV_OPENCODE_VERSION" ] && [ -z "$_ENV_OPENCODE_SHA256" ]; then
   die "OPENCODE_VERSION=$OPENCODE_VERSION needs OPENCODE_SHA256 too (GitHub's digest of opencode-linux-arm64.tar.gz for that release): a version with no checksum is not a pin"
+fi
+if [ "$OPENCODE" -eq 1 ] && [ -n "$_ENV_OPENCODE2_VERSION" ] && [ -z "$_ENV_OPENCODE2_SHA256" ]; then
+  die "OPENCODE2_VERSION=$OPENCODE2_VERSION needs OPENCODE2_SHA256 too (GitHub's digest of opencode-linux-arm64.tar.gz for that release): a version with no checksum is not a pin"
 fi
 # A secondary run installs the lane it was started for, and nothing else.
 if [ -n "$SECONDARY" ] && [ "$LANE" != "$SECONDARY" ]; then
@@ -2627,8 +2666,18 @@ OC_SUM_BEFORE="$(oc_configs_sum)"
 # opencode wrote unreadable. None of it fails the install: opencode is one integration.
 OC_HOME_BIN="$HOME/.opencode/bin/opencode"
 OC_HOME_DIR="${OC_HOME_BIN%/opencode}"
-oc_version(){ { "$1" --version 2>/dev/null || true; } | tail -1 | tr -d 'v[:space:]'; }
+# the version, stripped of what the binary wraps it in: 1.x prints "1.19.5", OpenCode 2
+# prints "opencode v2.3.0" (measured 2026-11-14), and tr -d 'v[:space:]' would have left
+# "opencode2.3.0" behind (the Agent banner's eternal restart, etude 4 chantier b).
+oc_version(){ { "$1" --version 2>/dev/null || true; } | tail -1 | { grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || true; } | tail -1; }
 ver_lt(){ [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
+# Which OpenCode this run serves, and the pair that pins it (both are GitHub release
+# assets, digested the same way: OPENCODE2 has had assets since v2.2.0, verified 2026-11-14).
+if [ "${OPENCODE_MAJOR:-1}" = "2" ]; then
+  OC_TARGET_VER="$OPENCODE2_VERSION"; OC_TARGET_SHA="$OPENCODE2_SHA256"
+else
+  OC_TARGET_VER="$OPENCODE_VERSION"; OC_TARGET_SHA="$OPENCODE_SHA256"
+fi
 # Homebrew links a formula's binary from <prefix>/Cellar/<formula>/<version>/bin and writes the
 # tap the formula came from in that keg's INSTALL_RECEIPT.json (source.tap, Homebrew's tab.rb):
 # anomalyco/tap for opencode's own 1.x formula (sst/tap before the project moved, a name an older
@@ -2637,16 +2686,19 @@ oc_brew_not_tap(){ local bin; bin="$(readlink -f "$1" 2>/dev/null || true)"
   case "$bin" in */Cellar/opencode/*/bin/opencode) ;; *) return 1 ;; esac
   ! grep -qsE '"tap"[[:space:]]*:[[:space:]]*"(anomalyco|sst)/tap"' "${bin%/bin/opencode}/INSTALL_RECEIPT.json"; }
 oc_fetch_pinned(){   # prints the cause of a failure; the caller says what it leaves behind
-  local tmp url="https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION/opencode-linux-arm64.tar.gz"
+  # the pair this run pins; the defaults keep the function usable on its own (tests render
+  # it with only OPENCODE_VERSION and OPENCODE_SHA256 set, the 1.x pair)
+  local ver="${OC_TARGET_VER:-$OPENCODE_VERSION}" sha="${OC_TARGET_SHA:-$OPENCODE_SHA256}"
+  local tmp url="https://github.com/anomalyco/opencode/releases/download/v$ver/opencode-linux-arm64.tar.gz"
   tmp="$(mktemp -d)"
   if ! curl -fsSL --retry 3 -m 600 -o "$tmp/oc.tar.gz" "$url"; then
-    rm -rf "$tmp"; echo "NOTE: could not download opencode $OPENCODE_VERSION ($url)"; return 1
+    rm -rf "$tmp"; echo "NOTE: could not download opencode $ver ($url)"; return 1
   fi
-  if ! printf '%s  %s\n' "$OPENCODE_SHA256" "$tmp/oc.tar.gz" | sha256sum -c --quiet - >/dev/null 2>&1; then
-    rm -rf "$tmp"; echo "NOTE: the opencode $OPENCODE_VERSION download does not match its pinned sha256, so it was not installed"; return 1
+  if ! printf '%s  %s\n' "$sha" "$tmp/oc.tar.gz" | sha256sum -c --quiet - >/dev/null 2>&1; then
+    rm -rf "$tmp"; echo "NOTE: the opencode $ver download does not match its pinned sha256, so it was not installed"; return 1
   fi
   if ! tar -xzf "$tmp/oc.tar.gz" -C "$tmp" opencode; then
-    rm -rf "$tmp"; echo "NOTE: the opencode $OPENCODE_VERSION archive did not unpack"; return 1
+    rm -rf "$tmp"; echo "NOTE: the opencode $ver archive did not unpack"; return 1
   fi
   mkdir -p "$OC_HOME_DIR"
   # a new file renamed over the old one: a server still running the old binary keeps it.
@@ -2655,7 +2707,7 @@ oc_fetch_pinned(){   # prints the cause of a failure; the caller says what it le
   local placed=0
   install -m 755 "$tmp/opencode" "$OC_HOME_BIN.new" && mv -f "$OC_HOME_BIN.new" "$OC_HOME_BIN" && placed=1
   rm -rf "$tmp" "$OC_HOME_BIN.new"
-  [ "$placed" -eq 1 ] || { echo "NOTE: could not put opencode $OPENCODE_VERSION at $OC_HOME_BIN"; return 1; }
+  [ "$placed" -eq 1 ] || { echo "NOTE: could not put opencode $ver at $OC_HOME_BIN"; return 1; }
 }
 OC_FOUND="$(command -v opencode || true)"
 OC_ON_PATH="$OC_FOUND"   # what a shell of the user's finds, before the fallback below
@@ -2664,40 +2716,81 @@ OC_WAS_ABSENT=0; [ -z "$OC_FOUND" ] && OC_WAS_ABSENT=1
 OC_HAVE=""; [ -n "$OC_FOUND" ] && OC_HAVE="$(oc_version "$OC_FOUND")"
 if [ "$OPENCODE_PIN" != "1" ]; then
   echo "opencode ${OC_HAVE:-not installed}: kept as it is (OPENCODE_PIN=$OPENCODE_PIN)"
-elif [ "$OC_HAVE" = "$OPENCODE_VERSION" ]; then
+elif [ "$OC_HAVE" = "$OC_TARGET_VER" ]; then
   echo "opencode $OC_HAVE: the version this repo tests"
-elif [ -z "$OC_FOUND" ] || { [ "$OC_FOUND" -ef "$OC_HOME_BIN" ] && ver_lt "$OC_HAVE" "$OPENCODE_VERSION"; }; then
-  if [ -z "$OC_FOUND" ]; then
-    echo "opencode is not installed: installing $OPENCODE_VERSION (the release asset, checked against its pinned sha256)"
+elif [ -n "$OC_HAVE" ] && [ "${OC_HAVE%%.*}" != "${OPENCODE_MAJOR:-1}" ]; then
+  # the box holds the other OpenCode than the one it chose: the choice wins, straight from
+  # the pinned asset (crossing majors through the binary's own upgrader is not this repo's
+  # way: it installs whatever is latest upstream, not what was measured here)
+  echo "opencode $OC_HAVE is OpenCode ${OC_HAVE%%.*}, this box serves OpenCode ${OPENCODE_MAJOR:-1}: installing $OC_TARGET_VER (the release asset, checked against its pinned sha256)"
+  if oc_fetch_pinned; then
+    OC_FOUND="$OC_HOME_BIN"; OC_HAVE="$(oc_version "$OC_HOME_BIN")"
+    echo "opencode $OC_HAVE installed at $OC_HOME_BIN"
+    [ -n "$OC_ON_PATH" ] && echo "      NOTE: a shell finds $OC_ON_PATH first: the Agent unit and this run take"
+    [ -n "$OC_ON_PATH" ] && echo "      the installed copy at ~/.opencode/bin; keep only one OpenCode 2 on the PATH"
   else
-    echo "opencode $OC_HAVE -> $OPENCODE_VERSION: replacing it with the release asset, checked against its pinned sha256"
+    echo "      opencode stays at $OC_HAVE, and this run serves it as the OpenCode it is."
+    OPENCODE_MAJOR="${OC_HAVE%%.*}"
+  fi
+elif [ -z "$OC_FOUND" ] || { [ "$OC_FOUND" -ef "$OC_HOME_BIN" ] && ver_lt "$OC_HAVE" "$OC_TARGET_VER"; }; then
+  if [ -z "$OC_FOUND" ]; then
+    echo "opencode is not installed: installing $OC_TARGET_VER (the release asset, checked against its pinned sha256)"
+  else
+    echo "opencode $OC_HAVE -> $OC_TARGET_VER: replacing it with the release asset, checked against its pinned sha256"
   fi
   if oc_fetch_pinned; then
     OC_FOUND="$OC_HOME_BIN"; OC_HAVE="$(oc_version "$OC_HOME_BIN")"
     echo "opencode $OC_HAVE installed at $OC_HOME_BIN"
   elif [ -z "$OC_FOUND" ]; then
     echo "      opencode is still not installed, and the Agent view and the oc launcher need it. Re-run ./install.sh"
-    echo "      once GitHub is reachable, or install it from https://opencode.ai (this repo tests $OPENCODE_VERSION)."
+    echo "      once GitHub is reachable, or install it from https://opencode.ai (this repo tests $OC_TARGET_VER)."
   else
     echo "      opencode stays at $OC_HAVE."
   fi
-elif ver_lt "$OC_HAVE" "$OPENCODE_VERSION" && oc_brew_not_tap "$OC_FOUND"; then
+elif ver_lt "$OC_HAVE" "$OC_TARGET_VER" && oc_brew_not_tap "$OC_FOUND"; then
   echo "NOTE: opencode $OC_HAVE comes from Homebrew, not from opencode's own tap, kept: its upgrader would"
-  echo "      run brew upgrade, which installs Homebrew's version, not $OPENCODE_VERSION, and Homebrew Core's"
-  echo "      formula is OpenCode 2 now, which oc and the Agent view are not written for. For $OPENCODE_VERSION:"
-  echo "      brew uninstall opencode, then run this installer again (it installs $OPENCODE_VERSION at"
+  echo "      run brew upgrade, which installs Homebrew's version, not $OC_TARGET_VER, and Homebrew Core's"
+  echo "      formula is OpenCode 2 now, which oc and the Agent view are not written for. For $OC_TARGET_VER:"
+  echo "      brew uninstall opencode, then run this installer again (it installs $OC_TARGET_VER at"
   echo "      ~/.opencode/bin), or brew install anomalyco/tap/opencode (opencode's own formula, on 1.x)."
-elif ver_lt "$OC_HAVE" "$OPENCODE_VERSION"; then
-  echo "opencode $OC_HAVE -> $OPENCODE_VERSION through opencode's own upgrader ($OC_FOUND)"
-  "$OC_FOUND" upgrade "$OPENCODE_VERSION" </dev/null >/dev/null 2>&1 \
-    || echo "NOTE: opencode upgrade $OPENCODE_VERSION failed; run it yourself"
+elif [ "${OPENCODE_MAJOR:-1}" = 2 ] && ver_lt "$OC_HAVE" "$OC_TARGET_VER"; then
+  # v2 has no opencode-side upgrader this repo trusts (2.x ships no GitHub releases before
+  # v2.2.0 and the npm route runs a postinstall): the pinned asset is the one way.
+  echo "opencode $OC_HAVE -> $OC_TARGET_VER: replacing it with the release asset, checked against its pinned sha256"
+  if oc_fetch_pinned; then
+    OC_FOUND="$OC_HOME_BIN"; OC_HAVE="$(oc_version "$OC_HOME_BIN")"
+    echo "opencode $OC_HAVE installed at $OC_HOME_BIN"
+  else
+    echo "      opencode stays at $OC_HAVE."
+  fi
+elif ver_lt "$OC_HAVE" "$OC_TARGET_VER"; then
+  echo "opencode $OC_HAVE -> $OC_TARGET_VER through opencode's own upgrader ($OC_FOUND)"
+  "$OC_FOUND" upgrade "$OC_TARGET_VER" </dev/null >/dev/null 2>&1 \
+    || echo "NOTE: opencode upgrade $OC_TARGET_VER failed; run it yourself"
   OC_HAVE="$(oc_version "$OC_FOUND")"
 else
-  echo "NOTE: opencode $OC_HAVE is newer than the $OPENCODE_VERSION this repo tests. Kept: going back"
+  echo "NOTE: opencode $OC_HAVE is newer than the $OC_TARGET_VER this repo tests. Kept: going back"
   echo "      a version can leave sessions a newer opencode wrote unreadable. OPENCODE_PIN=0 silences this."
 fi
-if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && ver_lt "$OC_HAVE" "$OPENCODE_VERSION"; then
+if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && ver_lt "$OC_HAVE" "$OC_TARGET_VER"; then
   echo "NOTE: opencode is still $OC_HAVE after the step above; oc and the Agent view keep running it"
+fi
+# The marker records the OpenCode this box NOW serves, and only once a binary stands there:
+# a run that could not download never opts a box in, and never opts it out either.
+if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && [ "${OC_HAVE%%.*}" = "${OPENCODE_MAJOR:-1}" ]; then
+  OC_STATE_DIR="${CONFIG_DIR:-$HOME/.config/qwen38}"
+  mkdir -p "$OC_STATE_DIR"
+  case "${OPENCODE_MAJOR:-1}" in
+    2) printf '2\n# asked with ./install.sh --opencode 2 on %s\n' "$(date -u +%Y-%m-%dT%H:%MZ)" > "$OC_STATE_DIR/opencode.major" ;;
+    *) rm -f "$OC_STATE_DIR/opencode.major" ;;
+  esac
+fi
+# Going back to 1.x takes OUR v2 deny array out of the global config: OpenCode 1.19 refuses
+# to start while a config holds "permissions" ("V2 permissions are not supported by OpenCode
+# V1", measured against the box's 1.19.5 on 2026-11-14). --remove-permissions only touches
+# the array this repo wrote; a person's own table is left alone.
+if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OPENCODE_MAJOR:-1}" != 2 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
+  python3 "$REPO_DIR/oc-merge-limits.py" "$HOME/.config/opencode/opencode.json" --remove-permissions >/dev/null 2>&1 || true
 fi
 # The rest of this run (the Agent tab's unit, the oc launcher) finds opencode on PATH, and
 # a first install puts it in the shell's PATH the way opencode's own installer does.
@@ -2708,7 +2801,7 @@ if [ -n "$OC_FOUND" ] && [ "$OC_FOUND" -ef "$OC_HOME_BIN" ]; then
   # commented-out one, and an update never wrote it after). A commented-out line is no PATH.
   if [ -z "$OC_ON_PATH" ] && ! grep -qsE '^[^#]*\.opencode/bin' "$HOME/.bashrc"; then
     if [ "$OC_WAS_ABSENT" -eq 1 ]; then
-      printf '\n# opencode, installed by dgx-spark-qwen38 (%s)\nexport PATH="$HOME/.opencode/bin:$PATH"\n' "$OPENCODE_VERSION" >> "$HOME/.bashrc"
+      printf '\n# opencode, installed by dgx-spark-qwen38 (%s)\nexport PATH="$HOME/.opencode/bin:$PATH"\n' "$OC_TARGET_VER" >> "$HOME/.bashrc"
     else
       printf '\n# opencode, put on the PATH by dgx-spark-qwen38\nexport PATH="$HOME/.opencode/bin:$PATH"\n' >> "$HOME/.bashrc"
     fi
@@ -3000,6 +3093,8 @@ OC_LFM25_NAME="$OC_LFM25_NAME" OC_LFM25_BOOT="$LFM25_BOOT" \
 OC_LFM3="$OC_LFM3" OC_LFM3_CTX="$OC_LFM3_CTX" OC_LFM3_OUT="$OC_LFM3_OUT" \
 OC_LFM3_NAME="$OC_LFM3_NAME" OC_LFM3_BOOT="$LFM3_BOOT" \
 OC_KEEP="$OC_KEEP" OC_PIN="$OPENCODE_PIN" OC_DENY="$(python3 "$REPO_DIR/oc-merge-limits.py" --deny-permission)" \
+OC_DENY_V2="$(python3 "$REPO_DIR/oc-merge-limits.py" --deny-permissions)" \
+OC_MAJOR="${OPENCODE_MAJOR:-1}" \
 OC_CONFIG_DIR="$CONFIG_DIR" python3 - <<'PYEOF' || die "could not write the opencode provider config"
 import json
 import os
@@ -3175,10 +3270,20 @@ doc = {"$schema": "https://opencode.ai/config.json", "provider": providers,
 # oc-merge-limits.py --deny-permission gives them (OC_DENY). opencode merges this file over the
 # user's own config for oc and the Agent tab, so they come after the user's rules there, but for
 # a key added after the block in a global config that holds it too: opencode keeps a key where
-# the first config had it (review, 2026-10-29, docs/agents-and-network.md). An OC_DENY that is
-# set but empty stops here.
+# the first config had it (review, 2026-10-29, docs/agents-and-network.md). OpenCode 2 does not
+# read "permission": its ordered "permissions" array gets the same rules from OC_DENY_V2, last.
+# An OC_DENY or OC_DENY_V2 that is set but empty stops here. The v2 keys are written ONLY for a
+# box that chose OpenCode 2 (OC_MAJOR=2): OpenCode 1.19.5 refuses to start when a config holds
+# "permissions" at all ("V2 permissions are not supported by OpenCode V1", measured 2026-11-14).
 if os.environ.get("OC_DENY") is not None:
     doc["permission"] = json.loads(os.environ["OC_DENY"])
+if os.environ.get("OC_DENY_V2") is not None and os.environ.get("OC_MAJOR") == "2":
+    doc["permissions"] = json.loads(os.environ["OC_DENY_V2"])
+    # the cloud and the outside services, cut for the Agent tab (measured 2026-11-14:
+    # without policies the OpenCode provider and its free models answer on /api/model)
+    doc["policies"] = [{"action": "provider.use", "resource": "opencode", "effect": "deny"}]
+    doc["share"] = "disabled"
+    doc["websearch"] = False
 # With the version pinned, opencode looks for no update at all: false, the JSON boolean
 # (its schema takes a boolean or "notify", not the string "false"). With any other value
 # 1.19's TUI checks every 10 minutes and, once it is on the newest 1.x, shows "/update to
@@ -3187,7 +3292,10 @@ if os.environ.get("OC_DENY") is not None:
 # Agent tab's relay is written for. Up to 1.18, unset meant opencode installed its own
 # patch releases (see the OPENCODE_VERSION pin).
 if os.environ.get("OC_PIN") == "1":
-    doc["autoupdate"] = False
+    if os.environ.get("OC_MAJOR") == "2":
+        doc["update"] = "disable"     # the v2 key; "disable" is its literal for "no update"
+    else:
+        doc["autoupdate"] = False
 # written only when it changes, so its date says when it last did: opencode-web is
 # restarted below only for a config newer than it
 text = json.dumps(doc, indent=2) + "\n"
@@ -3230,6 +3338,12 @@ else
   # plain opencode reads this file alone: the shell rules for the hosts of Cohere's report go
   # last in it (docs/agents-and-network.md)
   python3 "$REPO_DIR/oc-merge-limits.py" "$OC_USER_CFG" --deny-bash || true
+  # OpenCode 2 does not read that block at all, and its own "permissions" array must not go
+  # into a file 1.x still reads (1.19.5 stops on it, measured 2026-11-14): the v2 array is
+  # written only on a box that chose --opencode 2, and taken back out by the rollback above.
+  if [ "${OPENCODE_MAJOR:-1}" = "2" ]; then
+    python3 "$REPO_DIR/oc-merge-limits.py" "$OC_USER_CFG" --deny-permissions || true
+  fi
 fi
 # An existing opencode.json keeps the user's other providers, but its limits for
 # THIS lane must follow the served engine (v1.5.2: a flash conversation allowed
@@ -3386,7 +3500,42 @@ if [ -n "$OC_FOREIGN" ]; then
   echo "NOTE: an unrelated 'oc' command exists at $OC_FOREIGN; not installing the launcher."
   # OPENCODE_CONFIG as the launcher sets it: without it opencode sends the prompts to its
   # own hosted model when the global config names no provider for this box (2026-09-23)
-  echo "      Launch opencode with:  OPENCODE_CONFIG=$CONFIG_DIR/opencode.json OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OC_OUT_CAP opencode --yolo"
+  if [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
+    echo "      Launch opencode with:  OPENCODE_CONFIG=$CONFIG_DIR/opencode.json opencode --auto"
+    echo "      (OpenCode 2 has no cap to lift: the answer length follows the model's"
+    echo "       limit.output, measured on 2.3.0 the 2026-11-14, and --yolo is not a flag of it)"
+  else
+    echo "      Launch opencode with:  OPENCODE_CONFIG=$CONFIG_DIR/opencode.json OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OC_OUT_CAP opencode --yolo"
+  fi
+elif [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
+  mkdir -p "$HOME/.local/bin"
+  cat > "$OC_BIN" <<OCWRAP2
+#!/bin/bash
+# oc launcher installed by dgx-spark-qwen38: opencode wired to the local server.
+# This one starts OpenCode 2 (the ./install.sh --opencode 2 choice). It has no
+# 32,000-token cap to lift: the answer length follows the model's limit.output
+# in the config (max_completion_tokens, measured on 2.3.0 the 2026-11-14), and
+# --yolo is not a flag of OpenCode 2. --auto approves every tool call no rule
+# denies; the guard denies for the hosts of Cohere's report hold in the config's
+# ordered "permissions" and, for the Agent unit, in the content it injects last.
+# The box's providers and default model, over whatever the global opencode config
+# says (opencode loads OPENCODE_CONFIG after it). Without this, a config with no
+# provider for this box sent oc's prompts to opencode's own hosted model (2026-09-23).
+[ -f "$CONFIG_DIR/opencode.json" ] && export OPENCODE_CONFIG="\${OPENCODE_CONFIG:-$CONFIG_DIR/opencode.json}"
+OPENCODE_BIN="\$(command -v opencode || true)"
+[ -n "\$OPENCODE_BIN" ] || OPENCODE_BIN="\$HOME/.opencode/bin/opencode"
+if [ ! -x "\$OPENCODE_BIN" ]; then
+  echo "oc: opencode is not installed. Re-run ./install.sh in $REPO_DIR: it installs the opencode this repo tests ($OPENCODE2_VERSION)." >&2
+  exit 127
+fi
+if [ "\$( { "\$OPENCODE_BIN" --version 2>/dev/null || true; } | tail -1 | { grep -Eo '[0-9]+\\.[0-9]+\\.[0-9]+' || true; } | tail -1 | cut -d. -f1 )" != "2" ]; then
+  echo "oc: \$OPENCODE_BIN is not OpenCode 2, but this box chose ./install.sh --opencode 2. Re-run ./install.sh, or remove the other opencode from your PATH." >&2
+fi
+# --auto goes LAST: opencode's parser rejects global flags before a
+# subcommand (opencode --auto run ... prints the help instead of running)
+exec "\$OPENCODE_BIN" "\$@" --auto
+OCWRAP2
+  chmod +x "$OC_BIN"
 else
   mkdir -p "$HOME/.local/bin"
   cat > "$OC_BIN" <<OCWRAP
@@ -3878,7 +4027,7 @@ else
       # the PATH. Step 10 is the text path's only, so a box booting this lane kept the opencode
       # it started with until its next boot (the reference box on the FP4-Local lane, 2026-10-22).
       if [ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then
-        "$REPO_DIR/dashboard/install-agent.sh" \
+        OPENCODE_MAJOR="$OPENCODE_MAJOR" "$REPO_DIR/dashboard/install-agent.sh" \
           || echo "NOTE: the Agent view did not install; the rest of the cockpit is up (retry: ./dashboard/install-agent.sh)"
       fi
     else
@@ -4237,7 +4386,7 @@ except Exception as e:
         # The Agent tab needs opencode on PATH. Not having it costs one tab, and
         # one missing tab is not a reason to fail an install that is otherwise up.
         if [ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then
-          "$REPO_DIR/dashboard/install-agent.sh" \
+          OPENCODE_MAJOR="$OPENCODE_MAJOR" "$REPO_DIR/dashboard/install-agent.sh" \
             || echo "NOTE: the Agent view did not install; the rest of the cockpit is up (retry: ./dashboard/install-agent.sh)"
         elif [ "$OPENCODE" -eq 1 ]; then
           echo "NOTE: opencode is not on your PATH (step 7 did not install it: see its NOTE, or OPENCODE_PIN=0),"
@@ -4508,12 +4657,16 @@ except Exception as e:
       echo "  Docker     : $(id -un) is in the docker group; a terminal opened before this install gets it at its next login (the cockpit and these scripts need nothing)"
     fi
     if [ "$OPENCODE" -eq 1 ]; then
-      OC_NOW="$( { opencode --version 2>/dev/null || true; } | tail -1 | tr -d 'v[:space:]')"
+      OC_NOW="$( { opencode --version 2>/dev/null || true; } | tail -1 | { grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || true; } | tail -1)"
       # What starts it from the user's own shell: this script's PATH is not theirs, the
       # launcher is skipped when another oc exists, and ~/.local/bin may be new.
       OC_START="oc"
       if ! grep -qs 'dgx-spark-qwen38' "$HOME/.local/bin/oc"; then
-        OC_START="${OC_OUT_CAP:+OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OC_OUT_CAP }opencode --yolo"
+        if [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
+          OC_START="OPENCODE_CONFIG=$CONFIG_DIR/opencode.json opencode --auto"
+        else
+          OC_START="${OC_OUT_CAP:+OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OC_OUT_CAP }opencode --yolo"
+        fi
       elif [ "$(command -v oc || true)" != "$HOME/.local/bin/oc" ]; then
         OC_START="$HOME/.local/bin/oc"
       fi
@@ -4521,10 +4674,10 @@ except Exception as e:
       if [ -z "$OC_NOW" ]; then
         echo "  opencode   : NOT installed (see step 7). Its config is ready at $OC_READS;"
         echo "               re-run ./install.sh to install it, or get it from https://opencode.ai"
-      elif [ "$OC_NOW" = "$OPENCODE_VERSION" ]; then
+      elif [ "$OC_NOW" = "${OC_TARGET_VER:-$OPENCODE_VERSION}" ]; then
         echo "  opencode   : $OC_NOW, the version this repo tests; start it with: $OC_START   (config: $OC_READS)"
       else
-        echo "  opencode   : $OC_NOW (this repo tests $OPENCODE_VERSION); start it with: $OC_START   (config: $OC_READS)"
+        echo "  opencode   : $OC_NOW (this repo tests ${OC_TARGET_VER:-$OPENCODE_VERSION}); start it with: $OC_START   (config: $OC_READS)"
       fi
     else
       # remembered, unlike a lane: an agent that runs commands, which an update must not turn back on;

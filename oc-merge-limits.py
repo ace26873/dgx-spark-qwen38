@@ -6,8 +6,12 @@ Usage: oc-merge-limits.py <target opencode.json> <provider> <model id> <context>
        oc-merge-limits.py <target opencode.json> <provider> <model id> --add-variant <level>
        oc-merge-limits.py <target opencode.json> --autoupdate false|notify
        oc-merge-limits.py <target opencode.json> --deny-bash
+       oc-merge-limits.py <target opencode.json> --deny-permissions
+       oc-merge-limits.py <target opencode.json> --remove-permissions
        oc-merge-limits.py --agent-auto-permission
+       oc-merge-limits.py --agent-auto-config-content
        oc-merge-limits.py --deny-permission
+       oc-merge-limits.py --deny-permissions
        oc-merge-limits.py <target opencode.json> --add-providers <generated opencode.json>
        oc-merge-limits.py <target opencode.json> --remove-providers <API key file>
        oc-merge-limits.py <target opencode.json> --remove-provider <provider id>
@@ -56,9 +60,24 @@ the user's own "bash" stays as they wrote it. A run that finds them overridden b
 after them puts them last again; a pattern the user set inside them stays as they set it.
 deny_permission() is the same block for the config install.sh generates, which opencode merges
 over the user's own, so they come after the user's rules there whatever those say.
---agent-auto-permission prints the OPENCODE_PERMISSION the Agent tab's unit takes with
+
+OpenCode 2 does not read "permission": its "permissions" is an ordered array of
+{"action": "shell", "resource": <pattern>, "effect": "deny"}, and the last matching rule
+wins. A v1 "bash*" entry is carried over as an inert action of that name (shown by
+/api/agent), so it denies nothing: that is why --deny-permissions writes the same patterns
+in "permissions", at the end, and why install.sh's v2 mode calls both passes. They are two
+separate commands on purpose: OpenCode 1.19 refuses to start when a config holds
+"permissions" at all ("V2 permissions are not supported by OpenCode V1", measured against
+1.19.5 on 2026-11-14), so the v2 keys are written only by the v2 paths and --remove-
+permissions takes OUR array back out when a box rolls back to 1.x. deny_permissions_v2()
+is the array for the config install.sh generates.
+--agent-auto-permission prints the OPENCODE_PERMISSION the Agent tab's 1.x unit takes with
 AGENT_AUTO=1: opencode merges it after every rule of the files, so the same rules come again
-after its {"*": "allow"}, under "*bash", a key the files do not have.
+after its {"*": "allow"}, under "*bash", a key the files do not have. OpenCode 2 ignores
+OPENCODE_PERMISSION; its --auto approves what no rule denies, so the "permissions" rules
+above are what hold there. serve has no such flag: there, --agent-auto-config-content prints
+the OPENCODE_CONFIG_CONTENT the 2.x unit takes with AGENT_AUTO=1 (the content is merged after
+the files' rules, so its wildcard allow approves every call and the same rules deny theirs).
 
 The file is read the way opencode reads it: jsonc-parser with allowTrailingComma (read in
 the 1.18.32 binary), so // and /* */ comments anywhere outside a string and a comma before
@@ -559,9 +578,9 @@ def deny_permission() -> dict:
     return {DENY_KEY: {p: "deny" for p in DENY_BASH}}
 
 
-def merge_deny_bash(path: str) -> int:
-    """Make the DENY_BASH rules hold in this file: under DENY_KEY, after every other key of its
-    "permission", keeping the user's own rules and their own setting of any of these patterns."""
+def merge_deny_bash_v1(path: str) -> int:
+    """Make the DENY_BASH rules hold in a 1.x "permission": under DENY_KEY, after every other
+    key of it, keeping the user's own rules and their own setting of any of these patterns."""
     opened = _open(path)
     if opened is None:
         return 1
@@ -617,11 +636,173 @@ def merge_deny_bash(path: str) -> int:
     return 0
 
 
+def _array_elements(clean: str, i: int):
+    """(start, end) of each element of the array whose opening bracket is at i, in a blank()ed
+    text that parses."""
+    out = []
+    j = _skip_ws(clean, i + 1)
+    while clean[j] != "]":
+        end = _value_end(clean, j)
+        out.append((j, end))
+        j = _skip_ws(clean, end)
+        if clean[j] == ",":
+            j = _skip_ws(clean, j + 1)
+    return out
+
+
+def append_array(text: str, path, value: str) -> str:
+    """text with `value` appended to the array at `path`, after its last element and before any
+    trailing comma or comment. A new member of an array goes last for the same reason a rule
+    does: opencode's last matching rule wins."""
+    clean = blank(text)
+    span = _locate(clean, path)
+    if span is None or clean[span[1]] != "[":
+        raise ValueError(f"no array at {'/'.join(path) or 'the root'}")
+    start, end = span[1], span[2]
+    elems = _array_elements(clean, start)
+    if not elems:
+        return text[:start + 1] + value + text[start + 1:]
+    last_start, last_end = elems[-1]
+    lead = clean[clean.rfind("\n", 0, last_start) + 1:last_start]
+    multiline = "\n" in clean[start:end] and not lead.strip()
+    nl = "\r\n" if "\r\n" in text else "\n"
+    if multiline:
+        value = value.replace("\n", nl + lead)
+    j = _skip_ws(clean, last_end)
+    if j < len(clean) and clean[j] == ",":
+        return text[:j + 1] + (nl + lead if multiline else " ") + value + text[j + 1:]
+    return text[:last_end] + "," + (nl + lead if multiline else " ") + value + text[last_end:]
+
+
+def deny_permissions_v2() -> list:
+    """The "permissions" entries OpenCode 2 reads: the rules, as an ordered array."""
+    return [{"action": "shell", "resource": p, "effect": "deny"} for p in DENY_BASH]
+
+
+def _v2_action(permissions, action: str, resource: str):
+    """The effect OpenCode 2's ordered permissions array gives this action/resource pair, the
+    last matching rule winning; None when no rule matches or the array is not one."""
+    if not isinstance(permissions, list):
+        return None
+    got = None
+    for rule in permissions:
+        if not isinstance(rule, dict):
+            continue
+        a, r, effect = rule.get("action"), rule.get("resource"), rule.get("effect")
+        if (isinstance(a, str) and isinstance(r, str) and isinstance(effect, str)
+                and _wild(action, a) and _wild(resource, r)):
+            got = effect
+    return got
+
+
+def _deny_permissions_wrong(permissions) -> list:
+    """The DENY_BASH patterns the array does not deny for the v2 shell tool."""
+    return [p for p in DENY_BASH
+            if _v2_action(permissions, "shell", p.replace("*", "x")) != "deny"]
+
+
+def _verify_deny_permissions(path: str) -> str:
+    """'' when the file on disk really denies these hosts to OpenCode 2's shell."""
+    try:
+        doc = _reread(path)
+    except ValueError as e:
+        return str(e)
+    perms = doc.get("permissions")
+    if not isinstance(perms, list):
+        return "permissions array missing"
+    wrong = _deny_permissions_wrong(perms)
+    return "" if not wrong else f"not denied in the end: {', '.join(wrong)}"
+
+
+def merge_deny_permissions(path: str) -> int:
+    """Make the DENY_BASH rules hold in OpenCode 2's "permissions": the patterns go at the end
+    of the ordered array, since its last matching rule wins. A v1 "bash*" entry is inert there."""
+    opened = _open(path)
+    if opened is None:
+        return 1
+    text, doc = opened
+    perms = doc.get("permissions")
+    want = copy.deepcopy(doc)
+    try:
+        if perms is None:
+            want["permissions"] = deny_permissions_v2()
+            new = set_member(text, [], "permissions", json.dumps(want["permissions"], indent=2))
+        elif (not isinstance(perms, list)
+              or not all(isinstance(r, dict) and all(isinstance(r.get(k), str)
+                                                    for k in ("action", "resource", "effect"))
+                         for r in perms)):
+            print(f"{path}: refused, its permissions is not an array of rules; unchanged")
+            return 1
+        elif not _deny_permissions_wrong(perms):
+            print("the shell deny rules for the hosts of Cohere's report hold already: unchanged")
+            return 0
+        else:
+            want["permissions"] = list(perms) + deny_permissions_v2()
+            new = text
+            for rule in deny_permissions_v2():
+                new = append_array(new, ["permissions"],
+                                   json.dumps(rule, separators=(", ", ": ")))
+    except ValueError as e:
+        print(f"{path}: refused, {e}; unchanged")
+        return 1
+    saved, bad = commit(path, new, want)
+    if bad:
+        print(f"{path}: refused, {bad}; unchanged.")
+        return 1
+    if not _landed(path, saved, _verify_deny_permissions(path), "the shell deny rules"):
+        return 1
+    print(f"shell deny rules for {', '.join(DENY_BASH)} put last in its permissions (backup {saved})")
+    return 0
+
+
+def merge_deny_bash(path: str) -> int:
+    """The 1.x pass only: the "permission" block. It must NOT add "permissions" to a
+    config 1.x still reads: 1.19.5 stops with "V2 permissions are not supported by
+    OpenCode V1" (measured 2026-11-14). The v2 mode of install.sh calls
+    --deny-permissions for the array, on a box that runs OpenCode 2."""
+    return merge_deny_bash_v1(path)
+
+
+def remove_permissions(path: str) -> int:
+    """Take our v2 array back out for a box rolling down to 1.x: only the exact array
+    --deny-permissions wrote. A table the person wrote themselves is theirs to keep or
+    delete, and the message says who to ask."""
+    opened = _open(path)
+    if opened is None:
+        return 1
+    text, doc = opened
+    if "permissions" not in doc:
+        print("no v2 permissions array here: unchanged")
+        return 0
+    if doc["permissions"] != deny_permissions_v2():
+        print(f"{path}: its permissions is not this box's deny array; left alone")
+        return 1
+    want = copy.deepcopy(doc)
+    del want["permissions"]
+    new = remove_member(text, ["permissions"])
+    saved, bad = commit(path, new, want)
+    if bad:
+        print(f"{path}: refused, {bad}; unchanged.")
+        return 1
+    print(f"the box's v2 deny array was removed (backup {saved})")
+    return 0
+
+
 def agent_auto_permission() -> str:
     """OPENCODE_PERMISSION for AGENT_AUTO=1. opencode merges it into the config after every rule of
     the files, so its "*" would win over DENY_KEY's rules (an echo naming an aliyuncs.com host ran
     under a bare {"*": "allow"} on 2026-10-28): the same rules come again after it, under AUTO_KEY."""
     return json.dumps({"*": "allow", AUTO_KEY: {p: "deny" for p in DENY_BASH}}, separators=(",", ":"))
+
+
+def agent_auto_config_content() -> str:
+    """OPENCODE_CONFIG_CONTENT for AGENT_AUTO=1 on OpenCode 2, which ignores OPENCODE_PERMISSION.
+    serve has no --auto flag (the run one approves only what no rule denies), so the approval
+    comes from the config: opencode merges this content after every rule of the files (its last
+    matching rule wins, checked on 2.3.0: a wildcard allow in the content overrode a file's
+    deny), so the wildcard "allow" comes first and the same shell rules come again after it."""
+    return json.dumps({"permissions": [{"action": "*", "resource": "*", "effect": "allow"}]
+                       + deny_permissions_v2()}, separators=(",", ":"))
 
 
 def _verify_variant(path, provider, model, level) -> str:
@@ -836,9 +1017,12 @@ def remove_providers(path: str, key_file: str) -> int:
             del cur[k]
             steps.append(([k], copy.deepcopy(cur)))
     # since v1.40.4 the copy also holds the rules --deny-bash put in it: a "permission" of any other
-    # content is the user's, and keeps the file (the copy stayed, emptied of its provider, found in review)
-    if (set(cur) <= {"$schema", "autoupdate", "compaction", "provider", "permission"} and not cur.get("provider")
-            and cur.get("permission", deny_permission()) == deny_permission()):
+    # content is the user's, and keeps the file (the copy stayed, emptied of its provider, found in review).
+    # OpenCode 2's "permissions" from the same command is ours too, and no reason to keep the copy.
+    if (set(cur) <= {"$schema", "autoupdate", "compaction", "provider", "permission", "permissions"}
+            and not cur.get("provider")
+            and cur.get("permission", deny_permission()) == deny_permission()
+            and cur.get("permissions", deny_permissions_v2()) == deny_permissions_v2()):
         saved = backup(path)
         os.unlink(path)
         print(f"{path} held only this box's providers ({', '.join(gone)}): moved to {saved}")
@@ -879,11 +1063,21 @@ def main(argv: list[str]) -> int:
         return merge_autoupdate(argv[1], AUTOUPDATE[argv[3]])
     if len(argv) == 3 and argv[2] == "--deny-bash":
         return merge_deny_bash(argv[1])
+    if len(argv) == 3 and argv[2] == "--deny-permissions":
+        return merge_deny_permissions(argv[1])
+    if len(argv) == 3 and argv[2] == "--remove-permissions":
+        return remove_permissions(argv[1])
     if argv[1:] == ["--agent-auto-permission"]:
         print(agent_auto_permission())
         return 0
+    if argv[1:] == ["--agent-auto-config-content"]:
+        print(agent_auto_config_content())
+        return 0
     if argv[1:] == ["--deny-permission"]:
         print(json.dumps(deny_permission()))        # install.sh hands it to the config it generates
+        return 0
+    if argv[1:] == ["--deny-permissions"]:
+        print(json.dumps(deny_permissions_v2()))    # the same for OpenCode 2's ordered array
         return 0
     if len(argv) == 4 and argv[2] == "--add-providers":
         return add_providers(argv[1], argv[3])
