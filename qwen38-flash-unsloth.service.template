@@ -69,8 +69,8 @@ ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-flash-
 # --memory 110g: the cap the other lanes run under (FP4-Local's and Ornith's value); the study's measures ran without
 # it. Under it (the lane's proofs, 2026-11-12 and 13): ready 52 to 122 s after another lane stopped and 52 to 55 s on a
 # restart, and bench.sh's greedy median at 64.1 tok/s on a freshly started engine.
-ExecStart=/bin/bash -c 'check=__HOME__/.config/qwen38/llamacpp-files.sh; [ -f "$$check" ] || { echo "preflight: qwen38-flash-unsloth.service lacks its files: $$check is missing (the check of its files). Load the lane from the cockpit, or run ./switch-model.sh flash-unsloth" >&2; exit 78; }; \
-  bash "$$check" qwen38-flash-unsloth.service flash-unsloth __FILES__ || exit $$?; \
+ExecStart=/bin/bash -c 'check=__HOME__/.config/qwen38/llamacpp-files.sh; [ -f "$$check" ] || { echo "preflight: qwen38-flash-unsloth.service lacks its files: $$check is missing (the check of its files). Load the lane from the cockpit, or run ./switch-model.sh __TARGET__" >&2; exit 78; }; \
+  bash "$$check" qwen38-flash-unsloth.service __TARGET__ __FILES__ || exit $$?; \
   exec /usr/bin/docker run --rm --name qwen38-flash-unsloth --gpus all \
   --memory 110g --memory-swap 110g --network host --no-healthcheck \
   -e LLAMA_ARG_HOST=__ENGINE_BIND__ -e LLAMA_ARG_PORT=__PORT__ \

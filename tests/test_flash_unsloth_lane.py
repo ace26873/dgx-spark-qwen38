@@ -472,7 +472,10 @@ class TheSecondTarget(unittest.TestCase):
         self.assertIn(f"-m {snap}/{IQ3_PART1_PATH} ", unit)
         self.assertNotIn("UD-Q4_K_XL", cmd)
         # the check of its files names its four parts, then the draft and the template, as on UD-Q4_K_XL
-        m = re.search(r'bash "\$check" qwen38-flash-unsloth\.service flash-unsloth (.+?) \|\| exit', cmd)
+        # and its own target, which the lines that say how to bring its files back name (second review of v1.49.0:
+        # they said flash-unsloth, whose Load would have changed the quantization and fetched its 83 GB)
+        self.assertIn("or run ./switch-model.sh flash-unsloth-iq3\" >&2; exit 78", unit)
+        m = re.search(r'bash "\$check" qwen38-flash-unsloth\.service flash-unsloth-iq3 (.+?) \|\| exit', cmd)
         repo_dir = self.hf / "hub" / "models--unsloth--Qwen3.8-Flash-Next-GGUF" / "snapshots" / PINS["FLASH_UNSLOTH_REV"]
         self.assertEqual(m.group(1).split()[:4],
                          [str(repo_dir / PINS[f"FLASH_UNSLOTH_IQ3_PART{i}"].rsplit("=", 1)[0]) for i in range(1, 5)])
@@ -491,7 +494,7 @@ class TheSecondTarget(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
         def form(c):
-            c = " ".join(c.replace("UD-IQ3_XXS", "UD-Q4_K_XL").split())
+            c = " ".join(c.replace("UD-IQ3_XXS", "UD-Q4_K_XL").replace("flash-unsloth-iq3", "flash-unsloth").split())
             return re.sub(r"-c \d+ -np \d+( -ctk \S+ -ctv \S+)?", "FORM", c)
         self.assertEqual(form(cmd), form(exec_command(self.out.read_text())))
 

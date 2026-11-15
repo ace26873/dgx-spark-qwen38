@@ -173,6 +173,9 @@ class TheClientsFollowTheUnit(unittest.TestCase):
         out, rc, seen = run_follow("UD-IQ3_XXS/model-00001-of-00004.gguf", "flash-unsloth")
         self.assertEqual(rc, 0)
         self.assertEqual(seen, ["flash-unsloth-iq3 --clients"])
+        # done: no note, and no line asking to run by hand what just ran (second review of v1.49.0)
+        self.assertNotIn("NOTE:", out)
+        self.assertNotIn("run: ./switch-model.sh", out)
 
     def test_the_same_target_needs_nothing(self):
         out, rc, seen = run_follow("UD-Q4_K_XL/model-00001-of-00004.gguf", "flash-unsloth")

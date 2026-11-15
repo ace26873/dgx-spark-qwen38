@@ -1538,9 +1538,9 @@ unsloth_clients_follow(){
   local now
   now="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
   [ -n "$now" ] && [ -n "${OC_FLASH_UNSLOTH_TARGET:-}" ] && [ "$now" != "$OC_FLASH_UNSLOTH_TARGET" ] || return 0
-  "$REPO_DIR/switch-model.sh" "$now" --clients \
-    || echo "NOTE: the clients still name $OC_FLASH_UNSLOTH_TARGET for the Qwen3.8 Flash-Next Unsloth GGUF lane;"
-    echo "      run: ./switch-model.sh $now --clients"
+  "$REPO_DIR/switch-model.sh" "$now" --clients && return 0
+  echo "NOTE: the clients still name $OC_FLASH_UNSLOTH_TARGET for the Qwen3.8 Flash-Next Unsloth GGUF lane;"
+  echo "      run: ./switch-model.sh $now --clients"
 }
 too_big(){ local l; for l in ${TOO_BIG[@]+"${TOO_BIG[@]}"}; do [ "$l" = "$1" ] && return 0; done; return 1; }   # $1 a lane
 if [ "${#TOO_BIG[@]}" -gt 0 ]; then

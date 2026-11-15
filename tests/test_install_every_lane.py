@@ -928,6 +928,9 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         script = ("set -euo pipefail\nRECOMMENDED=0\nstep(){ echo \"STEP $*\"; }\ndie(){ echo \"DIE $*\"; exit 1; }\n"
                   + f'LANES_UNIT_DIR="{unit_dir}"; CONFIG_DIR="{t}"; . "{REPO}/lanes.sh"\n'
                   "stale_since(){ return 1; }\n" + f'HOME="{t}/home"; ALL_WEIGHTS={all_weights}\n'
+                  # the clients' entry follows the unit the lane's installer rendered (install.sh defines it above
+                  # this block; its own behaviour is tests/test_install_unsloth_target_moves.py)
+                  + f'unsloth_clients_follow(){{ echo "clients follow" >> "{log}"; }}\n'
                   + self.MODES.replace("/etc/systemd/system/", f"{unit_dir}/") +
                   f'prove_text_lane(){{ echo "prove $*" >> "{log}"; case "$1" in {prove_fail or "__none__"}) return 1 ;; esac; }}\n'
                   f'REPO_DIR="{repo}"; CONFIG_DIR="{t}"; LANE=27b; UNIT_NAME=qwen38-sglang.service; SMOKE_MODEL=qwen3.8-27b\n'
@@ -1102,18 +1105,19 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                     want_unsloth=1)
         rc, out, calls = self.end(units=units, prepared=("flash-unsloth",), **only)
         self.assertEqual(rc, 0, out)
-        self.assertEqual(calls, ["install-flash-unsloth.sh --no-smoke"])
+        self.assertEqual(calls, ["install-flash-unsloth.sh --no-smoke", "clients follow"])
         self.assertIn("unsloth=installed", out)
         # its unit alone, never loaded: its units only, as on a new box
         rc, out, calls = self.end(units=units, **only)
         self.assertEqual(rc, 0, out)
-        self.assertEqual(calls, ["install-flash-unsloth.sh --units-only"])
+        self.assertEqual(calls, ["install-flash-unsloth.sh --units-only", "clients follow"])
 
     def test_a_failed_unsloth_install_is_said_and_the_rest_goes_on(self):
         rc, out, calls = self.end(want_unsloth=1, unsloth_rc=1, all_weights=1)
         self.assertEqual(rc, 0, out)
         self.assertIn("NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install", out)
         self.assertNotIn("install-flash-unsloth.sh ", calls)          # nothing to prove
+        self.assertNotIn("clients follow", calls)                     # the unit, and so the entry, are as they were
         self.assertIn("unsloth=failed", out)
 
     def test_a_failed_ornith_install_is_said_and_the_rest_goes_on(self):

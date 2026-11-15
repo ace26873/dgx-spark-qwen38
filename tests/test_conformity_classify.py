@@ -123,7 +123,8 @@ def box(context="1m", host="127.0.0.1", port="30000", hf=None, target27="RadixAr
         (units / "qwen38-flash-unsloth.service").write_text(render("qwen38-flash-unsloth.service.template", {
             **common, "PORT": "30028", "IMAGE": "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64, "MODEL": f"{snap}/{unsloth}",
             "DRAFT": "/root/draft.gguf", "FILES": "", "CTX": "524288", "SLOTS": "-np 4", "KV": "-ctk q8_0 -ctv q8_0",
-            "YARN": "", "LOAD": "none", "SPEC": "ngram-mod,draft-dflash", "ENGINE_BIND": host}))
+            "YARN": "", "LOAD": "none", "SPEC": "ngram-mod,draft-dflash", "ENGINE_BIND": host,
+            "TARGET": "flash-unsloth-iq3" if unsloth.startswith("UD-IQ3_XXS/") else "flash-unsloth"}))
     if key_at is not None:
         (cfg / "api-key").write_text("not-a-key\n")
         t = datetime.datetime.fromisoformat(key_at).timestamp()

@@ -341,7 +341,7 @@ render_unit(){
       -e "s|__DRAFT__|$in_box/hub/models--${DRAFT//\//--}/snapshots/$DRAFT_REV/${DRAFT_FILE%=*}|g" \
       -e "s|__CTX__|$ctx|g" -e "s|__SLOTS__|$slots|g" -e "s|__KV__|$kv|g" -e "s|__SPEC__|$FLASH_UNSLOTH_SPEC|g" \
       -e "s|__LOAD__|$FLASH_UNSLOTH_LOAD|g" -e "s|__YARN__|$yarn|g" \
-      -e "s|__ENGINE_BIND__|$ENGINE_BIND|g" -e "s|__PORT__|$PORT|g" \
+      -e "s|__ENGINE_BIND__|$ENGINE_BIND|g" -e "s|__PORT__|$PORT|g" -e "s|__TARGET__|$TARGET|g" \
       "$HERE/$UNIT.template" > "$1"
   keep_choice
 }
