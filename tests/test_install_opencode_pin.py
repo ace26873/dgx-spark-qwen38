@@ -39,12 +39,30 @@ cp "$OC_TARBALL" "$out"
 """
 
 
-def block() -> str:
+def block(whole: bool = False) -> str:
     text = INSTALL.read_text()
     start = text.index('OC_HOME_BIN="$HOME/.opencode/bin/opencode"')
+    if whole:
+        # through the marker and the rollback to 1.x, the two steps the chain hands over to (v2 migration)
+        return text[start:text.index("# The rest of this run (the Agent tab", start)]
     tail = text.index('echo "added ~/.opencode/bin to your PATH', start)
     end = text.index("\n  fi\nfi\n", tail) + len("\n  fi\nfi\n")
     return text[start:end]
+
+
+def argloop() -> str:
+    """install.sh's own flag parser: from the RECOMMENDED line to the done that closes its loop."""
+    text = INSTALL.read_text()
+    start = text.index('RECOMMENDED="${QWEN38_RECOMMENDED:-0}"')
+    end = text.index("\ndone\n", start) + len("\ndone\n")
+    return text[start:end]
+
+
+def rollback() -> str:
+    """install.sh's own lines that take OUR v2 array out when the box goes back to 1.x."""
+    text = INSTALL.read_text()
+    start = text.index('# Going back to 1.x takes OUR v2 deny array')
+    return text[start:text.index("# The rest of this run (the Agent tab", start)]
 
 
 def pinned_default() -> str:
@@ -81,11 +99,11 @@ class TheOpencodePin(unittest.TestCase):
         (where / "VERSION").write_text(version + "\n")
         return where / "opencode"
 
-    def run_block(self, *, path_extra=(), pin="1", sha=None, env_version="", env_sha=""):
+    def run_block(self, *, path_extra=(), pin="1", sha=None, env_version="", env_sha="", whole=False):
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
                   f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{sha or self.sha}"; OPENCODE_PIN="{pin}"\n'
                   f'_ENV_OPENCODE_VERSION="{env_version}"; _ENV_OPENCODE_SHA256="{env_sha}"\n'
-                  + block() + 'echo "PATH_AFTER=$PATH"\n')
+                  + block(whole) + 'echo "PATH_AFTER=$PATH"\n')
         path = ":".join([str(self.bin), *map(str, path_extra), "/usr/bin", "/bin"])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"HOME": str(self.home), "PATH": path, "OC_LOG": str(self.log),
@@ -264,6 +282,102 @@ class TheOpencodePin(unittest.TestCase):
             if rc:
                 self.assertIn("needs OPENCODE_SHA256 too", r.stdout)
 
+
+class TheStrayBinaryNeverOptsIn(unittest.TestCase):
+    """A box that chose OpenCode 1 is never switched to 2 by a binary it did not ask for: when the
+    pinned download cannot run (GitHub unreachable, sha mismatch), the choice stands and the marker
+    is not written (independent review of the v2 migration, finding 2)."""
+
+    def setUp(self):
+        self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-stray-"))
+        self.addCleanup(shutil.rmtree, self.t, True)
+        self.home = self.t / "home"
+        self.home.mkdir()
+        (self.home / ".bashrc").write_text("# a user's bashrc\n")
+        self.bin = self.t / "fakebin"
+        self.bin.mkdir()
+        (self.bin / "curl").write_text(FAKE_CURL)
+        (self.bin / "curl").chmod(0o755)
+        self.log = self.t / "calls.log"
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {PINNED}\n".encode()
+            info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
+            tf.addfile(info, io.BytesIO(body))
+        self.tarball = self.t / "asset.tar.gz"
+        self.tarball.write_bytes(buf.getvalue())
+        self.sha = hashlib.sha256(buf.getvalue()).hexdigest()
+        self.brew = self.t / "brew"
+        self.brew.mkdir()
+        (self.brew / "opencode").write_text(FAKE_OC)
+        (self.brew / "opencode").chmod(0o755)
+        (self.brew / "VERSION").write_text("2.3.0\n")
+
+    def run_home(self, *, sha, major_env=None):
+        script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
+                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{sha}"; OPENCODE_PIN="1"\n'
+                  f'OPENCODE2_VERSION="2.3.0"; OPENCODE2_SHA256="{"0" * 64}"\n'
+                  f'_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
+                  + (f'OPENCODE_MAJOR="{major_env}"\n' if major_env else "")
+                  + block(whole=True) + 'echo "CHOICE=${OPENCODE_MAJOR:-1}"\n')
+        path = ":".join([str(self.bin), str(self.brew), "/usr/bin", "/bin"])
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                           env={"HOME": str(self.home), "PATH": path, "OC_LOG": str(self.log),
+                                "OC_TARBALL": str(self.tarball)})
+        return r.returncode, r.stdout + r.stderr
+
+    def test_a_failed_fetch_keeps_the_choice_1_and_writes_no_marker(self):
+        rc, out = self.run_home(sha="0" * 64)     # the download answers the wrong bytes
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=1", out)
+        self.assertFalse((self.home / ".config" / "qwen38" / "opencode.major").exists(),
+                         "a run that could not download never opts a box into OpenCode 2")
+        self.assertIn("keeps the box on the OpenCode it chose", out)
+
+    def test_the_choice_2_box_with_a_1_x_binary_keeps_its_choice_too(self):
+        (self.brew / "VERSION").write_text("1.19.0\n")
+        rc, out = self.run_home(sha="0" * 64, major_env="2")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2", out)
+        self.assertFalse((self.home / ".config" / "qwen38" / "opencode.major").exists(),
+                         "no marker for a binary that is not the pinned 2.x either")
+
+
+class TheRollbackSpeaks(unittest.TestCase):
+    """./install.sh back on 1.x takes OUR v2 "permissions" out; when the array is not ours it says
+    so plainly: OpenCode 1.19 refuses to start while the config holds "permissions", and a silent
+    refusal left the Agent tab dead with no reason on screen (independent review, finding 3)."""
+
+    def run_rollback(self, doc):
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-rollback-"))
+        self.addCleanup(shutil.rmtree, t, True)
+        home = t / "home"
+        (home / ".config" / "opencode").mkdir(parents=True)
+        (home / ".config" / "opencode" / "opencode.json").write_text(json.dumps(doc))
+        script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
+                  f'REPO_DIR="{REPO}"\n' + rollback())
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                           env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
+        left = json.loads((home / ".config" / "opencode" / "opencode.json").read_text())
+        return r.returncode, r.stdout + r.stderr, left
+
+    def test_our_array_is_taken_out_in_silence(self):
+        ours = {"permissions": [{"action": "shell", "resource": "*" + "aliyuncs" + ".com*", "effect": "deny"},
+                                {"action": "shell", "resource": "*169.254.169.254*", "effect": "deny"},
+                                {"action": "shell", "resource": "*100.100.100.200*", "effect": "deny"}]}
+        rc, out, left = self.run_rollback(ours)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("permissions", left)
+        self.assertNotIn("NOTE", out)
+
+    def test_a_foreign_array_is_left_and_said_with_the_way_back(self):
+        foreign = {"permissions": [{"action": "shell", "resource": "*", "effect": "allow"}]}
+        rc, out, left = self.run_rollback(foreign)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("permissions", left, "the merger of the box only removes the array this repo wrote")
+        self.assertIn("NOTE", out)
+        self.assertIn("opencode.json", out)
+        self.assertIn("permissions", out)
 
 class TheConfigStopsSelfUpdating(unittest.TestCase):
     """autoupdate false: with any other value opencode 1.19 offers OpenCode 2 on its TUI's
@@ -597,3 +711,34 @@ class AFreshBoxGetsAConfigOpencodeCanUse(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TheOpencodeMajorFlag(unittest.TestCase):
+    """./install.sh --opencode 2|1 is the whole opt-in; the parser must consume its value
+    (independent review of the v2 migration, finding 1: the for-loop's shift never did)."""
+
+    def run_args(self, *args):
+        script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\nOPENCODE_MAJOR_WANT=\"\"\n"
+                  + argloop() + 'echo "WANT=$OPENCODE_MAJOR_WANT"\n')
+        return subprocess.run(["bash", "-c", script, "install.sh", *args], capture_output=True,
+                              text=True, timeout=30, env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent-home"})
+
+    def test_the_two_word_form_reaches_the_choice(self):
+        r = self.run_args("--opencode", "2")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("Unknown flag", r.stdout + r.stderr)
+        self.assertIn("WANT=2", r.stdout)
+
+    def test_a_foreign_value_is_carried_to_the_validator_not_read_as_a_flag(self):
+        r = self.run_args("--opencode", "3", "--recommended")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("WANT=3", r.stdout)     # ./install.sh itself refuses it further down (test_a_value...)
+
+    def test_a_missing_value_is_refused_by_the_parser(self):
+        r = self.run_args("--opencode")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--opencode takes 1 or 2", r.stdout + r.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import base64
 import http.client
+import importlib.util
+import posixpath
 import http.server
 import json
 import re
@@ -38,7 +40,11 @@ HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriza
 # Request headers the relay never forwards: the cockpit session must not reach
 # opencode, the client's own Authorization is replaced by ours, Host and Origin name
 # the upstream, lengths are re-set, and the referrer says nothing about the cockpit.
-REQUEST_DROP = HOP_BY_HOP | {"host", "origin", "cookie", "authorization", "content-length", "referer"}
+# accept-encoding too: the relay reads the JSON of the credential routes to scrub it, and a gzip
+# answer it cannot verify is a 502 the browser would never understand (measured 2.3.0; independent
+# review of the v2 migration, finding 5: ask for identity, refuse only a server that lies anyway).
+REQUEST_DROP = HOP_BY_HOP | {"host", "origin", "cookie", "authorization", "content-length", "referer",
+                             "accept-encoding"}
 # Response headers the relay owns (Date and Server come from this server).
 RESPONSE_DROP = HOP_BY_HOP | {"content-length", "date", "server"}
 SESSION_COOKIE = "cockpit"
@@ -209,8 +215,15 @@ def split_upstream(url: str) -> tuple[str, int]:
 
 
 def is_secret_path(path: str) -> bool:
-    """A path whose JSON answer can carry provider credentials."""
-    p = path.split("?", 1)[0]
+    """A path whose JSON answer can carry provider credentials. Classified on the NORMALIZED target:
+    opencode's router answers /./api/config, /api//config and /foo/../api/config as /api/config, so
+    those spellings are exactly as secret (a raw match let them through unscrubbed; independent
+    review of the v2 migration, finding 6).""" 
+    p = urllib.parse.unquote(path.split("?", 1)[0])
+    if not p.startswith("/"):
+        p = "/" + p
+    p = posixpath.normpath(p)
+    p = re.sub(r"/{2,}", "/", p)          # normpath keeps a leading "//" (POSIX); the router does not
     return any(p == s or p.startswith(s + "/") for s in SECRET_PATHS)
 
 
@@ -330,6 +343,8 @@ def health(cfg: RelayConfig, timeout: float = 3.0) -> dict:
                 if "json" not in (resp.getheader("Content-Type") or "").lower():
                     continue        # the SPA page on a path this version does not know
                 data = json.loads(raw or b"{}")
+                if not isinstance(data, dict):
+                    return {"healthy": False, "error": f"{path} answered {type(data).__name__}, not an object"}
                 if path == "/api/info":
                     return {"healthy": True, "version": data.get("version")}
                 return {"healthy": bool(data.get("healthy")), "version": data.get("version")}
@@ -369,22 +384,18 @@ def permission_is_auto(permission) -> bool:
     return isinstance(permission, dict) and permission.get("*") == "allow"
 
 
+_OCP_SPEC = importlib.util.spec_from_file_location(
+    "oc_permissions", str(Path(__file__).resolve().parents[1] / "oc-permissions.py"))
+_ocp = importlib.util.module_from_spec(_OCP_SPEC)
+_OCP_SPEC.loader.exec_module(_ocp)
+
+
 def _v2_wild(text: str, pattern: str) -> bool:
-    """OpenCode 2's wildcard (read in packages/core/src/util/wildcard.ts of v2.3.0): "*"
-    matches any run of characters, every other character is itself. No fnmatch classes:
-    a command with brackets must not match differently than the server would."""
-    if "*" not in pattern:
-        return text == pattern
-    parts = pattern.split("*")
-    if not text.startswith(parts[0]):
-        return False
-    rest = text[len(parts[0]):]
-    for seg in parts[1:-1]:
-        i = rest.find(seg)
-        if i < 0:
-            return False
-        rest = rest[i + len(seg):]
-    return rest.endswith(parts[-1])
+    """OpenCode 2's wildcard: THE server's reading, shared with oc-merge-limits.py so the guard line
+    here and the installer's verification answer one question (measured on the 2.3.0 binary and read
+    in its bundle the 2026-11-15: "*" any run, "?" exactly one character, brackets and dot literal,
+    whole-text match; a review of the v2 migration found the two matchers had drifted, finding 7)."""
+    return _ocp.server_match(text, pattern)
 
 
 def _v2_rule_matches(rule, action: str, resource: str) -> bool:

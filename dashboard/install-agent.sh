@@ -93,6 +93,11 @@ OC_MAJOR="$(printf '%s' "$OC_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head
 # OPENCODE_MAJOR=2 down here. A stray 2.x found on the PATH (Homebrew Core's formula is
 # one) is still refused before anything renders, so the installed unit keeps the opencode
 # it runs (decision 455, 2026-10-22).
+# The box's own choice, read from its marker when ./install.sh did not pass it down: a standalone
+# re-run (the retry hint, docs/cockpit.md) must render the profile this box actually serves
+# (independent review of the v2 migration, finding 4).
+OPENCODE_MAJOR="${OPENCODE_MAJOR:-$(head -1 "$HOME/.config/qwen38/opencode.major" 2>/dev/null || true)}"
+OPENCODE_MAJOR="${OPENCODE_MAJOR:-1}"
 OC_PROFILE=1
 if [ -n "$OC_MAJOR" ] && [ "$OC_MAJOR" -ge 2 ]; then
   if [ "${OPENCODE_MAJOR:-1}" != "2" ]; then

@@ -2620,7 +2620,7 @@ def collect_agent():
     if out["server"].get("healthy"):
         v = out["server"].get("version") or ""
         mod = _ocm_module()
-        deny = list(mod.DENY_BASH) if mod is not None else None
+        deny = list(mod.deny_probes()) if mod is not None else None   # one table with the installer (review 7)
         if v.split(".")[0] == "2":
             # /config answers the HTML page on 2.x (a 200 that is not JSON), and its
             # effective rules are the documents /api/config lists, last match wins;

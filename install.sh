@@ -595,7 +595,8 @@ PLAN_ONLY=0
 # box gets (Hasan, 2026-10-17). The run for the other text lane and the side lanes' installers
 # read it as QWEN38_RECOMMENDED.
 RECOMMENDED="${QWEN38_RECOMMENDED:-0}"
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+  arg="$1"; shift
   case "$arg" in
     --plan) PLAN_ONLY=1 ;;
     --recommended) RECOMMENDED=1 ;;
@@ -603,7 +604,8 @@ for arg in "$@"; do
     --no-service) NO_SERVICE=1 ;;
     --no-opencode) NO_OPENCODE=1 ;;
     --with-opencode) WITH_OPENCODE=1 ;;
-    --opencode) OPENCODE_MAJOR_WANT="${2:-}"; shift ;;
+    --opencode) if [ $# -gt 0 ]; then OPENCODE_MAJOR_WANT="$1"; shift
+                 else printf -- '--opencode takes 1 or 2 (which OpenCode to serve)\n' >&2; exit 1; fi ;;
     --no-cockpit) NO_COCKPIT=1 ;;
     --with-cockpit) WITH_COCKPIT=1 ;;
     --with-image) WITH_IMAGE=1 ;;
@@ -2729,8 +2731,12 @@ elif [ -n "$OC_HAVE" ] && [ "${OC_HAVE%%.*}" != "${OPENCODE_MAJOR:-1}" ]; then
     [ -n "$OC_ON_PATH" ] && echo "      NOTE: a shell finds $OC_ON_PATH first: the Agent unit and this run take"
     [ -n "$OC_ON_PATH" ] && echo "      the installed copy at ~/.opencode/bin; keep only one OpenCode 2 on the PATH"
   else
-    echo "      opencode stays at $OC_HAVE, and this run serves it as the OpenCode it is."
-    OPENCODE_MAJOR="${OC_HAVE%%.*}"
+    # the choice wins both ways: a run that could not download neither installs the pin nor starts
+    # serving the found binary as the OTHER major (it would render the wrong unit around it and
+    # write a marker nobody asked for) (independent review of the v2 migration, finding 2)
+    echo "      $OC_TARGET_VER could not come down: this run keeps the box on the OpenCode it chose"
+    echo "      (${OPENCODE_MAJOR:-1}.x), serves nothing as the other major, and writes no marker."
+    echo "      The Agent tab stays down until $OC_TARGET_VER installs: re-run ./install.sh once GitHub is reachable."
   fi
 elif [ -z "$OC_FOUND" ] || { [ "$OC_FOUND" -ef "$OC_HOME_BIN" ] && ver_lt "$OC_HAVE" "$OC_TARGET_VER"; }; then
   if [ -z "$OC_FOUND" ]; then
@@ -2790,7 +2796,12 @@ fi
 # V1", measured against the box's 1.19.5 on 2026-11-14). --remove-permissions only touches
 # the array this repo wrote; a person's own table is left alone.
 if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OPENCODE_MAJOR:-1}" != 2 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
-  python3 "$REPO_DIR/oc-merge-limits.py" "$HOME/.config/opencode/opencode.json" --remove-permissions >/dev/null 2>&1 || true
+  if ! OC_RM="$(python3 "$REPO_DIR/oc-merge-limits.py" "$HOME/.config/opencode/opencode.json" --remove-permissions 2>&1)"; then
+    echo "NOTE: $OC_RM"
+    echo "      OpenCode 1.19 refuses to start while a config holds \"permissions\": that array is not the one"
+    echo "      this repo wrote, so it was left alone. Take it out of $HOME/.config/opencode/opencode.json by"
+    echo "      hand, or stay on OpenCode 2 with ./install.sh --opencode 2 (docs/opencode.md)."
+  fi
 fi
 # The rest of this run (the Agent tab's unit, the oc launcher) finds opencode on PATH, and
 # a first install puts it in the shell's PATH the way opencode's own installer does.

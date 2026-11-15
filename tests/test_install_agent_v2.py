@@ -10,7 +10,6 @@ its env file rewritten, password kept), and answers JSON on /api/info where /glo
 serves the HTML page (a probe that takes any 200 for health would certify a dead server).
 The unit is rendered for real: the whole script runs up to the relay proof, with the
 systemd calls and curl stubbed in a PATH of the test."""
-import os
 import pathlib
 import shutil
 import subprocess
@@ -21,6 +20,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT_TEXT = (REPO / "dashboard/install-agent.sh").read_text()
 TEMPLATE = (REPO / "dashboard/opencode-web.service.template").read_text()
 MERGER = (REPO / "oc-merge-limits.py").read_text()
+PERMS = (REPO / "oc-permissions.py").read_text()
 STOP = "# ── the cockpit gets the relay"
 SENTINEL_PW = "sentinel-password-keep-me"
 GUARD_HOST = "aliyuncs" + ".com"      # never as one string: our own session guard
@@ -65,7 +65,8 @@ exit 0
 """
 
 
-def run_agent(t, version_line, oc2, env_extra=None, pre_env_file=True, installed_extra="", curl_body=None):
+def run_agent(t, version_line, oc2, env_extra=None, pre_env_file=True, installed_extra="", curl_body=None,
+              no_major=False):
     """Run the whole install-agent script (unit render + health, no relay proof) in t."""
     sub = t / "sub"
     sub.mkdir(exist_ok=True)
@@ -74,6 +75,7 @@ def run_agent(t, version_line, oc2, env_extra=None, pre_env_file=True, installed
         SCRIPT_TEXT[:SCRIPT_TEXT.index(STOP)].replace("/etc/systemd/system", str(t)))
     (sub / "opencode-web.service.template").write_text(TEMPLATE)
     (t / "oc-merge-limits.py").write_text(MERGER)
+    (t / "oc-permissions.py").write_text(PERMS)   # the merger loads its sibling, the server matcher
     for name, body in (("curl", curl_body or CURL_STUB), ("systemctl", SYSTEMCTL_STUB),
                        ("tailscale", "#!/bin/sh\nexit 1\n"), ("opencode", agent_stub(version_line)),
                        ("sudo", '#!/bin/sh\nexec "$@"\n')):
@@ -98,10 +100,36 @@ def run_agent(t, version_line, oc2, env_extra=None, pre_env_file=True, installed
            "OPENCODE_MAJOR": "2" if oc2 else "1"}
     if env_extra:
         env.update(env_extra)
+    if no_major:
+        del env["OPENCODE_MAJOR"]
     r = subprocess.run(["bash", str(sub / "install-agent.sh")], capture_output=True, text=True,
                        timeout=120, cwd=sub, env=env)
     unit = (t / "opencode-web.service")
     return r, (unit.read_text() if unit.is_file() else "")
+
+
+class TheMarkerDecidesStandaloneRuns(unittest.TestCase):
+    """./dashboard/install-agent.sh run on its own (the retry hint, docs/cockpit.md) has no
+    OPENCODE_MAJOR from ./install.sh: the marker that --opencode 2 wrote decides the profile
+    (independent review of the v2 migration, finding 4)."""
+
+    def setUp(self):
+        self.t = pathlib.Path(tempfile.mkdtemp(prefix="agent-marker-"))
+        self.addCleanup(shutil.rmtree, self.t, True)
+
+    def test_a_box_marked_2_renders_the_v2_unit_without_the_environment(self):
+        cfg = self.t / ".config" / "qwen38"
+        cfg.mkdir(parents=True, exist_ok=True)
+        (cfg / "opencode.major").write_text("2\n# asked with ./install.sh --opencode 2\n")
+        r, unit = run_agent(self.t, "opencode v2.3.0", oc2=True, no_major=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        line = next(ln for ln in unit.splitlines() if ln.startswith("ExecStart="))
+        self.assertIn("--log-level info", line, "the v2 profile came from the marker")
+
+    def test_no_marker_means_one_x_and_a_stray_two_x_is_refused_as_before(self):
+        r, unit = run_agent(self.t, "opencode v2.3.0", oc2=True, no_major=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("did not choose", r.stdout + r.stderr)
 
 
 class Render(unittest.TestCase):
@@ -131,7 +159,7 @@ class Render(unittest.TestCase):
         self.assertTrue(0 < auto.index('"effect":"allow"') < auto.rindex('"effect":"deny"'),
                         "allow first, denies last: last match wins in 2.x")
         self.assertIn(f"*{GUARD_HOST}*", auto)
-        self.assertIn(f"AGENT_AUTO=1 on OpenCode 2", r.stdout)
+        self.assertIn("AGENT_AUTO=1 on OpenCode 2", r.stdout)
         # the env file now names the username OpenCode 2 hardcodes, password kept
         env = (self.t / ".config" / "qwen38" / "opencode-web.env").read_text()
         self.assertIn("OPENCODE_SERVER_USERNAME=opencode", env)

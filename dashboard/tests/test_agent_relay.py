@@ -7,6 +7,7 @@ import http.client
 import http.server
 import json
 import os
+import re
 import socket
 import socketserver
 import struct
@@ -35,6 +36,15 @@ def html_of(n: int) -> bytes:
     return head + b"x" * (n - len(head) - len(tail)) + tail
 WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 RELEASE = threading.Event()          # lets the SSE handler send its second event
+def _norm_target(target: str) -> str:
+    """opencode's router answers the normalized path; so does this fake upstream, so an oddly spelled
+    request really reaches the credentials route (finding 6)."""
+    import posixpath
+    p = urllib.parse.unquote(target.split("?", 1)[0])
+    p = posixpath.normpath(p) if p.startswith("/") else "/" + posixpath.normpath(p)
+    return re.sub(r"/{2,}", "/", p)
+
+
 SEEN: list = []                       # requests as the upstream saw them
 
 
@@ -81,7 +91,7 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
             return
         if self.headers.get("Upgrade", "").lower() == "websocket":
             return self.websocket()
-        path = self.path.split("?", 1)[0]
+        path = _norm_target(self.path)
         if path == "/echo":
             return self._json({"method": "GET", "path": self.path, "headers": dict(self.headers.items())})
         if path == "/len":
@@ -212,6 +222,16 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
             return self._json({"healthy": True, "version": "9.9.9"})
         if path == "/config":
             return self._json({"permission": {"*": "allow"}, "model": "x/y"})
+        if path == "/api/config" and "enc=1" in (self.path.partition("?")[2] if "?" in self.path else ""):
+            import gzip
+            raw = gzip.compress(b'{"apiKey": "sk-live"}')
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         if path == "/api/config":
             return self._json({"info": {"providers": {"local": {
                 "options": {"apiKey": "sk-live", "headers": {"Authorization": "Bearer sk-live"}},
@@ -247,7 +267,7 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
         SEEN.append({"method": "POST", "path": self.path, "headers": dict(self.headers.items()), "len": length})
         if not self._auth():
             return
-        path = self.path.split("?", 1)[0]
+        path = _norm_target(self.path)
         if path.startswith("/pty/") and path.endswith("/connect-token"):
             if (self.headers.get("x-opencode-ticket") != "1"
                     or not opencode_origin_ok(self.headers.get("Origin"), self.headers.get("Host"))):
@@ -548,7 +568,8 @@ class RelayTests(unittest.TestCase):
         self.assertNotIn("referer", h)
         self.assertEqual(h["host"], f"127.0.0.1:{self.up.server_port}")
         self.assertEqual(h["x-custom"], "kept")
-        self.assertEqual(h["accept-encoding"], "gzip")
+        self.assertNotIn("accept-encoding", h,
+                         "the relay asks for identity: a gzip answer on a credential route could only be refused (finding 5)")
         self.assertEqual(h["connection"], "close")
 
     def test_response_headers_and_cookie_filter(self):
@@ -849,6 +870,113 @@ class RelayTests(unittest.TestCase):
             del FakeOpencode.GH_MODE
 
 
+
+def make_relay(handler=None, creds=("cockpit", "secret")):
+    """One relay in front of one fake opencode, as RelayTests builds them, for a single test."""
+    up = Upstream(("127.0.0.1", 0), handler or FakeOpencode)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    cfg = ar.RelayConfig(upstream=("127.0.0.1", up.server_port), credentials=lambda: creds,
+                         is_authed=lambda cookie: "cockpit=good" in (cookie or ""), cockpit_port=30090)
+    relay = ar.serve(cfg, "127.0.0.1", 0)
+    threading.Thread(target=relay.serve_forever, daemon=True).start()
+    return up, relay
+
+
+class TheScrubCannotBeSpelledAround(unittest.TestCase):
+    """A browser (or a script injected in the tab) spelling /api/config oddly must not walk around
+    the credential scrub: classify on the NORMALIZED target, the one opencode's router answers
+    (independent review of the v2 migration, finding 6)."""
+
+    SPELLINGS = ("/api//config", "/./api/config", "/foo/../api/config", "/%2e%2e/api/config",
+                 "//api/config")
+
+    def _raw_get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.putrequest("GET", path, skip_host=True)
+            conn.putheader("Host", "127.0.0.1")
+            conn.putheader("Cookie", "cockpit=good")
+            conn.endheaders()
+            resp = conn.getresponse()
+            return resp.status, resp.read()
+        finally:
+            conn.close()
+
+    def test_is_secret_path_reads_the_normalized_target(self):
+        for p in self.SPELLINGS:
+            with self.subTest(path=p):
+                self.assertTrue(ar.is_secret_path(p), p)
+
+    def test_an_oddly_spelled_config_answer_still_reaches_the_browser_scrubbed(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        for p in self.SPELLINGS:
+            with self.subTest(path=p):
+                SEEN.clear()
+                code, body = self._raw_get(relay.server_port, p)
+                self.assertEqual(code, 200)
+                self.assertNotIn(b"sk-live", body, "the answer came from the credentials route")
+
+
+class TheRelayAsksForIdentity(unittest.TestCase):
+    """The scrub reads JSON; a gzip answer it cannot verify is a 502. So the relay must not ASK for
+    compression it would then refuse: no Accept-Encoding is forwarded on these GETs (independent
+    review, finding 5)."""
+
+    def _get(self, port, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.putrequest("GET", path, skip_host=True)
+            conn.putheader("Host", "127.0.0.1")
+            conn.putheader("Cookie", "cockpit=good")
+            for k, v in (headers or {}).items():
+                conn.putheader(k, v)
+            conn.endheaders()
+            resp = conn.getresponse()
+            return resp.status, resp.read()
+        finally:
+            conn.close()
+
+    def test_no_accept_encoding_reaches_opencode(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        SEEN.clear()
+        code, body = self._get(relay.server_port, "/api/config", headers={"Accept-Encoding": "gzip, br"})
+        self.assertEqual(code, 200)
+        self.assertNotIn(b"sk-live", body)
+        seen = next(r for r in SEEN if r["path"] == "/api/config")
+        self.assertNotIn("accept-encoding", {k.lower() for k in seen["headers"]})
+
+    def test_a_lying_gzip_answer_is_refused_not_forwarded(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        code, body = self._get(relay.server_port, "/api/config?enc=1")
+        self.assertEqual(code, 502, body[:120])
+
+
+class TheHealthProbeTrustsNothing(unittest.TestCase):
+    """A 200 application/json that is not an object is not health: the probe answers like every
+    other failure instead of raising out of the Agent panel (independent review, finding 8)."""
+
+    def test_a_json_list_is_unhealthy_not_an_exception(self):
+        up = Upstream(("127.0.0.1", 0), type("L", (http.server.BaseHTTPRequestHandler,), {
+            "log_message": lambda self, *a: None,
+            "do_GET": lambda self: (self.send_response(200),
+                                    self.send_header("Content-Type", "application/json"),
+                                    self.end_headers(), self.wfile.write(b"[]"))[-1]}))
+        threading.Thread(target=up.serve_forever, daemon=True).start()
+        self.addCleanup(up.shutdown)
+        self.addCleanup(up.server_close)
+        cfg = ar.RelayConfig(upstream=("127.0.0.1", up.server_port),
+                             credentials=lambda: ("opencode", "pw"), is_authed=lambda c: True,
+                             cockpit_port=30090)
+        got = ar.health(cfg)          # must not raise (finding 8)
+        self.assertFalse(got.get("healthy"))
+        self.assertNotIn("version", got or {})
+
 class PureHelpers(unittest.TestCase):
     def test_v2_wild_no_fnmatch_classes(self):
         # OpenCode 2's "*" only: brackets must match literally (read in wildcard.ts of 2.3.0)
@@ -858,6 +986,41 @@ class PureHelpers(unittest.TestCase):
         self.assertFalse(ar._v2_wild("curl https://b.example/x", "*a.example*"))
         self.assertFalse(ar._v2_wild("ECHO", "echo"), "matching is case-sensitive on Linux")
         self.assertTrue(ar._v2_wild("anything", "*"))
+
+    def test_the_two_matchers_ask_the_same_question(self):
+        # the guard line (relay) and the installer's verification (oc-merge-limits) answer one
+        # security question about the same rules: one grammar (finding 7)
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ocml", Path(ar.__file__).resolve().parents[1] / "oc-merge-limits.py")
+        ocml = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ocml)
+        for text, pattern in (("curl https://oss-cn-hangzhou.aliyuncs.com/x", "*aliyuncs.com*"),
+                              ("echo 169.254.169.254", "*169.254.169.254*"),
+                              ("a?b", "a?b"), ("axb", "a?b"), ("axxb", "a?b"),
+                              ("literal star", "literal\*star"), ("literalstar", "literal\*star"),
+                              ("", "*"), ("x", "")):
+            with self.subTest(text=text, pattern=pattern):
+                self.assertEqual(ar._v2_wild(text, pattern), ocml._wild(text, pattern))
+
+    def test_the_guard_line_probes_what_the_installer_probes(self):
+        # a later allow written with a ? wildcard must not read as safe to the cockpit while the
+        # installer calls it wrong (finding 7): same probes, one table
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ocml", Path(ar.__file__).resolve().parents[1] / "oc-merge-limits.py")
+        ocml = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ocml)
+        probes = ocml.deny_probes()
+        self.assertEqual(probes, [p.replace("*", "x") for p in ocml.DENY_BASH])
+        ours = [{"action": "shell", "resource": p, "effect": "deny"} for p in ocml.DENY_BASH]
+        doc = {"type": "document", "info": {"permissions": [
+            {"action": "*", "resource": "*", "effect": "allow"}, *ours,
+            {"action": "shell", "resource": "*aliyuncs.co?*", "effect": "allow"}]}}
+        st = ar.config_docs_auto_state([doc], probes)
+        self.assertFalse(st["deny_ok"], "the ? allow (co + one character) re-opens what the deny closed")
+        st = ar.config_docs_auto_state([doc], ocml.DENY_BASH)
+        self.assertFalse(st["deny_ok"], "probing the raw pattern too must not call it safe either")
 
     def test_config_docs_auto_state(self):
         d = lambda perms, path="/f.json": {"type": "document", "path": path,

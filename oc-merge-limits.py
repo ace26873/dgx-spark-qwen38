@@ -524,10 +524,25 @@ def merge_autoupdate(path: str, value) -> int:
 DENY_BASH = ("*aliyuncs.com*", "*169.254.169.254*", "*100.100.100.200*")
 
 
+import importlib.util as _ilu
+import pathlib as _pl
+_OCP_SPEC = _ilu.spec_from_file_location("oc_permissions",
+                                         str(_pl.Path(__file__).resolve().parent / "oc-permissions.py"))
+_ocp = _ilu.module_from_spec(_OCP_SPEC)
+_OCP_SPEC.loader.exec_module(_ocp)
+
+
 def _wild(text: str, pattern: str) -> bool:
-    """opencode's permission wildcard: * any run of characters, ? one, the rest literal."""
-    rx = "".join(".*" if c == "*" else "." if c == "?" else re.escape(c) for c in pattern)
-    return re.fullmatch(rx, text, re.S) is not None
+    """opencode's permission wildcard: THE reading of the server, in oc-permissions.py, shared with
+    dashboard/agent_relay.py so the guard line and this verification ask one question (review 7)."""
+    return _ocp.server_match(text, pattern)
+
+
+def deny_probes() -> list:
+    """Command texts that stand for the DENY_BASH patterns: what this file's verification and the
+    cockpit's guard line evaluate the rules against (one table, review 7). A needle only inside a
+    command's comment is not resource text (measured on 2.3.0): these texts carry it for real."""
+    return [pt.replace("*", "x") for pt in DENY_BASH]
 
 
 def _bash_action(permission, command: str):
@@ -696,9 +711,9 @@ def _v2_action(permissions, action: str, resource: str):
 
 
 def _deny_permissions_wrong(permissions) -> list:
-    """The DENY_BASH patterns the array does not deny for the v2 shell tool."""
-    return [p for p in DENY_BASH
-            if _v2_action(permissions, "shell", p.replace("*", "x")) != "deny"]
+    """The DENY_BASH patterns the array does not deny for the v2 shell tool, named by their pattern."""
+    return [pat for pat, probe in zip(DENY_BASH, deny_probes())
+            if _v2_action(permissions, "shell", probe) != "deny"]
 
 
 def _verify_deny_permissions(path: str) -> str:
