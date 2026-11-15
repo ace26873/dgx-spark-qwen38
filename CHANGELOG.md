@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.49.0 (2026-11-15): Arete 27B, a fifth target of the 27B lane, and UD-IQ3_XXS, the Unsloth GGUF lane's default
+
+**Arete 27B, a fifth target of the 27B lane (`arete`).** [Arete 27B](https://huggingface.co/NousResearch/Arete-27B),
+Nous Research's fine-tune of Qwen3.8 27B (Apache-2.0), in atakans's NVFP4 (`atakans/Arete-27B-NVFP4` @ `50235ef`,
+ModelOpt 0.48.0 with NVIDIA's recipe for the 27B, 21.1 GB, no MTP layer), loaded from the Library like the lane's other
+four targets, or with `./switch-model.sh arete`. Its architecture and chat template are the 27B's, so it takes the
+lane's unit, image and DFlash2 draft as they are. Its checkpoint declares no KV cache, and SGLang would give it a bf16
+one and about half the pool: its switch (and `MODEL_CHOICE=arete ./install.sh`) writes the declaration RadixArk's NVFP4
+carries into its cached config with a new script, `patch-kv.py`, after the YaRN step, rather than pass
+`--kv-cache-dtype fp8_e4m3`, which would put the draft's cache in fp8 too. `patch-kv.py` touches that one repository,
+replaces each config's link by a file (the blob stays the checkpoint's own bytes), and refuses a checkpoint that
+declares another KV scheme or is not ModelOpt's. Measured on the reference box on 2026-11-13 and 14 under the lane's
+own unit, against Nous's BF16 and veladan's NVFP4 of the same model (the answer to discussion #67): a KL divergence of
+0.030 to the BF16 over 30 texts, GSM8K 99.2 % on 250 questions, MMLU 88.0 % on 500, HumanEval 96.3 %, 69 to 72 tok/s
+alone on `bench.sh`'s code and reasoning prompts, the needle exact at 120,000 and 300,000 tokens, a pool of 905,941 and
+902,974 tokens on its two boots, its target's cache in fp8 and its draft's in bf16, as `stock` serves them.
+
+**UD-IQ3_XXS, the Unsloth GGUF lane's second target and its default (`flash-unsloth-iq3`).** The same revision of
+Unsloth's repository holds the model's experts in 3-bit, which the lane serves as a second target under its one served
+name, as the Kolibri lane serves two checkpoints: loaded from the Library, or with `./switch-model.sh flash-unsloth-iq3`.
+Since this release UD-IQ3_XXS is the lane's default (decision 1376). Its weights are 51.1 GiB against UD-Q4_K_XL's 76.9
+(its n-gram table is UD-Q4_K_XL's very file, one blob in the cache), and the room they leave goes to requests: four
+windows of 262,144 tokens with the KV cache in q8_0, where UD-Q4_K_XL serves two. Eight were ready and did not hold under
+GSM8K's eight requests (the box's guard stopped the engine at 5 GiB, 14 min in). Measured on the reference box on
+2026-11-14: GSM8K 98.8 % on 250 questions (98.4 % for UD-Q4_K_XL on the same bench), HumanEval 98.2 % (99.4 %), 28.7 GiB
+available at the lowest under four requests, and about 25 % faster at a first pass of one request (69.4 tok/s in code
+against 55.6, one measure each). Its 1M mode is UD-Q4_K_XL's, one request at a time. A new install serves it. An update
+moves a unit that serves UD-Q4_K_XL only because v1.48 installed it by default, as `conformity.py` moves the other old
+defaults, and keeps one chosen: `FLASH_UNSLOTH_TARGET=flash-unsloth ./install.sh`, or a switch to `flash-unsloth`,
+records UD-Q4_K_XL as your choice, and `./install.sh --recommended` brings the default back.
+
+**A GGUF lane's checkpoint is its file (proxy v6.57).** One revision of Unsloth's repository holds every quantization
+of the model, and the Unsloth lane now serves two of them under one name: read as the revision alone, a box on
+UD-Q4_K_XL and one on UD-IQ3_XXS would have shared their requests as one checkpoint (decision 1018), and a Load from
+one to the other would have been no change of checkpoint (decision 1041). The checkpoint of llama-server's `-m` is now
+the SHA-1 of the snapshot's revision and the file's path in it, 40 hexadecimal characters as the pair carries a
+revision; the other engines' `--revision` is read as before. A box on v6.56 or older serving that lane says the
+revision alone and shares nothing with one on v6.57: the two boxes of a pair update together.
+
 ## v1.48.1 (2026-11-14): three themes for the cockpit, by x42en, and a vLLM lane stopped while it loads ends stopped
 
 **Three themes for the cockpit (pull request #71, by x42en).** The cockpit draws every color from role tokens (`--surface`,
