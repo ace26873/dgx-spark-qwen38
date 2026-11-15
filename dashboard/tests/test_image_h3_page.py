@@ -57,9 +57,19 @@ class TheViewAddressesTheLaneThatServes(unittest.TestCase):
         self.assertEqual(r["payload"]["num_inference_steps"], 40)
         self.assertIn("not commercial use", r["licence"])
 
+    def test_its_cost_line_counts_its_one_image_whatever_the_hidden_slider_kept(self):
+        # Images per call left at 4 on Qwen-Image, then MiniMax-H3-Image serves: its one image is no "each" (review of v1.50)
+        r = run(self, lanes(qwen="stopped", h3="ready") + "$('img-n').value = '4'; imgSync(); report(txt('img-cost-k'));")
+        self.assertIn("megapixels", r)
+        self.assertNotIn("each", r)
+
     def test_neither_serving_the_one_installed_qwen_first(self):
         self.assertEqual(run(self, lanes(qwen="stopped", h3="stopped") + "report(imgUnit());"), "qwen38-image.service")
         self.assertEqual(run(self, lanes(h3="stopped") + "report(imgUnit());"), "qwen38-image-h3.service")
+
+    def test_a_lane_that_failed_is_the_one_the_view_says(self):
+        # its crash shows, not the other lane's controls (review of v1.50; cockpit.py's image_unit, the same rule)
+        self.assertEqual(run(self, lanes(qwen="stopped", h3="failed") + "report(imgUnit());"), "qwen38-image-h3.service")
 
     def test_in_a_switch_the_lane_coming_up_before_the_one_stopping(self):
         self.assertEqual(run(self, lanes(qwen="stopping", h3="starting") + "report(imgUnit());"), "qwen38-image-h3.service")

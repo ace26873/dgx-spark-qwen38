@@ -384,5 +384,18 @@ class PinModelsCoversEveryLane(unittest.TestCase):
         self.assertEqual([r["status"] for r in models[0]["revisions"]], ["pinned", "stray"])
 
 
+    def test_a_revision_two_lanes_pin_is_named_by_the_lane_that_owns_it(self):
+        # MiniMax-H3's commit: the video lane's checkpoint, and the MiniMax-H3-Image lane's text encoder (v1.50). The
+        # first variable names it, as the pin files read in order: the later one overwrote it (review of v1.50)
+        pins = {}
+        for f in rg.PIN_FILES:
+            pins.update(rg.parse_pins((REPO / f).read_text()))
+        rev = pins["VIDEO_MODEL_PIN_REV"]
+        self.assertEqual(pins["IMAGE_H3_ENCODER_PIN_REV"], rev, "the two lanes pin one commit")
+        models = rg.classify([{"repo_id": "MiniMaxAI/MiniMax-H3", "disk_bytes": 1, "revisions": [{"rev": rev}]}], pins)
+        self.assertEqual((models[0]["revisions"][0]["status"], models[0]["revisions"][0]["pin"]),
+                         ("pinned", "VIDEO_MODEL_PIN_REV"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

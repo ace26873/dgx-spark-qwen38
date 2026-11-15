@@ -474,7 +474,8 @@ function imgPortAsk(unit){
   if (imgPortAsked === unit || (IMG_NOW.unit === unit && IMG_NOW.port)) return;
   imgPortAsked = unit;
   fetch('/api/image').then(r => r.status === 401 ? null : r.json())
-    .then(d => { if (d && d.port) Object.assign(IMG_NOW, {port: d.port, unit: d.unit || null}); })
+    // kept only when it answers for this unit; any other answer (the other lane mid-switch, a 401) lets the next render ask
+    .then(d => { if (d && d.port && d.unit === unit) Object.assign(IMG_NOW, {port: d.port, unit}); else imgPortAsked = null; })
     .catch(() => { imgPortAsked = null; });
 }
 

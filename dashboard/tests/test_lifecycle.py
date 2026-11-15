@@ -274,7 +274,7 @@ class ImageH3BootLog(unittest.TestCase):
     def test_a_complete_boot_is_fired_up_with_every_stage_done(self):
         b = lc.parse_image_h3_boot_log(self.lines)
         self.assertTrue(b["fired_up"])
-        self.assertEqual(b["done"], list(lc.IMAGE_H3_STAGES))
+        self.assertEqual(b["done"], list(lc.IMAGE_STAGES))
 
     def test_each_milestone_names_what_is_being_loaded(self):
         self.assertEqual(self.at("Starting server...")["stage"], "init")

@@ -1194,7 +1194,7 @@ if [ "$CHOICE" = "image-h3" ]; then
   H3_PY="${H3_WD:-$HOME/.local/share/qwen38-image-h3}/venv/bin/python"
   [ -x "$H3_PY" ] || die "the MiniMax-H3-Image lane's runtime is missing ($H3_PY): ./prepare-lane.sh image-h3 builds it (no sudo; its first Load from the cockpit runs it), then switch again"
   # The pins, the allowlist and the sizes, from install-image-h3.sh, the one place they are declared.
-  eval "$(grep -E '^(IMAGE_H3_MODEL_PIN|IMAGE_H3_MODEL_PIN_REV|IMAGE_H3_ENCODER_PIN|IMAGE_H3_ENCODER_PIN_REV|ALLOW|WEIGHTS_GB)=' "$REPO_DIR/install-image-h3.sh" || true)"
+  eval "$(grep -E '^(IMAGE_H3_MODEL_PIN|IMAGE_H3_MODEL_PIN_REV|IMAGE_H3_ENCODER_PIN|IMAGE_H3_ENCODER_PIN_REV|ALLOW|WEIGHTS_GB|ENCODER_GB)=' "$REPO_DIR/install-image-h3.sh" || true)"
   for _v in IMAGE_H3_MODEL_PIN IMAGE_H3_MODEL_PIN_REV IMAGE_H3_ENCODER_PIN IMAGE_H3_ENCODER_PIN_REV ALLOW WEIGHTS_GB ENCODER_GB; do
     eval "[ -n \"\${$_v:-}\" ]" || die "install-image-h3.sh no longer defines $_v (repo layout changed?)"
   done
@@ -1260,7 +1260,6 @@ if [ "$CHOICE" = "image-h3" ]; then
     echo "Effective after:  sudo systemctl start $IMAGE_H3_UNIT_NAME   (or next reboot; ready in about 8 min)"
   fi
   echo "The proxy on :30001 and opencode are text clients and were left as they are."
-  echo "MiniMax-H3-Image: its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE)."
   echo "Switch back:      ./switch-model.sh stock   (or any text target, or image)"
   exit 0
 fi

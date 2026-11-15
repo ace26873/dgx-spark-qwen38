@@ -3823,6 +3823,20 @@ TARGET_DRAFT_PIN = {"nemotron": "NEMOTRON_BOLT_DRAFT_REV", "nemotron-super": "NE
 # What of a drafter's repository a target loads, when not all of it: the text encoder's folder of MiniMax-H3,
 # whose snapshot holds the video lane's partitions too
 TARGET_DRAFT_ALLOW = {"image-h3": ["text_encoder/*"]}
+
+
+def h3_encoder_whole(snap: Path) -> bool:
+    """MiniMax-H3's text encoder whole in any of its three folders at this snapshot (the root's, FL2VA's or Ref2VA's:
+    the same blobs): its fetch then only links them, nothing is downloaded. lanes.sh h3_encoder_cached's rule, which the
+    installer and the switch read; here, so the Library does not call a box whose video lane has its weights "begun"."""
+    for d in (snap / "text_encoder", snap / "FL2VA" / "text_encoder", snap / "Ref2VA" / "text_encoder"):
+        try:
+            shards = set(json.loads((d / "model.safetensors.index.json").read_text())["weight_map"].values())
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if shards and all((d / sh).exists() for sh in shards):
+            return True
+    return False
 # A target that serves some files of a repository that holds others: the variables of the lane's installer that pin
 # them (PATH=SHA256:SIZE), whose paths alone count in its Library state. The Unsloth GGUF lane's two targets are two
 # folders of one repository at one revision: its snapshot counted whole, either one read "on disk" once the other's
@@ -4395,6 +4409,11 @@ def image_unit() -> str:
     busy = [u for u in IMAGE_UNITS if states.get(u) in lc.BUSY_STATES]
     if busy:
         return min(busy, key=lambda u: states[u] == "stopping")
+    # a lane that failed (its crash, or systemd restarting it) is the one the view says, not the other installed one:
+    # its failure would hide behind the other lane's controls (review of v1.50)
+    failed = [u for u in IMAGE_UNITS if states.get(u) == "failed"]
+    if failed:
+        return failed[0]
     return next((u for u in IMAGE_UNITS if image_unit_path(u).exists()), IMAGE_UNIT)
 
 
@@ -6140,11 +6159,12 @@ def upstream_snapshot(max_age: float = 3600.0) -> dict:
         if up and time.time() - UPSTREAM_CACHE["ts"] < (min(max_age, UPSTREAM_PARTIAL_TTL) if up.get("pins_lost") else max_age):
             return up
         reg = registry_snapshot()
-        rows = []
+        rows, asked = [], set()
         for var, model_id in rg.PIN_MODELS.items():
             pin = reg["pins"].get(var)
-            if not pin:
-                continue
+            if not pin or (model_id, pin) in asked:
+                continue        # one row, and one question to the Hub, for a checkpoint two lanes pin alike (v1.50)
+            asked.add((model_id, pin))
             row = {"model": model_id, "pin": pin[:10], "var": var}
             try:
                 j = _get_json("https://huggingface.co/api/models/"
@@ -6375,7 +6395,13 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                 # TARGET_FILES with none of its files is absent whatever its drafter, which the lane's other target
                 # loads too (the Unsloth GGUF lane's DFlash2 draft, v1.49)
                 dstate = ckpt_state(t, rg.PIN_MODELS[dvar], pins.get(dvar, ""), TARGET_DRAFT_ALLOW.get(t))
-                state = state if state == dstate or (files is not None and state == "absent") else "incomplete"
+                if t == "image-h3" and dstate != "complete" and any(
+                        h3_encoder_whole(Path(d) / "hub" / ("models--" + rg.PIN_MODELS[dvar].replace("/", "--"))
+                                         / "snapshots" / pins.get(dvar, "")) for d in caches if pins.get(dvar)):
+                    dstate = "complete"     # its Load links the encoder's blobs already there: nothing to download
+                # an encoder that needs no download says nothing of the image lane's own checkpoint: its state is that one's
+                if not (t == "image-h3" and dstate == "complete"):
+                    state = state if state == dstate or (files is not None and state == "absent") else "incomplete"
             targets.append({"target": t, "repo": repo, "rev": rev, "state": state,
                             "installed": target_unit(t).exists()})
         data = {"pins": pins, "managed_repos": sorted(set(rg.PIN_MODELS.values())), "caches": caches,

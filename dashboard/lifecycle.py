@@ -89,7 +89,7 @@ VIDEO_MARKERS = [
 # to 04:02:25 local, 451 s from the external SSD): the text encoder 48.09 GB, the DiT 38.6 GB,
 # the VAE 1.42 GB, as SGLang logs them (its "GB" being 1024**3 bytes). Its VAE is loaded as the
 # shared H3 stages' video_vae. Then one throwaway 512 x 512 image, made on a 2048 x 2048 canvas.
-IMAGE_H3_STAGES = ("init", "loading-weights", "warming-up")
+# the stages of an image lane's start are the same for both image lanes: one tuple, IMAGE_STAGES (review of v1.50)
 IMAGE_H3_MARKERS = [
     # (substring, stage it opens, what is being loaded while that line is the latest)
     ("Starting server...", "init", "starting the server"),
@@ -409,7 +409,7 @@ def parse_image_boot_log(lines: list[str]) -> dict:
 def parse_image_h3_boot_log(lines: list[str]) -> dict:
     """The MiniMax-H3-Image lane's journal, reduced to the same shape parse_boot_log returns, by
     the image lane's latest-boot rule."""
-    return _parse_diffusion_boot_log(lines, IMAGE_H3_MARKERS, IMAGE_H3_STAGES)
+    return _parse_diffusion_boot_log(lines, IMAGE_H3_MARKERS, IMAGE_STAGES)
 
 
 def parse_video_boot_log(lines: list[str]) -> dict:

@@ -324,6 +324,34 @@ class Fetch(unittest.TestCase):
         self.cp.upstream_snapshot()
         self.assertEqual(len(asked), 3, "the hour holds")
 
+    def test_a_video_lanes_encoder_is_no_begun_download_of_the_h3_image_lane(self):
+        # the video lane's weights hold MiniMax-H3's text encoder in its partitions: the image lane's Load links those
+        # blobs and downloads none of it, so its target reads absent, not begun (review of v1.50)
+        import json
+        enc = self.hub / "models--MiniMaxAI--MiniMax-H3" / "snapshots" / self.pins["IMAGE_H3_ENCODER_PIN_REV"] / "FL2VA" / "text_encoder"
+        enc.mkdir(parents=True)
+        (enc / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "1.safetensors", "b": "2.safetensors"}}))
+        for f in ("1.safetensors", "2.safetensors"):
+            (enc / f).write_text("w")
+        self.assertEqual(self.targets()["image-h3"]["state"], "absent")
+        # its checkpoint whole beside it: on disk, the encoder needing no download
+        self.snap("MiniMaxAI/MiniMax-H3-Image", self.pins["IMAGE_H3_MODEL_PIN_REV"])
+        self.assertEqual(self.targets()["image-h3"]["state"], "complete")
+
+    def test_the_upstream_view_asks_once_for_a_checkpoint_two_lanes_pin(self):
+        # MiniMax-H3's commit, pinned by the video lane and by the MiniMax-H3-Image lane's encoder (review of v1.50)
+        real, real_get = self.cp.registry_snapshot, self.cp._get_json
+        self.addCleanup(setattr, self.cp, "registry_snapshot", real)
+        self.addCleanup(setattr, self.cp, "_get_json", real_get)
+        rev = "4" * 40
+        self.cp.registry_snapshot = lambda max_age=300.0: {"pins": {"VIDEO_MODEL_PIN_REV": rev, "IMAGE_H3_ENCODER_PIN_REV": rev}}
+        asked = []
+        self.cp._get_json = lambda url, timeout=5.0: asked.append(url) or {"sha": rev}
+        self.cp.UPSTREAM_CACHE.update(ts=0.0, data=None)
+        rows = [r for r in self.cp.upstream_snapshot()["models"] if r["model"] == "MiniMaxAI/MiniMax-H3"]
+        self.assertEqual(len(rows), 1, rows)
+        self.assertEqual(len([u for u in asked if "MiniMax-H3/revision" in u]), 1, asked)
+
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})
         self.assertEqual(code, 202, body)

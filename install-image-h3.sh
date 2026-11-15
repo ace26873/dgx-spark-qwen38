@@ -158,9 +158,13 @@ case "$IMAGE_H3_BIND" in
 esac
 # Its licence's Excluded Territories, said as its weights come and as its unit goes in (docs/image-h3-lane.md).
 LICENCE='Its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE).'
-WEIGHTS_GB=64; ENCODER_GB=63; RUNTIME_GB=14   # 68.65 GB in 34 files (63.94 GiB) and 66.73 GB in 23 (62.15
-# GiB), from the Hub's listing of the two pinned revisions; the runtime the video lane's 11 (the venv, the
-# checkout and the wheel, 8.6 to 8.8 GiB measured, and the pip build tree) and FlashInfer's cubins (1.56 GB).
+# 68.65 GB in 34 files (63.94 GiB) and 66.73 GB in 23 (62.15 GiB), from the Hub's listing of the two pinned
+# revisions; the runtime the video lane's 11 (the venv, the checkout and the wheel, 8.6 to 8.8 GiB measured, and
+# the pip build tree) and FlashInfer's cubins (1.56 GB). Each at the start of its line: switch-model.sh reads them
+# by name there (review of v1.50).
+WEIGHTS_GB=64
+ENCODER_GB=63
+RUNTIME_GB=14
 # TODO(measure): the runtime at its first install on the reference box.
 
 if [ "$ACTION" = uninstall ]; then

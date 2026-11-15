@@ -41,6 +41,14 @@ class TheLaneTheViewAddresses(Base):
         self.box([QWEN, H3], {QWEN: "ready", H3: "stopped"})
         self.assertEqual(self.ck.image_unit(), QWEN)
 
+    def test_a_lane_that_failed_is_the_one_said_not_the_other_installed(self):
+        # MiniMax-H3-Image crashed while Qwen-Image 2.1 is installed: the view says the crash (review of v1.50: it
+        # turned to Qwen-Image's controls, and the failure never showed)
+        self.box([QWEN, H3], {H3: "failed", QWEN: "stopped"})
+        self.assertEqual(self.ck.image_unit(), H3)
+        self.box([QWEN, H3], {QWEN: "stopped", H3: "stopped"})
+        self.assertEqual(self.ck.image_unit(), QWEN, "nothing failed: the one installed first")
+
     def test_in_a_switch_the_lane_coming_up_before_the_one_stopping(self):
         self.box([QWEN, H3], {QWEN: "stopping", H3: "starting"})
         self.assertEqual(self.ck.image_unit(), H3)

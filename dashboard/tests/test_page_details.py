@@ -1224,6 +1224,21 @@ class TheNowViewSaysThePortTheImageLaneListensOn(unittest.TestCase):
         self.assertIn("127.0.0.1:30020, behind this cockpit", r["before"], "until the cockpit says it, the default")
         self.assertIn("127.0.0.1:30120, behind this cockpit", r["after"])
 
+    def test_an_answer_for_the_other_lane_is_not_kept_and_is_asked_again(self):
+        # mid-switch the route answers for the lane going: not this one's port, and the next render asks again (review of
+        # v1.50: it never asked again, and said the default for good)
+        r = run(self, r"""
+        let calls = 0;
+        __fetch = async url => { calls++; return __response(200, calls === 1 ? {port: 30120, unit: 'qwen38-image.service'}
+                                                                       : {port: 30126, unit: 'qwen38-image-h3.service'}); };
+        const settle = async () => { for (let i = 0; i < 20; i++) await null; };
+        imgPortAsk('qwen38-image-h3.service'); await settle();
+        const first = imgNowPort('qwen38-image-h3.service');
+        imgPortAsk('qwen38-image-h3.service'); await settle();
+        report({first, then: imgNowPort('qwen38-image-h3.service'), calls});
+        """)
+        self.assertEqual((r["first"], r["then"], r["calls"]), (30026, 30126, 2))
+
     def test_the_other_image_lane_says_its_own_default_then_its_own_port(self):
         # MiniMax-H3-Image (30026): neither Qwen-Image's default nor the port the cockpit read for that other lane
         r = run(self, r"""

@@ -298,7 +298,11 @@ def deletion_plan(repo_dir: Path, rev: str) -> dict:
 
 def classify(models: list[dict], pins: dict[str, str]) -> list[dict]:
     """Mark every cached revision pinned (by which var) or stray."""
-    rev2var = {rev: var for var, rev in pins.items()}
+    # the first variable that pins a revision names it: two may pin one (MiniMax-H3's commit, the video lane's checkpoint
+    # and the MiniMax-H3-Image lane's text encoder, v1.50), and the later one overwrote the lane that owns it
+    rev2var = {}
+    for var, rev in pins.items():
+        rev2var.setdefault(rev, var)
     enriched = []
     for m in models:
         pin_vars = [v for v, mid in PIN_MODELS.items() if mid == m["repo_id"]]

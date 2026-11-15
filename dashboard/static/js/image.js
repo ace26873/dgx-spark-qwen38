@@ -43,7 +43,8 @@ const IMG_H3_LICENCE = 'Its licence, the MiniMax-H3-Image Community License, is 
 function imgUnit(){
   const en = engines(), units = [IMAGE_UNIT, IMAGE_H3_UNIT], up = units.filter(u => en[u] && !UNIT_DOWN.has(en[u].state));
   if (up.length) return up.find(u => en[u].state !== 'stopping') || up[0];
-  return units.find(u => en[u]) || IMAGE_UNIT;
+  // a lane that failed before one merely installed: its failure is what the view says (cockpit.py's rule)
+  return units.find(u => en[u] && en[u].state === 'failed') || units.find(u => en[u]) || IMAGE_UNIT;
 }
 const imgH3 = () => imgUnit() === IMAGE_H3_UNIT;
 const imgSizes = () => imgH3() ? IMG_H3_SIZES : IMG_SIZES;
@@ -181,7 +182,7 @@ function imgSync(){
   show('img-cancel', !!(IS.inflight || IS.busy));
   const secs = imgEstimate(), {w, h} = imgSize();
   setText('img-cost-v', secs ? 'about ' + fmtDur(secs) : '…');
-  setText('img-cost-k', w && h ? `${(w * h / 1e6).toFixed(2)} megapixels${Number($('img-n').value) > 1 ? ' each' : ''}` : '');
+  setText('img-cost-k', w && h ? `${(w * h / 1e6).toFixed(2)} megapixels${imgCount() > 1 ? ' each' : ''}` : '');
   setText('img-cost-b', h3 ? 'Fitted to three sizes and an edit measured on this box; the engine holds 92.3 GB at its peak, alone on the box.'
     : w * h >= 3.5e6 ? 'Peaks at 45.5 GiB instead of 34.8: four times the pixels cost five times the time.' : 'Fitted to six sizes of both checkpoints measured on this box.');
   const cnt = imgVal('img-prompt').length; setText('img-count', cnt ? cnt + ' characters' : '');
