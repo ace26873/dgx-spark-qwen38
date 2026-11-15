@@ -42,6 +42,17 @@ CALLS = {
     "switch-model.sh, the video lane":
         ("switch-model.sh", '"$VID_PY" "$REPO_DIR/ckpt-fetch.py" "$VID_MODEL" "$VID_REV" --allow "$VID_ALLOW" '
                             '--offline-first --refs-main fill'),
+    "install-image-h3.sh, its checkpoint":
+        ("install-image-h3.sh", '"$VENV/bin/python" "$HERE/ckpt-fetch.py" "$MODEL" "$MODEL_REV" --allow "$ALLOW" --refs-main pin'),
+    "install-image-h3.sh, its text encoder":
+        ("install-image-h3.sh", '"$VENV/bin/python" "$HERE/ckpt-fetch.py" "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" '
+                                '--allow "text_encoder/*" --offline-first'),
+    "switch-model.sh, the MiniMax-H3-Image lane's checkpoint":
+        ("switch-model.sh", '"$H3_PY" "$REPO_DIR/ckpt-fetch.py" "$H3_MODEL" "$H3_REV" --allow "$ALLOW" --offline-first '
+                            '--refs-main pin'),
+    "switch-model.sh, the MiniMax-H3-Image lane's text encoder":
+        ("switch-model.sh", '"$H3_PY" "$REPO_DIR/ckpt-fetch.py" "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" '
+                            '--allow "text_encoder/*" --offline-first'),
     "vllm-lane.sh, the checkpoints of the five vLLM lanes' installers":
         ("vllm-lane.sh", '"$LOCAL_IMAGE" /opt/qwen38/ckpt-fetch.py "$1" "$2" --offline-first'),
     "switch-model.sh, the Kolibri lane":
@@ -59,7 +70,7 @@ CALLS = {
 }
 SCRIPTS = ("install.sh", "switch-model.sh", "install-image.sh", "install-video.sh", "install-kolibri.sh",
            "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh", "install-ornith-122b.sh",
-           "vllm-lane.sh", "install-flash-unsloth.sh", "llamacpp-lane.sh")
+           "vllm-lane.sh", "install-flash-unsloth.sh", "llamacpp-lane.sh", "install-image-h3.sh")
 # the llama.cpp lanes' one fetch of their GGUF files (the docstring says why it is not ckpt-fetch.py)
 GGUF_CALL = ("llamacpp-lane.sh", 'python3 -I "$HERE/gguf-fetch.py" "$HF_CACHE" "$@"')
 VLLM_INSTALLERS = ("install-kolibri.sh", "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh",
@@ -72,7 +83,9 @@ class EveryLaneFetchesThroughIt(unittest.TestCase):
             with self.subTest(what):
                 self.assertEqual(text(script).count(call), 1, f"{script} no longer runs it this way")
         self.assertEqual(text("switch-model.sh").count("ckpt-fetch.py\" \"$") + text("switch-model.sh").count(
-            "/opt/qwen38/ckpt-fetch.py \"$"), 7, "switch-model.sh fetches for seven lanes, each through it")
+            "/opt/qwen38/ckpt-fetch.py \"$"), 9,
+            "switch-model.sh fetches for eight lanes, each through it (the MiniMax-H3-Image lane twice: its checkpoint "
+            "and its text encoder)")
 
     def test_no_script_keeps_a_fetch_of_its_own(self):
         for script in SCRIPTS:

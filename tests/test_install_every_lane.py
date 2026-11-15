@@ -320,11 +320,11 @@ def vllm_lane_disabled(case, lane, secondary, lane_boot):
     for f in ("sudo", "systemctl"):
         (d / f).chmod(0o755)
     boots = {"kolibri": 0, "nemotron": 0, "nemotron-super": 0, "flash-local": 0, "ornith-122b": 0, "flash-unsloth": 0,
-             lane: lane_boot}
+             "image-h3": 0, lane: lane_boot}
     r = subprocess.run(["bash", "-c", f'set -euo pipefail\nRECOMMENDED=0\nSECONDARY="{secondary}"; KOLIBRI_BOOT={boots["kolibri"]}; '
                         f'NEMOTRON_BOOT={boots["nemotron"]}; NEMOTRON_SUPER_BOOT={boots["nemotron-super"]}; '
                         f'FLASH_LOCAL_BOOT={boots["flash-local"]}; ORNITH_122B_BOOT={boots["ornith-122b"]}; '
-                        f'FLASH_UNSLOTH_BOOT={boots["flash-unsloth"]}\n' + block],
+                        f'FLASH_UNSLOTH_BOOT={boots["flash-unsloth"]}; IMAGE_H3_BOOT={boots["image-h3"]}\n' + block],
                        capture_output=True, text=True, timeout=30,
                        env={"PATH": f"{d}:/usr/bin:/bin"})
     case.assertEqual(r.returncode, 0, r.stderr)
@@ -510,6 +510,16 @@ class ABoxBootingFlashUnsloth(unittest.TestCase):
                          ["sudo systemctl disable qwen38-flash-unsloth.service"])
         self.assertEqual(vllm_lane_disabled(self, "flash-unsloth", "", 1), [], "the run that keeps it at boot")
         self.assertEqual(vllm_lane_disabled(self, "flash-unsloth", "flash", 0), [], "the run for the other text lane")
+
+class ABoxBootingMiniMaxH3Image(unittest.TestCase):
+    """The MiniMax-H3-Image lane (v1.50), an engine of its own: a run that makes a text lane the boot lane takes it off
+    the boot as it does every other lane, and the run that keeps it at boot or installs the other text lane does not."""
+
+    def test_the_run_that_takes_the_boot_back_disables_it(self):
+        self.assertEqual(vllm_lane_disabled(self, "image-h3", "", 0), ["sudo systemctl disable qwen38-image-h3.service"])
+        self.assertEqual(vllm_lane_disabled(self, "image-h3", "", 1), [], "the run that keeps it at boot")
+        self.assertEqual(vllm_lane_disabled(self, "image-h3", "flash", 0), [], "the run for the other text lane")
+
 
 class ItLeavesWhatIsSharedToItsParent(unittest.TestCase):
     """What the run for the other lane must not touch, read where it would."""
@@ -852,7 +862,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
             want_kolibri=1, with_kolibri=0, kolibri_rc=0, prepared=(), all_weights=0, begun=(), second_new=None,
             want_nemotron=1, with_nemotron=0, nemotron_rc=0, want_super=1, with_super=0, super_rc=0,
             nemotron_image=None, want_flocal=0, with_flocal=0, flocal_rc=0, want_ornith=0, with_ornith=0, ornith_rc=0,
-            want_unsloth=0, with_unsloth=0, unsloth_rc=0):
+            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0):
         t = tmp("lane-end-")
         unit_dir = t / "units"
         unit_dir.mkdir()
@@ -886,7 +896,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
             (hf / "hub" / f"models--org--{lane}").mkdir(parents=True)
         # a prepared lane: its runtime is on the box (the venv and its wheel's note; a vLLM lane's image)
         for lane in prepared:
-            if lane in ("image", "video"):
+            if lane in ("image", "video", "image-h3"):
                 d = t / "home" / ".local" / "share" / f"qwen38-{lane}"
                 (d / "venv" / "bin").mkdir(parents=True)
                 (d / "venv" / "bin" / "python").write_text("#!/bin/sh\n")
@@ -906,7 +916,8 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         for name, rc in (("install-image.sh", image_rc), ("install-video.sh", video_rc),
                          ("install-kolibri.sh", kolibri_rc), ("install-nemotron.sh", nemotron_rc),
                          ("install-nemotron-super.sh", super_rc), ("install-flash-local.sh", flocal_rc),
-                         ("install-ornith-122b.sh", ornith_rc), ("install-flash-unsloth.sh", unsloth_rc)):
+                         ("install-ornith-122b.sh", ornith_rc), ("install-flash-unsloth.sh", unsloth_rc),
+                         ("install-image-h3.sh", h3_rc)):
             stub(repo / name, f'echo "{name} $*" >> "{log}"\n'
                               f'case "$*" in *--no-smoke*) exit {rc} ;; esac\nexit 0')
         (repo / "oc-fit-limits.py").write_text(f"open({str(log)!r}, 'a').write('oc-fit-limits\\n')\n")
@@ -947,10 +958,11 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                   f"WANT_FLASH_LOCAL={want_flocal}; WITH_FLASH_LOCAL={with_flocal}\n"
                   f"WANT_ORNITH_122B={want_ornith}; WITH_ORNITH_122B={with_ornith}\n"
                   f"WANT_FLASH_UNSLOTH={want_unsloth}; WITH_FLASH_UNSLOTH={with_unsloth}\n"
+                  f"WANT_IMAGE_H3={want_h3}; WITH_IMAGE_H3={with_h3}\n"
                   f"SECOND_LANE=flash; SECOND_UNIT=qwen38-flash.service; SECOND_STATE={second_state}; SECOND_FRESH={second_fresh}; SECOND_NEW={second_fresh if second_new is None else second_new}\n"
                   + block + '\necho "STATES second=$SECOND_STATE image=$IMAGE_STATE video=$VIDEO_STATE kolibri=$KOLIBRI_STATE'
                   ' nemotron=$NEMOTRON_STATE super=$NEMOTRON_SUPER_STATE flocal=$FLASH_LOCAL_STATE ornith=$ORNITH_122B_STATE'
-                  ' unsloth=$FLASH_UNSLOTH_STATE"\n')
+                  ' unsloth=$FLASH_UNSLOTH_STATE h3=$IMAGE_H3_STATE"\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
                            env={"PATH": f"{bin_}:/usr/bin:/bin"})
         return r.returncode, r.stdout + r.stderr, log.read_text().splitlines()
@@ -1119,6 +1131,40 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         self.assertNotIn("install-flash-unsloth.sh ", calls)          # nothing to prove
         self.assertNotIn("clients follow", calls)                     # the unit, and so the entry, are as they were
         self.assertIn("unsloth=failed", out)
+
+    def test_the_minimax_h3_image_lane_comes_as_its_units_on_a_new_box_and_whole_with_all_weights(self):
+        # the lane on demand (v1.50), as every side lane: its unit on a new box, its first Load builds it
+        rc, out, calls = self.end(want_unsloth=1, want_h3=1)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls[5:7], ["install-flash-unsloth.sh --units-only", "install-image-h3.sh --units-only"])
+        self.assertIn("h3=units", out)
+        rc, out, calls = self.end(want_unsloth=1, want_h3=1, all_weights=1)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("install-image-h3.sh --no-smoke", calls)
+        self.assertLess(calls.index("install-flash-unsloth.sh "), calls.index("install-image-h3.sh "))   # its proof, last
+        self.assertLess(calls.index("install-image-h3.sh "), calls.index("prove qwen38-sglang.service qwen3.8-27b"))
+        self.assertIn("h3=proved", out)
+        # left out (--no-image-h3): nothing of it runs
+        rc, out, calls = self.end(want_h3=0, all_weights=1)
+        self.assertFalse([c for c in calls if c.startswith("install-image-h3.sh")], calls)
+
+    def test_the_minimax_h3_image_lane_is_begun_by_its_runtime(self):
+        # its first Load built its venv and wrote its wheel's note: an update installs it whole
+        only = dict(second_fresh=0, want_image=0, want_video=0, want_kolibri=0, want_nemotron=0, want_super=0, want_h3=1)
+        rc, out, calls = self.end(units=("qwen38-image-h3.service",), prepared=("image-h3",), **only)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-image-h3.sh --no-smoke"])
+        self.assertIn("h3=installed", out)
+        rc, out, calls = self.end(units=("qwen38-image-h3.service",), **only)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-image-h3.sh --units-only"])
+
+    def test_a_failed_minimax_h3_image_install_is_said_and_the_rest_goes_on(self):
+        rc, out, calls = self.end(want_h3=1, h3_rc=1, all_weights=1)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("NOTE: the MiniMax-H3-Image lane did not install", out)
+        self.assertNotIn("install-image-h3.sh ", calls)              # nothing to prove
+        self.assertIn("h3=failed", out)
 
     def test_a_failed_ornith_install_is_said_and_the_rest_goes_on(self):
         rc, out, calls = self.end(want_ornith=1, ornith_rc=1, all_weights=1)
