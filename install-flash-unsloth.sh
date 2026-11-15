@@ -18,8 +18,8 @@
 #                                              flash-unsloth installs FILE
 #
 # TWO QUANTIZATIONS, ONE LANE (v1.49). Unsloth's repository holds every quantization of the model, and the lane serves
-# two, each a switch target under the one name clients ask for: UD-Q4_K_XL (flash-unsloth) and UD-IQ3_XXS
-# (flash-unsloth-iq3), its experts in 3-bit, 51.1 GiB of weights, the same n-gram table. FLASH_UNSLOTH_DEFAULT below
+# two, each a switch target under the one name clients ask for: UD-IQ3_XXS (flash-unsloth-iq3), its experts in 3-bit,
+# 51.1 GiB of weights, the default since v1.49.0, and UD-Q4_K_XL (flash-unsloth), 76.9, the same n-gram table. FLASH_UNSLOTH_DEFAULT below
 # is the one a new install serves; an update keeps the one its unit names; ./switch-model.sh flash-unsloth-iq3 (or
 # flash-unsloth) moves the lane to the other, and its first switch downloads what it lacks.
 #
@@ -31,8 +31,8 @@
 #
 # install.sh puts this lane's unit in on every plain install, like the other lanes, and its first Load from the
 # cockpit pulls its image and fetches its files; ./install.sh --no-flash-unsloth leaves it out of the run that passes
-# it. It takes 112 GB of GGUF files on UD-Q4_K_XL (the model's four parts, 111.3 GB, and the draft, 0.7), 85 on
-# UD-IQ3_XXS (55 more beside UD-Q4_K_XL's, whose n-gram table it shares), and an image of 4.5 GB (2.7 to download):
+# it. It takes 85 GB of GGUF files on UD-IQ3_XXS (the model's four parts, 83.6 GB, and the draft, 0.7), 112 on
+# UD-Q4_K_XL (83 more beside UD-IQ3_XXS's, whose n-gram table it shares), and an image of 4.5 GB (2.7 to download):
 # when the disk does not have the room, this refuses before downloading anything.
 #
 # WHY A LANE OF ITS OWN. The flash lane serves the same model on SGLang, from NVFP4 checkpoints, and the FP4-Local lane
@@ -120,10 +120,12 @@ FLASH_UNSLOTH_IQ3_PART4="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004
 # THE LANE'S DEFAULT TARGET, the one place it is set: flash-unsloth (UD-Q4_K_XL, FLASH_UNSLOTH_PART1 to 4) or
 # flash-unsloth-iq3 (UD-IQ3_XXS, the four parts just above). A new install serves it, and so do an update of a unit that
 # names neither and ./install.sh --recommended; an update keeps the target its unit names, and FLASH_UNSLOTH_TARGET,
-# which ./switch-model.sh gives this installer, names another. UD-Q4_K_XL as v1.48.0 shipped it: UD-IQ3_XXS decodes
-# about 25 % faster at a first pass (69.4 tok/s in code against 55.6, 2026-11-14, one measure each), and takes its place
-# once its quality is proven (decision 1359).
-FLASH_UNSLOTH_DEFAULT="flash-unsloth"
+# which ./switch-model.sh gives this installer, names another (install.sh gives it too, to move a unit that serves
+# UD-Q4_K_XL because v1.48 installed it by default: conformity.py's OLD_DEFAULTS). UD-IQ3_XXS since v1.49.0 (decision
+# 1376), UD-Q4_K_XL before it: UD-IQ3_XXS decodes about 25 % faster at a first pass (69.4 tok/s in code against 55.6,
+# 2026-11-14, one measure each) and serves four requests at once where UD-Q4_K_XL serves two, with GSM8K at 98.8 % (98.4
+# for UD-Q4_K_XL on the same bench) and HumanEval at 98.2 % (99.4), as the lane page says.
+FLASH_UNSLOTH_DEFAULT="flash-unsloth-iq3"
 # The draft, ggml-org's GGUF of the DFlash2 head of incoai (Q8_0): measured against the MTP head and the DFlash2 head
 # in Q4_0, the one that decodes fastest at the model card's sampling (docs/flash-unsloth-lane.md).
 FLASH_UNSLOTH_DRAFT_REPO="ggml-org/Qwen3.8-Flash-Next-GGUF"

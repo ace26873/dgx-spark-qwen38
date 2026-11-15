@@ -112,9 +112,9 @@ class TheRecommendedState(unittest.TestCase):
 
 
 class TheOldDefaults(unittest.TestCase):
-    def test_the_four_kept_as_choices_are_listed(self):
+    def test_the_five_kept_as_choices_are_listed(self):
         self.assertEqual({o.knob for o in conformity.OLD_DEFAULTS},
-                         {"ENGINE_BIND", "CONTEXT_MODE", "FLASH_TIER", "DRAFT2"})
+                         {"ENGINE_BIND", "CONTEXT_MODE", "FLASH_TIER", "DRAFT2", "FLASH_UNSLOTH_TARGET"})
 
     def test_each_has_its_release_its_date_and_its_words_in_the_changelog(self):
         for old in conformity.OLD_DEFAULTS:

@@ -836,6 +836,10 @@ if [ "$CHOICE" = "flash-unsloth" ] || [ "$CHOICE" = "flash-unsloth-iq3" ]; then
       systemctl is-active --quiet "$u" 2>/dev/null && RUNNING="$u"
     done
     printf '\n\033[1;32mSwitch queued: %s, %s (%s)\033[0m\n' "$FLASH_UNSLOTH_REPO" "$CHOICE" "$FLASH_UNSLOTH_UNIT_NAME"
+    # The target is the operator's choice from here, as the Kolibri lane's checkpoint (v1.49.0): recorded in an
+    # installed.json that exists, erased when it is the recommended one, so an update moves no chosen UD-Q4_K_XL.
+    python3 "$REPO_DIR/conformity.py" choose --config-dir "$CONFIG_DIR" --repo-dir "$REPO_DIR" \
+      FLASH_UNSLOTH_TARGET "$CHOICE" || true
     if [ -n "$RUNNING" ]; then
       echo "Effective after:  sudo systemctl stop $RUNNING && sudo systemctl start $FLASH_UNSLOTH_UNIT_NAME   (or next reboot)"
     elif systemctl is-active --quiet "$FLASH_UNSLOTH_UNIT_NAME" 2>/dev/null; then

@@ -108,6 +108,7 @@ if [ -n "${FLASH_UNSLOTH_CONTEXT+set}" ]; then
 fi
 # the side lanes' checkpoints, which their installers read from the environment (2026-10-17)
 _ENV_KOLIBRI_VARIANT="${KOLIBRI_VARIANT:-}"; _ENV_IMAGE_MODEL="${IMAGE_MODEL:-}"; _ENV_VIDEO_VARIANT="${VIDEO_VARIANT:-}"
+_ENV_FLASH_UNSLOTH_TARGET="${FLASH_UNSLOTH_TARGET:-}"
 # A run installs the text lane that does not serve as well, beside the one it serves: it
 # starts this script again for that lane, with QWEN38_SECONDARY naming it (27b or flash).
 # That run converges on that lane's own installed choices, installs its unit without
@@ -620,7 +621,7 @@ when the HF cache is on another disk than the home directory's, for the copy
 of its n-gram table), the Ornith 122B lane (Ornith AI's Ornith 1.5 122B,
 on vLLM, in the Qwen3.8 Flash-Next FP4-Local lane's image: 78 beside it, else 96)
 and the Qwen3.8 Flash-Next Unsloth GGUF lane (Unsloth's GGUF of the flash
-model, on llama.cpp, 117). The lane that serves proves it serves before the run ends; on a new box the 27B takes 58 GB
+model, on llama.cpp, 90). The lane that serves proves it serves before the run ends; on a new box the 27B takes 58 GB
 of disk, about 39 GB of
 downloads (about 6 to 7 minutes at 100 MB/s). A lane installed whole (--all-weights, --with-<lane>)
 that does not fit on the disk is left out and named at the end, with the
@@ -673,7 +674,7 @@ without a terminal.
   --no-ornith-122b      leave the Ornith 1.5 122B lane (vLLM, 96 GB) out of this
                         run, the same way (./install-ornith-122b.sh --uninstall)
   --with-ornith-122b    install it whole now and prove it
-  --no-flash-unsloth    leave the Qwen3.8 Flash-Next Unsloth GGUF lane (llama.cpp, 117 GB)
+  --no-flash-unsloth    leave the Qwen3.8 Flash-Next Unsloth GGUF lane (llama.cpp, 90 GB)
                         out of this run, the same way (./install-flash-unsloth.sh --uninstall)
   --with-flash-unsloth  install it whole now and prove it
   --all-weights         install every lane whole now (the flash beside the 27B,
@@ -773,6 +774,10 @@ done
 [ "$PLAN_ONLY" -eq 0 ] || [ "$NO_SERVICE" -eq 0 ] \
   || die "--plan lists what a run does to the box's services; --no-service writes none."
 case "$RECOMMENDED" in 0|1) ;; *) die "QWEN38_RECOMMENDED takes 0 or 1 (got: $RECOMMENDED)" ;; esac
+case "$_ENV_FLASH_UNSLOTH_TARGET" in
+  ""|flash-unsloth|flash-unsloth-iq3) ;;
+  *) die "FLASH_UNSLOTH_TARGET takes flash-unsloth (UD-Q4_K_XL) or flash-unsloth-iq3 (UD-IQ3_XXS), got: $_ENV_FLASH_UNSLOTH_TARGET" ;;
+esac
 # A terminal opened before its account joined the docker group has none of the group's rights: the
 # run goes on with them from here, where it has printed and exported nothing yet (lanes.sh). An
 # account outside the group is added at step 1, after every refusal that comes before it.
@@ -1509,6 +1514,20 @@ if [ -z "$SECONDARY" ]; then
   lane_wanted ornith-122b "$NO_ORNITH_122B" "$WITH_ORNITH_122B"; WANT_ORNITH_122B="$WANT"
   lane_wanted flash-unsloth "$NO_FLASH_UNSLOTH" "$WITH_FLASH_UNSLOTH"; WANT_FLASH_UNSLOTH="$WANT"
 fi
+# The Unsloth GGUF lane's target: its installer keeps the one its unit serves, and UD-Q4_K_XL (flash-unsloth) is what
+# v1.48 installed by default. Such a unit moves to the default since v1.49.0, UD-IQ3_XXS (decision 1376), as an old
+# default does (old_default_moves above), handed to the installer as FLASH_UNSLOTH_TARGET; one given on the command
+# line, or ./install.sh --recommended (the installer's default whatever the unit names), decides instead.
+if [ "$WANT_FLASH_UNSLOTH" -eq 1 ] && [ -z "$_ENV_FLASH_UNSLOTH_TARGET" ] && [ "$RECOMMENDED" -eq 0 ]; then
+  _fu_cur="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
+  _fu_def="$(sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$REPO_DIR/install-flash-unsloth.sh" 2>/dev/null || true)"
+  if [ -n "$_fu_cur" ] && [ -n "$_fu_def" ] && [ "$_fu_cur" != "$_fu_def" ] && old_default_moves FLASH_UNSLOTH_TARGET "$_fu_cur"; then
+    echo "Moving the Unsloth GGUF lane from $_fu_cur to $_fu_def, the default since $MOVED_TAG: $_fu_cur is what installs"
+    echo "      before it got, not a choice this box recorded. To keep it: FLASH_UNSLOTH_TARGET=$_fu_cur ./install.sh"
+    export FLASH_UNSLOTH_TARGET="$_fu_def"
+  fi
+  unset _fu_cur _fu_def
+fi
 too_big(){ local l; for l in ${TOO_BIG[@]+"${TOO_BIG[@]}"}; do [ "$l" = "$1" ] && return 0; done; return 1; }   # $1 a lane
 if [ "${#TOO_BIG[@]}" -gt 0 ]; then
   # the lanes that fit, as boxmem.py decides them, rather than a second list of them here (review,
@@ -1647,6 +1666,7 @@ collect_choices() {
   if [ -n "$_ENV_KOLIBRI_VARIANT" ]; then CHOSE+=(--chose "KOLIBRI_VARIANT=$_ENV_KOLIBRI_VARIANT"); fi
   if [ -n "$_ENV_IMAGE_MODEL" ]; then CHOSE+=(--chose "IMAGE_MODEL=$_ENV_IMAGE_MODEL"); fi
   if [ -n "$_ENV_VIDEO_VARIANT" ]; then CHOSE+=(--chose "VIDEO_VARIANT=$_ENV_VIDEO_VARIANT"); fi
+  if [ -n "$_ENV_FLASH_UNSLOTH_TARGET" ]; then CHOSE+=(--chose "FLASH_UNSLOTH_TARGET=$_ENV_FLASH_UNSLOTH_TARGET"); fi
   return 0
 }
 # This box against what this release recommends, in one list before anything changes
@@ -2484,9 +2504,12 @@ OC_FLASH_UNSLOTH_CTX=""; OC_FLASH_UNSLOTH_OUT=""; OC_FLASH_UNSLOTH_NAME=""; OC_F
 if [ "$OC_FLASH_UNSLOTH" -eq 1 ]; then
   # its unit's window, the -c its llama-server takes, and the pair of that window: 262,144 for each request, 1,048,576
   # with FLASH_UNSLOTH_CONTEXT=1m (decisions 1316 and 1318, 2026-11-12); and the target the unit serves, which the
-  # entry's name says (lanes.sh), its installer's default for a unit that names neither of its two (v1.49)
+  # entry's name says (lanes.sh), its installer's default for a unit that names neither of its two (v1.49); the one
+  # this run hands its installer (FLASH_UNSLOTH_TARGET, given or moved above) when it installs the lane, as the unit
+  # it renders later in the run serves that one
   OC_FLASH_UNSLOTH_WINDOW="$(llamacpp_window "$FLASH_UNSLOTH_UNIT_PATH")"
   OC_FLASH_UNSLOTH_TARGET="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
+  [ "$WANT_FLASH_UNSLOTH" -ne 1 ] || [ -z "${FLASH_UNSLOTH_TARGET:-}" ] || OC_FLASH_UNSLOTH_TARGET="$FLASH_UNSLOTH_TARGET"
   [ -n "$OC_FLASH_UNSLOTH_TARGET" ] \
     || OC_FLASH_UNSLOTH_TARGET="$(sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$REPO_DIR/install-flash-unsloth.sh")"
   OC_FLASH_UNSLOTH_PAIR="$("$REPO_DIR/oc-limits.sh" "$OC_FLASH_UNSLOTH_TARGET" --from "$FLASH_UNSLOTH_UNIT_PATH")" \
@@ -4054,7 +4077,7 @@ except Exception as e:
     lane_line "Super VL   " "$NEMOTRON_SUPER_STATE" nemotron-super nemotron-super "102 GB" "$NEMOTRON_SUPER_UNIT_PATH"
     lane_line "FP4-Local  " "$FLASH_LOCAL_STATE" flash-local flash-local "121 GB" "$FLASH_LOCAL_UNIT_PATH"
     lane_line "Ornith 122B" "$ORNITH_122B_STATE" ornith-122b ornith-122b "96 GB" "$ORNITH_122B_UNIT_PATH"
-    lane_line "Unsloth    " "$FLASH_UNSLOTH_STATE" flash-unsloth flash-unsloth "117 GB" "$FLASH_UNSLOTH_UNIT_PATH"
+    lane_line "Unsloth    " "$FLASH_UNSLOTH_STATE" flash-unsloth flash-unsloth "90 GB" "$FLASH_UNSLOTH_UNIT_PATH"
     [ "$LANE" = "27b" ] && echo "  Benchmark  : ./bench.sh"
     # A 64 GB DGX Spark serves Nemotron 3.5 Bolt (Hasan, 2026-10-24): there the 27B gets two requests
     # and a pool of 59,625 tokens (measured on a 64 GB budget, 2026-10-24, its Mamba cache taking much

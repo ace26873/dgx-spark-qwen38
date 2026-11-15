@@ -23,7 +23,7 @@ CI keeps true.
       ├── Nemotron lane: qwen38-nemotron(.service)  vLLM nightly + NVIDIA's b12x, Bolt 74B + LiLiCorr draft
       ├── Nemotron Super lane: qwen38-nemotron-super(.service)  the same image, Super VL 120B NVFP4 + LiLiCorr draft, 1M window
       ├── Ornith lane: qwen38-ornith-122b(.service)  the Flash FP4-Local lane's image, Ornith 1.5 122B NVFP4 + MTP
-      └── Unsloth GGUF lane: qwen38-flash-unsloth(.service)  llama.cpp's server, 176B UD-Q4_K_XL or UD-IQ3_XXS GGUF + n-grams and DFlash2, its table read from the disk
+      └── Unsloth GGUF lane: qwen38-flash-unsloth(.service)  llama.cpp's server, 176B UD-IQ3_XXS or UD-Q4_K_XL GGUF + n-grams and DFlash2, its table read from the disk
   HF cache (weights, pinned revisions)    ~/flashnext-ple (176B N-gram table)
                                           ~/flash-local-ple (FP4-Local table's copies, cache on another disk)
 

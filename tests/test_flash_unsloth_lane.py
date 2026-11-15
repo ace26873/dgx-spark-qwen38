@@ -94,6 +94,10 @@ def exec_command(unit: str) -> str:
 
 
 class TheStagedUnit(unittest.TestCase):
+    # UD-Q4_K_XL's unit, named by its target: the lane's default is UD-IQ3_XXS since v1.49.0 (decision 1376), whose
+    # own forms TheSecondTarget holds; a stage that names a target of its own keeps it, and None names none
+    TARGET = "flash-unsloth"
+
     def setUp(self):
         self.t = pathlib.Path(tempfile.mkdtemp(prefix="unsloth-stage-"))
         self.home = self.t / "home"
@@ -116,7 +120,7 @@ class TheStagedUnit(unittest.TestCase):
 
     def stage(self, **env):
         e = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "HF_CACHE": str(self.hf),
-             "LANES_UNIT_DIR": str(self.units), **env}
+             "LANES_UNIT_DIR": str(self.units), **({"FLASH_UNSLOTH_TARGET": self.TARGET} if self.TARGET else {}), **env}
         r = subprocess.run(["bash", str(REPO / "install-flash-unsloth.sh"), "--stage", str(self.out)],
                            capture_output=True, text=True, env=e, timeout=120)
         return r.returncode, r.stdout + r.stderr
@@ -280,7 +284,7 @@ class TheStagedUnit(unittest.TestCase):
         (repo / "install-flash-unsloth.sh").write_text(text)
         self.out.unlink(missing_ok=True)
         e = {"PATH": "/usr/bin:/bin", "HOME": str(self.home), "HF_CACHE": str(self.hf), "LANES_UNIT_DIR": str(self.units),
-             **(env or {})}
+             **({"FLASH_UNSLOTH_TARGET": self.TARGET} if self.TARGET else {}), **(env or {})}
         r = subprocess.run(["bash", str(repo / "install-flash-unsloth.sh"), "--stage", str(self.out)], capture_output=True,
                            text=True, env=e, timeout=120)
         return r.returncode, r.stdout + r.stderr, exec_command(self.out.read_text()) if self.out.exists() else ""
@@ -352,6 +356,7 @@ class TheWindowChosenAtInstall(unittest.TestCase):
     available at the lowest). The choice is kept for the Loads after, which stage the unit with none of the user's
     environment, by the render that takes it and by --prepare, and the uninstall takes it away."""
     setUp, tearDown, stage = TheStagedUnit.setUp, TheStagedUnit.tearDown, TheStagedUnit.stage
+    TARGET = TheStagedUnit.TARGET
     NATIVE = r"-c 524288 -np 2\s+-md "
     ONE = r"-c 1048576 -np 1 -ctk q8_0 -ctv q8_0 --rope-scaling yarn --yarn-orig-ctx 262144 --rope-scale 4\s+-md "
 
@@ -449,6 +454,7 @@ class TheSecondTarget(unittest.TestCase):
     setUp, tearDown, stage, staged_with = (TheStagedUnit.setUp, TheStagedUnit.tearDown, TheStagedUnit.stage,
                                            TheStagedUnit.staged_with)
     IQ3 = {"FLASH_UNSLOTH_TARGET": "flash-unsloth-iq3"}
+    TARGET = None                           # the installer's own choice: the default, or the unit's
 
     def read(self, fn):
         """lanes.sh's fn of the staged unit: its window, or its target."""
@@ -526,13 +532,18 @@ class TheSecondTarget(unittest.TestCase):
         self.assertEqual((rc, self.read("flash_unsloth_target")), (0, PINS["FLASH_UNSLOTH_DEFAULT"]), out)
 
     def test_the_default_is_one_line_of_the_installer(self):
-        # UD-Q4_K_XL until UD-IQ3_XXS's quality is proven (decision 1359): FLASH_UNSLOTH_DEFAULT alone moves it
-        self.assertEqual(PINS["FLASH_UNSLOTH_DEFAULT"], "flash-unsloth")
+        # UD-IQ3_XXS since v1.49.0 (decision 1376: GSM8K 98.8 % and HumanEval 98.2 % on UD-Q4_K_XL's bench, four requests
+        # at once): FLASH_UNSLOTH_DEFAULT alone sets it, and a stage that names no target and finds no unit serves it
+        self.assertEqual(PINS["FLASH_UNSLOTH_DEFAULT"], "flash-unsloth-iq3")
         self.assertEqual(len(re.findall(r"^FLASH_UNSLOTH_DEFAULT=", TEXT, re.M)), 1)
-        rc, out, cmd = self.staged_with(DEFAULT="flash-unsloth-iq3")
+        rc, out = self.stage()
+        self.assertEqual((rc, self.read("flash_unsloth_target")), (0, "flash-unsloth-iq3"), out)
+        self.assertRegex(exec_command(self.out.read_text()),
+                         rf"-np {PINS['FLASH_UNSLOTH_IQ3_SLOTS']} -ctk {PINS['FLASH_UNSLOTH_IQ3_KV']} ")
+        rc, out, cmd = self.staged_with(DEFAULT="flash-unsloth")
         self.assertEqual(rc, 0, out)
-        self.assertIn(f"/{IQ3_PART1_PATH} ", cmd)
-        self.assertRegex(cmd, rf"-np {PINS['FLASH_UNSLOTH_IQ3_SLOTS']} -ctk {PINS['FLASH_UNSLOTH_IQ3_KV']} ")
+        self.assertIn(f"/{PART1_PATH} ", cmd)
+        self.assertRegex(cmd, rf"-c 524288 -np {PINS['FLASH_UNSLOTH_SLOTS']}\s+-md ")
         rc, out, cmd = self.staged_with(DEFAULT="iq3")
         self.assertNotEqual(rc, 0)
         self.assertIn("FLASH_UNSLOTH_DEFAULT must be flash-unsloth or flash-unsloth-iq3, got: iq3", out)

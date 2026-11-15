@@ -1,8 +1,9 @@
 # The Qwen3.8 Flash-Next Unsloth GGUF lane: the flash model on llama.cpp
 
 `unsloth/Qwen3.8-Flash-Next-GGUF` is Unsloth's GGUF of Qwen3.8-Flash-Next, every quantization of the model in one
-repository. This lane serves its dynamic 4-bit one, UD-Q4_K_XL, by default, and its 3-bit UD-IQ3_XXS as a second
-target ([below](#its-second-target-ud-iq3_xxs-flash-unsloth-iq3)), with llama.cpp's own server, `llama-server`, from the
+repository. This lane serves two of them: its 3-bit UD-IQ3_XXS, the default since v1.49
+([below](#its-second-target-ud-iq3_xxs-flash-unsloth-iq3)), and its dynamic 4-bit UD-Q4_K_XL, v1.48's, which most of
+this page measured, with llama.cpp's own server, `llama-server`, from the
 image the llama.cpp project publishes for arm64 with CUDA, pinned by digest, with llama.cpp's n-gram lookup and then
 ggml-org's GGUF of the DFlash2 draft of the model (Q8_0) proposing tokens. It serves on the text lanes' port, behind the same proxy and key, as model
 `qwen3.8-flash-next-unsloth`, OpenAI or Anthropic dialect alike, and, as on the other Qwen lanes, `lean` is the reasoning
@@ -68,11 +69,21 @@ with two windows of 262,144 (2026-11-14, one measure each, the GPU capped at 2,4
 | prose | 37.7 | 32.0 |
 | a rewrite of code | 171.7 | 129.8 |
 
-TODO(measure): its quality against UD-Q4_K_XL (GSM8K, HumanEval, MMLU), its lowest memory under load at four requests
-and `bench.sh`'s median on freshly started engines. The lane's default stays UD-Q4_K_XL until then: it is one line of
-the installer, `FLASH_UNSLOTH_DEFAULT`, which a new install serves (an update keeps the target the unit serves, and
-`./install.sh --recommended` brings the default back). Its forms are `FLASH_UNSLOTH_IQ3_SLOTS` and
-`FLASH_UNSLOTH_IQ3_KV` beside it.
+Its answers and its memory, measured on 2026-11-14 on the bench UD-Q4_K_XL's were measured on (llama.cpp b12291 built
+on the box, its four windows in q8_0, four requests at once, the medium effort, temperature 0):
+
+| | UD-IQ3_XXS | UD-Q4_K_XL (2026-11-12) |
+|---|---|---|
+| GSM8K, 250 questions | 98.8 % | 98.4 % |
+| HumanEval, 164 problems | 98.2 % | 99.4 % |
+| memory available under GSM8K's four requests | 28.7 GiB at the lowest, 37 at ready | |
+
+MMLU and `bench.sh`'s median were not measured. On these numbers it is the lane's default since v1.49.0 (decision
+1376): one line of the installer, `FLASH_UNSLOTH_DEFAULT`, which a new install serves. An update keeps the target the
+unit serves, but for a unit that serves UD-Q4_K_XL only because v1.48 installed it by default, which moves to UD-IQ3_XXS
+(`conformity.py`, as the other old defaults move); `FLASH_UNSLOTH_TARGET=flash-unsloth ./install.sh`, or a switch to
+`flash-unsloth`, records UD-Q4_K_XL as your choice, and `./install.sh --recommended` brings the default back. Its forms
+are `FLASH_UNSLOTH_IQ3_SLOTS` and `FLASH_UNSLOTH_IQ3_KV` beside it.
 
 ```bash
 ./switch-model.sh flash-unsloth-iq3          # UD-IQ3_XXS; its first switch fetches what it lacks
@@ -406,9 +417,9 @@ the Quality section).
 ## Installing, loading, removing
 
 A plain install puts the lane's unit in, and its first Load from the cockpit pulls its image (4.5 GB, 2.7 to download)
-and fetches its files (112 GB; 85 for UD-IQ3_XXS), then starts it; `--with-flash-unsloth` or `--all-weights` does all
+and fetches its files (85 GB; 112 for UD-Q4_K_XL), then starts it; `--with-flash-unsloth` or `--all-weights` does all
 of it at install and proves it serves, `--no-flash-unsloth` leaves it out of that run. From a terminal:
-`./prepare-lane.sh flash-unsloth`, then `./switch-model.sh flash-unsloth` (or `flash-unsloth-iq3`);
-`./switch-model.sh flash-unsloth --fetch` fetches its files alone. A 64 GB DGX Spark
+`./prepare-lane.sh flash-unsloth`, then `./switch-model.sh flash-unsloth-iq3` (or `flash-unsloth`);
+`./switch-model.sh flash-unsloth-iq3 --fetch` fetches its files alone. A 64 GB DGX Spark
 does not hold it, and refuses it. `./install-flash-unsloth.sh --uninstall` removes its unit and its container, gives the
 boot back to the text lane it took it from, and keeps its files and its image, said, for you to delete.

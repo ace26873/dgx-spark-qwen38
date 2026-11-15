@@ -41,10 +41,11 @@ FIRST_RELEASE = "v1.36.0"
 # drafter as a whole (repository, quantization, depth), because the old default is the three
 # together: the same repository at depth 16 was somebody's choice. The side lanes' checkpoints
 # are compared too (2026-10-17): install.sh hands KOLIBRI_VARIANT, IMAGE_MODEL and VIDEO_VARIANT
-# to their installers, which keep the unit's otherwise.
+# to their installers, which keep the unit's otherwise, and FLASH_UNSLOTH_TARGET, the Unsloth GGUF
+# lane's quantization (v1.49.0), the same way.
 KNOBS = ("target.27b", "target.flash", "DRAFT2", "CONTEXT_MODE", "ENGINE_BIND", "PROXY_BIND",
          "PORT", "PROXY_PORT", "HF_CACHE", "PLE_DIR", "FLASH_TIER", "SPEC_TOKEN_MAP_SIZE",
-         "FLASH_REPLAYSSM_SPEC", "KOLIBRI_VARIANT", "IMAGE_MODEL", "VIDEO_VARIANT")
+         "FLASH_REPLAYSSM_SPEC", "KOLIBRI_VARIANT", "IMAGE_MODEL", "VIDEO_VARIANT", "FLASH_UNSLOTH_TARGET")
 # Settings that belong to the site rather than to a release: where the checkpoints live, which
 # ports clients were given. Listed apart and never moved by an update (decided 2026-10-16).
 SITE = ("PORT", "PROXY_PORT", "HF_CACHE", "PLE_DIR")
@@ -70,6 +71,11 @@ OLD_DEFAULTS = (
     # FLASH_TIER:-context until v1.18.7
     OldDefault("FLASH_TIER", "context", "v1.19.0",
                "2026-10-01T02:07:06+02:00", "`FLASH_TIER` defaults to `concurrency`"),
+    # the Unsloth GGUF lane's UD-Q4_K_XL, its one quantization in v1.48.x; UD-IQ3_XXS since v1.49.0
+    # (decision 1376). Every box that has the lane was installed by v1.48.0 or later and so has an
+    # installed.json: the instant (the day of the release, as the others' days are) decides nothing there.
+    OldDefault("FLASH_UNSLOTH_TARGET", "flash-unsloth", "v1.49.0",
+               "2026-11-15T12:00:00+01:00", "UD-IQ3_XXS is the lane's default"),
 )
 
 
@@ -125,6 +131,10 @@ SIDE = {
     "KOLIBRI_VARIANT": ("install-kolibri.sh", r'^\s*""\)\s*VARIANT=([a-z0-9]+);'),
     "IMAGE_MODEL": ("install-image.sh", r'^IMAGE_MODEL_PIN="([^"]+)"'),
     "VIDEO_VARIANT": ("install-video.sh", r'VARIANT="\$\{VARIANT:-([a-z0-9]+)\}"'),
+    "FLASH_UNSLOTH_TARGET": ("install-flash-unsloth.sh", r'^FLASH_UNSLOTH_DEFAULT="([a-z0-9-]+)"'),
+    # the folder of each target's first part in Unsloth's repository, which the unit's -m names
+    "flash-unsloth": ("install-flash-unsloth.sh", r'^FLASH_UNSLOTH_PART1="([^/"]+)/'),
+    "flash-unsloth-iq3": ("install-flash-unsloth.sh", r'^FLASH_UNSLOTH_IQ3_PART1="([^/"]+)/'),
     "fp8": ("install-kolibri.sh", r'^KOLIBRI_FP8_REPO="([^"]+)"'),
     "nvfp4": ("install-kolibri.sh", r'^KOLIBRI_NVFP4_REPO="([^"]+)"'),
 }
@@ -171,7 +181,8 @@ def recommended(repo_dir=REPO, home=None):
         "FLASH_TIER": val("FLASH_TIER"),
         "SPEC_TOKEN_MAP_SIZE": val("SPEC_TOKEN_MAP_SIZE"),
         "FLASH_REPLAYSSM_SPEC": val("FLASH_REPLAYSSM_SPEC"),
-        **{knob: _side(repo_dir, *SIDE[knob]) for knob in ("KOLIBRI_VARIANT", "IMAGE_MODEL", "VIDEO_VARIANT")},
+        **{knob: _side(repo_dir, *SIDE[knob]) for knob in ("KOLIBRI_VARIANT", "IMAGE_MODEL", "VIDEO_VARIANT",
+                                                            "FLASH_UNSLOTH_TARGET")},
     }
 
 
@@ -261,6 +272,18 @@ def observe(units_dir=UNITS, config_dir=None, lane="27b", repo_dir=REPO):
     video = _read(Path(units_dir) / "qwen38-video.service")
     if video is not None:
         out["VIDEO_VARIANT"] = _first(r"--model-variant ([a-z0-9]+)", video) or _side(repo_dir, *SIDE["VIDEO_VARIANT"])
+    # the Unsloth GGUF lane's target by the folder of its -m, as install-flash-unsloth.sh reads it back
+    # (lanes.sh flash_unsloth_target), in the unit's lines, its comments left out (the unit's header says "-m
+    # naming"); a -m in neither folder names no target of this release
+    unsloth = _read(Path(units_dir) / "qwen38-flash-unsloth.service")
+    if unsloth is not None:
+        unsloth = "\n".join(line for line in unsloth.splitlines() if not line.lstrip().startswith("#"))
+    model = _first(r"(?<![\w-])-m ([^ ]+)", unsloth) if unsloth is not None else None
+    if model:
+        for target in ("flash-unsloth-iq3", "flash-unsloth"):
+            if f"/{_side(repo_dir, *SIDE[target])}/" in model:
+                out["FLASH_UNSLOTH_TARGET"] = target
+                break
     return out
 
 
@@ -430,7 +453,8 @@ def plan(config_dir, lane, chose=None, repo_dir=REPO, units_dir=UNITS, home=None
 
 # The settings that are no variable of their own, as the list names them.
 PLAN_NAMES = {"target.27b": "27B target", "target.flash": "flash target", "DRAFT2": "27B drafter",
-              "KOLIBRI_VARIANT": "Kolibri-1 checkpoint", "IMAGE_MODEL": "image model", "VIDEO_VARIANT": "video variant"}
+              "KOLIBRI_VARIANT": "Kolibri-1 checkpoint", "IMAGE_MODEL": "image model", "VIDEO_VARIANT": "video variant",
+              "FLASH_UNSLOTH_TARGET": "Unsloth GGUF target"}
 
 
 def plan_lines(items, release):

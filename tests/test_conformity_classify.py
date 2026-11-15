@@ -82,7 +82,8 @@ def box(context="1m", host="127.0.0.1", port="30000", hf=None, target27="RadixAr
                "modelopt_fp4", "16"),
         flash=True, flash_target="RadixArk/Qwen3.8-Flash-Next-NVFP4", tier="concurrency", replay="1",
         token_map="65536", ple=None, proxy_bind="0.0.0.0", proxy_port="30001", key_at=None, record=None,
-        side=True, kolibri="Aleph-Alpha/Kolibri-1", image_model="Qwen/Qwen-Image-2.1", video_variant="fl2va"):
+        side=True, kolibri="Aleph-Alpha/Kolibri-1", image_model="Qwen/Qwen-Image-2.1", video_variant="fl2va",
+        unsloth="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf"):
     """(units dir, config dir) of a box whose units are the templates rendered with these values
     (the recommended ones by default). key_at: the mtime of its API key (None: no key);
     record: installed.json, as a dict or as raw text; side: the Kolibri, image and video units."""
@@ -118,6 +119,11 @@ def box(context="1m", host="127.0.0.1", port="30000", hf=None, target27="RadixAr
             **common, "VIDEO_BIND": host, "VIDEO_IP_DENY": ip_deny(host), "VIDEO_IP_ALLOW": "localhost" if ip_deny(host) else "", "VIDEO_PORT": "30022", "VIDEO_LANE_DIR": f"{lanes}/qwen38-video",
             "VIDEO_VENV": f"{lanes}/qwen38-video/venv", "VIDEO_MODEL": "MiniMaxAI/MiniMax-H3",
             "VIDEO_VARIANT": video_variant}))
+        snap = "/root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/" + "f" * 40
+        (units / "qwen38-flash-unsloth.service").write_text(render("qwen38-flash-unsloth.service.template", {
+            **common, "PORT": "30028", "IMAGE": "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64, "MODEL": f"{snap}/{unsloth}",
+            "DRAFT": "/root/draft.gguf", "FILES": "", "CTX": "524288", "SLOTS": "-np 4", "KV": "-ctk q8_0 -ctv q8_0",
+            "YARN": "", "LOAD": "none", "SPEC": "ngram-mod,draft-dflash", "ENGINE_BIND": host}))
     if key_at is not None:
         (cfg / "api-key").write_text("not-a-key\n")
         t = datetime.datetime.fromisoformat(key_at).timestamp()
@@ -168,6 +174,8 @@ class WhatTheBoxServes(unittest.TestCase):
             ({"token_map": "0"}, "SPEC_TOKEN_MAP_SIZE", "0"),
             ({"token_map": "32768"}, "SPEC_TOKEN_MAP_SIZE", "32768"),
             ({"replay": "0"}, "FLASH_REPLAYSSM_SPEC", "0"),
+            ({"unsloth": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf"}, "FLASH_UNSLOTH_TARGET",
+             "flash-unsloth"),
         )
         for kw, knob, want in cases:
             with self.subTest(**{knob: want}):
@@ -206,14 +214,16 @@ class AnOldDefaultOnABoxWithoutInstalledJson(unittest.TestCase):
 
     def test_older_than_the_change_it_is_an_old_default(self):
         for knob, kw in (("ENGINE_BIND", {"host": "0.0.0.0"}), ("CONTEXT_MODE", {"context": "native"}),
-                         ("FLASH_TIER", {"tier": "context"}), ("DRAFT2", {"draft": ZLAB})):
+                         ("FLASH_TIER", {"tier": "context"}), ("DRAFT2", {"draft": ZLAB}),
+                         ("FLASH_UNSLOTH_TARGET", {"unsloth": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf"})):
             with self.subTest(knob=knob):
                 units, cfg = box(key_at=shift(OLD[knob].instant, -60), **kw)
                 self.assertEqual(classes(units, cfg)[knob], ("old-default", "box-before"))
 
     def test_younger_than_the_change_it_is_a_choice(self):
         for knob, kw in (("ENGINE_BIND", {"host": "0.0.0.0"}), ("CONTEXT_MODE", {"context": "native"}),
-                         ("FLASH_TIER", {"tier": "context"}), ("DRAFT2", {"draft": ZLAB})):
+                         ("FLASH_TIER", {"tier": "context"}), ("DRAFT2", {"draft": ZLAB}),
+                         ("FLASH_UNSLOTH_TARGET", {"unsloth": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf"})):
             with self.subTest(knob=knob):
                 units, cfg = box(key_at=shift(OLD[knob].instant, 60), **kw)
                 self.assertEqual(classes(units, cfg)[knob], ("choice", "box-after"))
@@ -266,6 +276,13 @@ class OnceInstalledJsonExists(unittest.TestCase):
         units, cfg = box(host="0.0.0.0", key_at=shift(OLD["ENGINE_BIND"].instant, -60),
                          record=a_record(ENGINE_BIND="0.0.0.0"))
         self.assertEqual(classes(units, cfg)["ENGINE_BIND"], ("choice", "recorded"))
+
+    def test_a_recorded_unsloth_q4_stays_a_choice(self):
+        """UD-Q4_K_XL chosen by a switch (installed.json) is not moved by v1.49.0's default."""
+        units, cfg = box(unsloth="UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+                         key_at=shift(OLD["FLASH_UNSLOTH_TARGET"].instant, -60),
+                         record=a_record(FLASH_UNSLOTH_TARGET="flash-unsloth"))
+        self.assertEqual(classes(units, cfg)["FLASH_UNSLOTH_TARGET"], ("choice", "recorded"))
 
     def test_an_unrecorded_old_default_is_an_old_default_even_on_a_young_box(self):
         units, cfg = box(host="0.0.0.0", key_at=NOW, record=a_record())

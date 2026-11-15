@@ -126,7 +126,7 @@ served on it: the endpoint says which lanes serve it.
 The Qwen3.8 Flash-Next Unsloth GGUF lane (llama.cpp, [docs/flash-unsloth-lane.md](flash-unsloth-lane.md)) serves the
 flash model with its GGUF's template and the Qwen lanes' fixes: the same levels, `lean` by default, `none` turning the
 reasoning off, and its reasoning in `reasoning_content`. It takes text only. Its window is 262,144 tokens for each of
-two requests at once, four on its UD-IQ3_XXS target (1,048,576 for one request at a time with
+four requests at once on UD-IQ3_XXS, its default, and two on UD-Q4_K_XL (1,048,576 for one request at a time with
 `FLASH_UNSLOTH_CONTEXT=1m`). `/v1/systemone` is not served on it.
 
 The Nemotron lanes (vLLM, [docs/nemotron-lane.md](nemotron-lane.md) and

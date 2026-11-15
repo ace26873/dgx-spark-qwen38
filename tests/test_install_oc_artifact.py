@@ -36,7 +36,9 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
              pair=None, names=False, flash_running=None, kolibri_unit=False, kolibri_boot=False, doc=False,
              nemotron_unit=False, nemotron_boot=False, super_unit=False, super_boot=False,
              flocal_unit=False, flocal_boot=False, ornith_unit=False, ornith_boot=False, unsloth_unit=False,
-             unsloth_boot=False, unsloth_slots="-c 524288 -np 2", unsloth_model="x.gguf"):
+             unsloth_boot=False, unsloth_slots="-c 524288 -np 2",
+             unsloth_model="snapshots/" + "d" * 40 + "/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+             unsloth_want=False, unsloth_handed=""):
     t = pathlib.Path(tempfile.mkdtemp(prefix="oc-art-"))
     kolibri = t / "qwen38-kolibri.service"
     if kolibri_unit:
@@ -77,7 +79,10 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
               f'FLASH_LOCAL_UNIT_PATH="{flocal}"; FLASH_LOCAL_BOOT={1 if flocal_boot else 0}\n'
               f'ORNITH_122B_UNIT_PATH="{ornith}"; ORNITH_122B_BOOT={1 if ornith_boot else 0}\n'
               f'FLASH_UNSLOTH_UNIT_PATH="{unsloth}"; FLASH_UNSLOTH_BOOT={1 if unsloth_boot else 0}\n'
-              f'MODEL_CHOICE={"flash" if lane == "flash" else "stock"}\n'
+              # whether this run installs the Unsloth lane, and the target it hands its installer (given or moved, v1.49)
+              f'WANT_FLASH_UNSLOTH={1 if unsloth_want else 0}\n'
+              + (f'export FLASH_UNSLOTH_TARGET={unsloth_handed}\n' if unsloth_handed else "")
+              + f'MODEL_CHOICE={"flash" if lane == "flash" else "stock"}\n'
               # the box's class, which install.sh reads before this block: the block reads it since
               # e65a364, and with no class here every generation stopped on an unbound variable
               # (found by the CI, 2026-10-24)
@@ -440,6 +445,18 @@ class ABoxBootingFlashUnsloth(unittest.TestCase):
                 self.assertEqual(m["limit"], {"context": int(ctx), "input": int(ctx), "output": int(out)})
                 self.assertEqual(m["name"], f"Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2 (local, {said})")
                 self.assertEqual(d["model"], "flash-unsloth/qwen3.8-flash-next-unsloth")
+
+    def test_a_target_handed_to_its_installer_is_the_one_its_entry_names(self):
+        # a UD-Q4_K_XL unit this run moves to UD-IQ3_XXS (an old default, v1.49.0), or a target given on the command
+        # line: the installer renders that unit later in the run, so the entry is named for it now; a run that does
+        # not install the lane names what its unit serves
+        for want, handed, said in ((True, "flash-unsloth-iq3", "UD-IQ3_XXS"), (False, "flash-unsloth-iq3", "UD-Q4_K_XL"),
+                                   (True, "", "UD-Q4_K_XL")):
+            with self.subTest(want=want, handed=handed):
+                d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), unsloth_unit=True,
+                             unsloth_boot=True, unsloth_want=want, unsloth_handed=handed, doc=True)
+                m = d["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
+                self.assertTrue(m["name"].startswith(f"Qwen3.8-Flash-Next Unsloth {said} + DFlash2"), m["name"])
 
     def test_serving_at_boot_its_entry_is_pointed_at_under_the_name_of_its_target(self):
         # install.sh's own lines that point opencode's default at the lane that boots, and name its entry: the name of

@@ -1,8 +1,8 @@
 # Qwen3.8 Flash-Next in Unsloth's GGUF on a DGX Spark (llama.cpp)
 
-`unsloth/Qwen3.8-Flash-Next-GGUF`, Unsloth's GGUF of Qwen3.8-Flash-Next, in its dynamic 4-bit quantization UD-Q4_K_XL:
-76.9 GiB of weights and the model's n-gram (PLE) table in IQ4_NL, 26.8 GiB, which stays on the disk and is read as the
-tokens need it; or in its 3-bit UD-IQ3_XXS, the lane's second target (below). This stack serves it with llama.cpp's
+`unsloth/Qwen3.8-Flash-Next-GGUF`, Unsloth's GGUF of Qwen3.8-Flash-Next, in its 3-bit UD-IQ3_XXS by default since
+v1.49 (51.1 GiB of weights, below) or its dynamic 4-bit UD-Q4_K_XL (76.9 GiB, v1.48's, whose figures come first), and
+the model's n-gram (PLE) table in IQ4_NL, 26.8 GiB, which stays on the disk and is read as the tokens need it. This stack serves it with llama.cpp's
 own server (the project's arm64 CUDA image, b12316), its n-gram lookup and ggml-org's GGUF of the DFlash2 draft, as a
 lane of its own beside the [flash lane](qwen38-flash-next.md) (SGLang) and the
 [FP4-Local lane](qwen38-flash-next-fp4-local.md) (vLLM), which serve the same model.
@@ -10,7 +10,7 @@ lane of its own beside the [flash lane](qwen38-flash-next.md) (SGLang) and the
 ## One command
 
 ```bash
-./switch-model.sh flash-unsloth        # or: flash-unsloth-iq3
+./switch-model.sh flash-unsloth-iq3    # or: flash-unsloth, UD-Q4_K_XL
 ```
 
 ## Measured on our box (ASUS Ascent GX10, 128 GB)
@@ -32,21 +32,23 @@ lane of its own beside the [flash lane](qwen38-flash-next.md) (SGLang) and the
 - A window shared by several requests (`-kvu`) is refused for now: llama-server stopped itself under load in four
   of the nine runs that shared one (2026-11-12, llama.cpp's open issue 31656; the lane page has the numbers).
 - Ready in 35 to 50 s with its files on the internal disk, 50 to 281 s from a USB SSD.
-- 117 GB on disk: 112 for its GGUF files and their draft, 4.5 for the image.
+- 117 GB on disk for UD-Q4_K_XL: 112 for its GGUF files and their draft, 4.5 for the image (90 for UD-IQ3_XXS: 85 and
+  4.5).
 - Measures of minutes, run back to back: no continuous load was measured.
-- `flash-unsloth-iq3`, the same lane on Unsloth's **UD-IQ3_XXS** (its experts in 3-bit, 51.1 GiB of weights against
-  76.9, the same n-gram table), serves **four requests at once** with 262,144 tokens each, its KV cache in q8_0, and its
+- `flash-unsloth-iq3`, the lane's default since v1.49, on Unsloth's **UD-IQ3_XXS** (its experts in 3-bit, 51.1 GiB of
+  weights against 76.9, the same n-gram table), serves **four requests at once** with 262,144 tokens each, its KV cache in q8_0, and its
   1M mode as above. One request at temperature 0, each text's first pass, both quantizations with two windows
   (2026-11-14, one measure each): **69.4 / 76.4 / 37.7 / 171.7 tok/s** in code, reasoning, prose and a rewrite of code,
   against 55.6 / 60.5 / 32.0 / 129.8 for UD-Q4_K_XL; with its four windows, 66.2 tok/s for one request and 71.5 in all
   with four, 39 GiB left to the box at ready; with eight windows, the box's memory guard stopped the engine under
-  GSM8K's eight requests.
-  TODO(measure): its quality (GSM8K, HumanEval, MMLU) against UD-Q4_K_XL, its lowest memory under load, and `bench.sh`'s
-  median; until then UD-Q4_K_XL stays the lane's default. 85 GB of files, 55 beside UD-Q4_K_XL's.
+  GSM8K's eight requests. At the medium effort and temperature 0, four requests at once on its four windows (llama.cpp
+  b12291 built on the box, 2026-11-14): GSM8K **98.8 %** (250 questions; 98.4 % for UD-Q4_K_XL on the same bench) and
+  HumanEval **98.2 %** (164 problems; 99.4 %), and the box kept 28.7 GiB available at the lowest under GSM8K (37 at
+  ready). MMLU and `bench.sh`'s median not measured. 85 GB of files, 55 beside UD-Q4_K_XL's.
 
 ## What it is good at
 
-The flash model as a GGUF on llama.cpp, in about half the flash lane's disk (117 GB against 223): a reference for
+The flash model as a GGUF on llama.cpp, in under half the flash lane's disk (90 GB against 223): a reference for
 whoever runs the model that way, and the lane that follows Unsloth's and llama.cpp's releases. The two other flash
 lanes are ahead on a long prompt (llama.cpp computes one about 2.6 times slower than the FP4-Local lane) and on several
 requests at once.
