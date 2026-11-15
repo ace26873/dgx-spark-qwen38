@@ -1518,16 +1518,30 @@ fi
 # v1.48 installed by default. Such a unit moves to the default since v1.49.0, UD-IQ3_XXS (decision 1376), as an old
 # default does (old_default_moves above), handed to the installer as FLASH_UNSLOTH_TARGET; one given on the command
 # line, or ./install.sh --recommended (the installer's default whatever the unit names), decides instead.
+FLASH_UNSLOTH_DEFAULT_TARGET="$(flash_unsloth_default "$REPO_DIR/install-flash-unsloth.sh")"
 if [ "$WANT_FLASH_UNSLOTH" -eq 1 ] && [ -z "$_ENV_FLASH_UNSLOTH_TARGET" ] && [ "$RECOMMENDED" -eq 0 ]; then
   _fu_cur="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
-  _fu_def="$(sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$REPO_DIR/install-flash-unsloth.sh" 2>/dev/null || true)"
+  _fu_def="$FLASH_UNSLOTH_DEFAULT_TARGET"
   if [ -n "$_fu_cur" ] && [ -n "$_fu_def" ] && [ "$_fu_cur" != "$_fu_def" ] && old_default_moves FLASH_UNSLOTH_TARGET "$_fu_cur"; then
-    echo "Moving the Unsloth GGUF lane from $_fu_cur to $_fu_def, the default since $MOVED_TAG: $_fu_cur is what installs"
-    echo "      before it got, not a choice this box recorded. To keep it: FLASH_UNSLOTH_TARGET=$_fu_cur ./install.sh"
+    echo "Moving the Qwen3.8 Flash-Next Unsloth GGUF lane from $_fu_cur to $_fu_def, the default since $MOVED_TAG:"
+    echo "      $_fu_cur is what installs before it got, not a choice this box recorded. To keep it:"
+    echo "      FLASH_UNSLOTH_TARGET=$_fu_cur ./install.sh"
     export FLASH_UNSLOTH_TARGET="$_fu_def"
   fi
   unset _fu_cur _fu_def
 fi
+# The clients' entry is written below for the target the unit serves when this run begins; the lane's installer, later
+# in the run, may render another (FLASH_UNSLOTH_TARGET given or moved above, --recommended). Once it has, the entry
+# follows the unit as ./switch-model.sh --clients names it; an installer that failed left the unit, and the entry, as
+# they were (independent review of v1.49.0).
+unsloth_clients_follow(){
+  local now
+  now="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
+  [ -n "$now" ] && [ -n "${OC_FLASH_UNSLOTH_TARGET:-}" ] && [ "$now" != "$OC_FLASH_UNSLOTH_TARGET" ] || return 0
+  "$REPO_DIR/switch-model.sh" "$now" --clients \
+    || echo "NOTE: the clients still name $OC_FLASH_UNSLOTH_TARGET for the Qwen3.8 Flash-Next Unsloth GGUF lane;"
+    echo "      run: ./switch-model.sh $now --clients"
+}
 too_big(){ local l; for l in ${TOO_BIG[@]+"${TOO_BIG[@]}"}; do [ "$l" = "$1" ] && return 0; done; return 1; }   # $1 a lane
 if [ "${#TOO_BIG[@]}" -gt 0 ]; then
   # the lanes that fit, as boxmem.py decides them, rather than a second list of them here (review,
@@ -2504,14 +2518,11 @@ OC_FLASH_UNSLOTH_CTX=""; OC_FLASH_UNSLOTH_OUT=""; OC_FLASH_UNSLOTH_NAME=""; OC_F
 if [ "$OC_FLASH_UNSLOTH" -eq 1 ]; then
   # its unit's window, the -c its llama-server takes, and the pair of that window: 262,144 for each request, 1,048,576
   # with FLASH_UNSLOTH_CONTEXT=1m (decisions 1316 and 1318, 2026-11-12); and the target the unit serves, which the
-  # entry's name says (lanes.sh), its installer's default for a unit that names neither of its two (v1.49); the one
-  # this run hands its installer (FLASH_UNSLOTH_TARGET, given or moved above) when it installs the lane, as the unit
-  # it renders later in the run serves that one
+  # entry's name says (lanes.sh), its installer's default for a unit that names neither of its two (v1.49); a target
+  # the lane's installer renders later in the run is named once it has (unsloth_clients_follow)
   OC_FLASH_UNSLOTH_WINDOW="$(llamacpp_window "$FLASH_UNSLOTH_UNIT_PATH")"
   OC_FLASH_UNSLOTH_TARGET="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH" "$REPO_DIR/install-flash-unsloth.sh")"
-  [ "$WANT_FLASH_UNSLOTH" -ne 1 ] || [ -z "${FLASH_UNSLOTH_TARGET:-}" ] || OC_FLASH_UNSLOTH_TARGET="$FLASH_UNSLOTH_TARGET"
-  [ -n "$OC_FLASH_UNSLOTH_TARGET" ] \
-    || OC_FLASH_UNSLOTH_TARGET="$(sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$REPO_DIR/install-flash-unsloth.sh")"
+  OC_FLASH_UNSLOTH_TARGET="${OC_FLASH_UNSLOTH_TARGET:-$(flash_unsloth_default "$REPO_DIR/install-flash-unsloth.sh")}"
   OC_FLASH_UNSLOTH_PAIR="$("$REPO_DIR/oc-limits.sh" "$OC_FLASH_UNSLOTH_TARGET" --from "$FLASH_UNSLOTH_UNIT_PATH")" \
     || die "oc-limits.sh refused ${OC_FLASH_UNSLOTH_TARGET:-the Qwen3.8 Flash-Next Unsloth GGUF lane} (repo bug: please open an issue)"
   OC_FLASH_UNSLOTH_CTX="${OC_FLASH_UNSLOTH_PAIR%% *}"; OC_FLASH_UNSLOTH_OUT="$(echo "$OC_FLASH_UNSLOTH_PAIR" | cut -d' ' -f2)"
@@ -3492,8 +3503,11 @@ else
       || echo "NOTE: the Ornith 1.5 122B lane did not install or update; retry with ./install-ornith-122b.sh --no-smoke"
   fi
   if [ "$WANT_FLASH_UNSLOTH" -eq 1 ]; then
-    "$REPO_DIR/install-flash-unsloth.sh" "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")" \
-      || echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install or update; retry with ./install-flash-unsloth.sh --no-smoke"
+    if "$REPO_DIR/install-flash-unsloth.sh" "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")"; then
+      unsloth_clients_follow
+    else
+      echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install or update; retry with ./install-flash-unsloth.sh --no-smoke"
+    fi
   fi
   SERVING_LANE=""
   [ "$IMAGE_BOOT" -eq 1 ] && SERVING_LANE="image"
@@ -3906,7 +3920,7 @@ except Exception as e:
     if [ "$WANT_FLASH_UNSLOTH" -eq 1 ]; then
       step "Qwen3.8 Flash-Next Unsloth GGUF lane (Unsloth's GGUF of the flash model, on llama.cpp)"
       FLASH_UNSLOTH_MODE="$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")"
-      if "$REPO_DIR/install-flash-unsloth.sh" "$FLASH_UNSLOTH_MODE"; then FLASH_UNSLOTH_STATE=installed; [ "$FLASH_UNSLOTH_MODE" = --units-only ] && FLASH_UNSLOTH_STATE=units; else
+      if "$REPO_DIR/install-flash-unsloth.sh" "$FLASH_UNSLOTH_MODE"; then FLASH_UNSLOTH_STATE=installed; [ "$FLASH_UNSLOTH_MODE" = --units-only ] && FLASH_UNSLOTH_STATE=units; unsloth_clients_follow; else
         FLASH_UNSLOTH_STATE=failed
         echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install (the lines above say why); the rest goes on."
       fi

@@ -446,17 +446,24 @@ class ABoxBootingFlashUnsloth(unittest.TestCase):
                 self.assertEqual(m["name"], f"Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2 (local, {said})")
                 self.assertEqual(d["model"], "flash-unsloth/qwen3.8-flash-next-unsloth")
 
-    def test_a_target_handed_to_its_installer_is_the_one_its_entry_names(self):
-        # a UD-Q4_K_XL unit this run moves to UD-IQ3_XXS (an old default, v1.49.0), or a target given on the command
-        # line: the installer renders that unit later in the run, so the entry is named for it now; a run that does
-        # not install the lane names what its unit serves
-        for want, handed, said in ((True, "flash-unsloth-iq3", "UD-IQ3_XXS"), (False, "flash-unsloth-iq3", "UD-Q4_K_XL"),
-                                   (True, "", "UD-Q4_K_XL")):
+    def test_the_entry_names_what_the_unit_serves_even_when_the_run_hands_another(self):
+        # a UD-Q4_K_XL unit this run moves to UD-IQ3_XXS (an old default, v1.49.0): the entry is written before the
+        # lane's installer runs, so it names the unit as it stands; unsloth_clients_follow brings it to the rendered
+        # target once the installer has succeeded (independent review of v1.49.0, findings 1 and 2)
+        for want, handed in ((True, "flash-unsloth-iq3"), (False, "flash-unsloth-iq3"), (True, "")):
             with self.subTest(want=want, handed=handed):
                 d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), unsloth_unit=True,
                              unsloth_boot=True, unsloth_want=want, unsloth_handed=handed, doc=True)
                 m = d["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
-                self.assertTrue(m["name"].startswith(f"Qwen3.8-Flash-Next Unsloth {said} + DFlash2"), m["name"])
+                self.assertTrue(m["name"].startswith("Qwen3.8-Flash-Next Unsloth UD-Q4_K_XL + DFlash2"), m["name"])
+
+    def test_a_unit_naming_neither_folder_takes_the_installer_default_name(self):
+        # a hand-edited unit with a GGUF in no target's folder: the entry names the lane's default (v1.49.0),
+        # read once from the installer by install.sh (FLASH_UNSLOTH_DEFAULT_TARGET)
+        d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), unsloth_unit=True,
+                     unsloth_boot=True, unsloth_model="snapshots/" + "d" * 40 + "/own-build/model.gguf", doc=True)
+        m = d["provider"]["flash-unsloth"]["models"]["qwen3.8-flash-next-unsloth"]
+        self.assertTrue(m["name"].startswith("Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2"), m["name"])
 
     def test_serving_at_boot_its_entry_is_pointed_at_under_the_name_of_its_target(self):
         # install.sh's own lines that point opencode's default at the lane that boots, and name its entry: the name of

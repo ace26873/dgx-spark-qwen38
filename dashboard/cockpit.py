@@ -1266,7 +1266,10 @@ def llamacpp_engine_info(models: list | None = None):
     text = ""
     if unit == FLASH_UNSLOTH_UNIT:
         try:
-            text = FLASH_UNSLOTH_UNIT_PATH.read_text(errors="replace")
+            # the unit's lines, its comments left out: its header comment says "-m naming", and the whole-file
+            # reads below would take that -m for the engine's (lanes.sh and conformity.py strip them too)
+            text = "\n".join(ln for ln in FLASH_UNSLOTH_UNIT_PATH.read_text(errors="replace").splitlines()
+                             if not ln.lstrip().startswith("#"))
         except OSError:
             text = ""
     ctx, kv, draft = (re.search(r" -c (\d+)", text), re.search(r" -ctk (\S+)", text),
@@ -2448,7 +2451,10 @@ def conformity_state():
                 noted = ""
             lane = "flash" if noted == "qwen38-flash.service" else "27b"
         files = ([UNIT_DIR / n for n in ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-keepalive.service",
-                                         "qwen38-kolibri.service", "qwen38-image.service", "qwen38-video.service")]
+                                         "qwen38-kolibri.service", "qwen38-image.service", "qwen38-video.service",
+                                         # conformity.py's observe reads the Unsloth GGUF lane's unit (v1.49): its mtime
+                                         # is part of what the plan depends on, so it busts the cache too
+                                         "qwen38-flash-unsloth.service")]
                  + [CONFIG_DIR / n for n in ("launch-flash.sh", "installed.json", "api-key", "text-lane")]
                  + [REPO_DIR / n for n in ("install.sh", "install-kolibri.sh", "install-image.sh", "install-video.sh",
                                            "CHANGELOG.md")])

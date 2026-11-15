@@ -725,14 +725,17 @@ jobs:
           # silently keeps the previous target's name. The table lives in
           # oc-point-default.py (install.sh and switch-model.sh both call it).
           python3 - <<'PYEOF'
-          import re, pathlib, sys
+          import ast, re, pathlib, sys
           inst = pathlib.Path("install.sh").read_text()
           m = re.search(r'^case "\$MODEL_CHOICE" in\n(.*?)^esac', inst, re.M | re.S)
           arms = re.findall(r'^\s{2}([a-z0-9|-]+)\)', m.group(1), re.M)
           choices = sorted({c for a in arms for c in a.split("|")} - {"*"})
-          helper = pathlib.Path("oc-point-default.py").read_text()
-          # not anchored: the first entry sits on the same line as "LABEL = {"
-          labels = set(re.findall(r'"([a-z0-9-]+)":\s*"Qwen', helper))
+          # the LABEL table itself, read as Python: a label need not start with "Qwen"
+          # (Arete-27B, v1.49.0), and an entry outside it is no label
+          tree = ast.parse(pathlib.Path("oc-point-default.py").read_text())
+          labels = {k for n in tree.body if isinstance(n, ast.Assign)
+                    and any(getattr(t, "id", None) == "LABEL" for t in n.targets)
+                    for k in ast.literal_eval(n.value)}
           missing = [c for c in choices if c not in labels]
           if missing:
               print("oc-point-default.py has no picker label for:", missing); sys.exit(1)

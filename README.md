@@ -960,7 +960,7 @@ fresh box.
 ## Operations
 
 ```bash
-systemctl status qwen38-sglang          # 27B server state (any of the five 27B targets)
+systemctl status qwen38-sglang          # 27B server state (the 27B lane, whichever of its five targets serves)
 systemctl status qwen38-flash           # Flash-Next server state (target flash)
 systemctl status qwen38-kolibri qwen38-nemotron qwen38-nemotron-super qwen38-flash-local qwen38-ornith-122b   # the vLLM text lanes
 systemctl status qwen38-image qwen38-video qwen38-speech                # images, video, speech, when installed

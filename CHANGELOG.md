@@ -28,8 +28,10 @@ GSM8K's eight requests (the box's guard stopped the engine at 5 GiB, 14 min in).
 available at the lowest under four requests, and about 25 % faster at a first pass of one request (69.4 tok/s in code
 against 55.6, one measure each). Its 1M mode is UD-Q4_K_XL's, one request at a time. A new install serves it. An update
 moves a unit that serves UD-Q4_K_XL only because v1.48 installed it by default, as `conformity.py` moves the other old
-defaults, and keeps one chosen: `FLASH_UNSLOTH_TARGET=flash-unsloth ./install.sh`, or a switch to `flash-unsloth`,
-records UD-Q4_K_XL as your choice, and `./install.sh --recommended` brings the default back.
+defaults, and keeps one chosen. Such a move downloads about 55 GB (UD-IQ3_XXS's first three parts; its n-gram table is
+UD-Q4_K_XL's very file, already in the cache) and leaves the UD-Q4_K_XL files there, so `./switch-model.sh
+flash-unsloth` switches back with no download. `FLASH_UNSLOTH_TARGET=flash-unsloth ./install.sh`, or a switch to
+`flash-unsloth`, records UD-Q4_K_XL as your choice, and `./install.sh --recommended` brings the default back.
 
 **A GGUF lane's checkpoint is its file (proxy v6.57).** One revision of Unsloth's repository holds every quantization
 of the model, and the Unsloth lane now serves two of them under one name: read as the revision alone, a box on

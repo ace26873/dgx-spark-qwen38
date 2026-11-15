@@ -192,6 +192,21 @@ class ItsEnginePanel(Base):
         out = self.ck.llamacpp_engine_info()
         self.assertEqual((out["served_target"], out["info"]["quantization"]), (None, None))
 
+    def test_the_unit_fallback_leaves_its_comments_out(self):
+        # with no /props model_path the unit's -m says the target; the real unit's header comment says
+        # "four parts each, -m naming" (qwen38-flash-unsloth.service.template) before ExecStart's own -m, and
+        # lanes.sh and conformity.py strip comments for exactly that reason (independent review of v1.49.0)
+        self.ck.run = lambda argv, **kw: ""
+        saved = dict(PROPS)
+        self.addCleanup(lambda: (PROPS.clear(), PROPS.update(saved)))
+        del PROPS["model_path"]
+        text = self.unit.read_text()
+        self.addCleanup(self.unit.write_text, text)
+        self.unit.write_text("# Unsloth's GGUF of Qwen3.8-Flash-Next (UD-Q4_K_XL or UD-IQ3_XXS, the lane's two\n"
+                             "# targets, four parts each, -m naming the first part of each target).\n" + text)
+        out = self.ck.llamacpp_engine_info()
+        self.assertEqual((out["served_target"], out["info"]["quantization"]), ("flash-unsloth", "ud-q4_k_xl"))
+
     def test_its_load_is_read_off_its_metrics_with_the_key(self):
         self.serving("ready")
         load = self.ck.llamacpp_load(timeout=3)[0]

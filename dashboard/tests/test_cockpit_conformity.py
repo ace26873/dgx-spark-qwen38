@@ -126,6 +126,19 @@ class TheUpdateTierCarriesIt(unittest.TestCase):
         self.assertEqual([(i["knob"], i["value"], i["group"]) for i in got["items"]],
                          [("KOLIBRI_VARIANT", "nvfp4", "yours")])
 
+    def test_the_unsloth_lane_target_switch_is_read_again(self):
+        # ./switch-model.sh flash-unsloth rewrites the unit: conformity.py's observe reads the folder of its -m
+        # (the lane's second target, v1.49.0), so that unit's mtime busts the plan cache too
+        cp, units, cfg = self.box("cockpit_conform_unsloth", key_at=OLD_BOX)
+        self.assertEqual(cp.conformity_state()["items"], [])
+        unit = units / "qwen38-flash-unsloth.service"
+        unit.write_text(unit.read_text().replace("/UD-IQ3_XXS/", "/UD-Q4_K_XL/"))
+        later = time.time() + 5
+        os.utime(unit, (later, later))
+        got = cp.conformity_state()
+        self.assertEqual([(i["group"], i["knob"], i["value"]) for i in got["items"]],
+                         [("moves", "FLASH_UNSLOTH_TARGET", "flash-unsloth")])
+
     def test_what_cannot_be_read_is_not_said(self):
         cp, _, _ = self.box("cockpit_conform_e", key_at=OLD_BOX)
         mod = cp._conformity()

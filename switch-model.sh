@@ -784,7 +784,7 @@ FLASH_UNSLOTH_UNIT_NAME="qwen38-flash-unsloth.service"
 # as the other lanes' units are.
 FLU_STAGE="$CONFIG_DIR/qwen38-flash-unsloth.service.switch-stage"
 if [ "$CHOICE" = "flash-unsloth" ] || [ "$CHOICE" = "flash-unsloth-iq3" ]; then
-  [ -f "$FLASH_UNSLOTH_UNIT" ] || die "the Qwen3.8 Flash-Next Unsloth GGUF lane is not installed on this box (no $FLASH_UNSLOTH_UNIT). Install it once: ./install.sh --with-flash-unsloth (about 117 GB)"
+  [ -f "$FLASH_UNSLOTH_UNIT" ] || die "the Qwen3.8 Flash-Next Unsloth GGUF lane is not installed on this box (no $FLASH_UNSLOTH_UNIT). Install it once: ./install.sh --with-flash-unsloth (about 90 GB for the UD-IQ3_XXS default, 83 more for UD-Q4_K_XL's)"
   # the fetch, the unit and the boot: --clients goes straight to the clients, for the unit in place
   if [ "$CLIENTS_ONLY" -eq 0 ]; then
     # The model, its pinned revision and the image, from the lane's installer, the one place they are declared.

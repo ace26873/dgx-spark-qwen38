@@ -60,12 +60,24 @@ def run_block(model, key_at=None, record=None, want="1", recommended="0", given=
     return r.stdout + r.stderr, line[0].split("=", 1)[1]
 
 
+class TheDefaultReading(unittest.TestCase):
+    def test_a_missing_installer_answers_empty_and_survives_pipefail(self):
+        """install.sh reads the default at top level, in sandboxes (the run-mark and hint tests)
+        that hold no install-flash-unsloth.sh: under set -euo pipefail an absent file must give the
+        empty string, never a failed pipeline."""
+        r = subprocess.run(["bash", "-c",
+                            f'. "{REPO}/lanes.sh"; set -euo pipefail; x="$(flash_unsloth_default /nonexistent/install-flash-unsloth.sh)"; [ -z "$x" ]; echo RC=$?'],
+                           capture_output=True, text=True, timeout=15, env={"PATH": "/usr/bin:/bin"})
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "RC=0"), r.stderr)
+
+
 class TheOldDefaultMoves(unittest.TestCase):
     def test_on_a_box_older_than_v1_49_it_moves_to_iq3_and_says_how_to_keep_it(self):
         out, target = run_block(Q4, key_at=shift(-60))
         self.assertEqual(target, "flash-unsloth-iq3")
-        self.assertIn("Moving the Unsloth GGUF lane from flash-unsloth to flash-unsloth-iq3, the default since v1.49.0", out)
-        self.assertIn("To keep it: FLASH_UNSLOTH_TARGET=flash-unsloth ./install.sh", out)
+        self.assertIn("Moving the Qwen3.8 Flash-Next Unsloth GGUF lane from flash-unsloth to flash-unsloth-iq3,"
+                      " the default since v1.49.0:", out)
+        self.assertIn("FLASH_UNSLOTH_TARGET=flash-unsloth ./install.sh", out)
 
     def test_an_installed_json_that_does_not_record_it_moves_it_whatever_the_age(self):
         _, target = run_block(Q4, key_at=shift(60), record={})
@@ -108,14 +120,77 @@ class WhatStays(unittest.TestCase):
 
 
 class TheClientsNameIt(unittest.TestCase):
-    def test_the_entry_names_the_target_handed_to_the_installer(self):
-        """The clients' block runs before the installer renders the unit: it names the target the run
-        hands over (given or moved), not the one the unit still serves."""
+    def test_the_entry_names_the_units_target_with_the_installer_default_behind_it(self):
+        """The clients' block runs before the lane's installer: it names the target the unit serves, with
+        the installer's default read through lanes.sh for a unit that names neither folder (v1.49.0)."""
         i = TEXT.index('  OC_FLASH_UNSLOTH_TARGET="$(flash_unsloth_target "$FLASH_UNSLOTH_UNIT_PATH"')
         nxt = TEXT[i:TEXT.index("\n", TEXT.index("\n", i) + 1)]
-        self.assertIn('[ "$WANT_FLASH_UNSLOTH" -ne 1 ] || [ -z "${FLASH_UNSLOTH_TARGET:-}" ] '
-                      '|| OC_FLASH_UNSLOTH_TARGET="$FLASH_UNSLOTH_TARGET"', nxt)
-        self.assertLess(START, i, "the move is decided before the clients' block reads it")
+        self.assertIn('OC_FLASH_UNSLOTH_TARGET="${OC_FLASH_UNSLOTH_TARGET:-'
+                      '$(flash_unsloth_default "$REPO_DIR/install-flash-unsloth.sh")}"', nxt)
+        self.assertLess(START, i, "the move is decided before the clients' block reads the unit")
+
+    def test_the_follow_is_called_after_each_successful_install_of_the_lane(self):
+        for call in ('if "$REPO_DIR/install-flash-unsloth.sh" "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")"; then\n      unsloth_clients_follow',
+                     'then FLASH_UNSLOTH_STATE=installed; [ "$FLASH_UNSLOTH_MODE" = --units-only ] && FLASH_UNSLOTH_STATE=units; unsloth_clients_follow'):
+            with self.subTest(call=call[:40]):
+                self.assertIn(call, TEXT)
+
+
+_FS = TEXT.index("unsloth_clients_follow(){")
+FN = TEXT[_FS:TEXT.index("\n}\n", _FS) + 3]
+
+
+def run_follow(unit_model, oc_target, switch_fails=False):
+    """(output, argv lines the fake switch-model.sh saw) for the function on this unit and entry target."""
+    d = pathlib.Path(tempfile.mkdtemp(prefix="unsloth-follow-"))
+    fake = d / "repo"
+    fake.mkdir()
+    (fake / "install-flash-unsloth.sh").write_text(
+        'FLASH_UNSLOTH_PART1="UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf=x:1"\n'
+        'FLASH_UNSLOTH_IQ3_PART1="UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf=x:1"\n'
+        'FLASH_UNSLOTH_DEFAULT="flash-unsloth-iq3"\n')
+    log = d / "switch.log"
+    (fake / "switch-model.sh").write_text(
+        "#!/bin/bash\nprintf '%s\n' \"$*\" >> " + str(log) + "\n[ \"${SWSUCCEED:-1}\" = 1 ]\n")
+    (fake / "switch-model.sh").chmod(0o755)
+    unit = d / "qwen38-flash-unsloth.service"
+    if unit_model is not None:
+        unit.write_text("# the lane's two targets, four parts each, -m naming the first\n"
+                        f"[Service]\nExecStart=/usr/bin/docker run x \\\n    -m /root/.cache/huggingface/hub/"
+                        f"models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/{'f' * 40}/{unit_model} \\\n    --alias a\n")
+    script = ('set -euo pipefail\n' + f'. "{REPO}/lanes.sh"\n'
+              + f'REPO_DIR="{fake}"; FLASH_UNSLOTH_UNIT_PATH="{unit}"; OC_FLASH_UNSLOTH_TARGET="{oc_target}"\n'
+              + FN + '\nunsloth_clients_follow\necho DONE\n')
+    extra = {"SWSUCCEED": "0"} if switch_fails else {}
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                       env={"PATH": "/usr/bin:/bin", **extra})
+    seen = log.read_text().splitlines() if log.exists() else []
+    return r.stdout + r.stderr, r.returncode, seen
+
+
+class TheClientsFollowTheUnit(unittest.TestCase):
+    def test_a_unit_the_installer_rendered_elsewhere_renames_the_entry(self):
+        out, rc, seen = run_follow("UD-IQ3_XXS/model-00001-of-00004.gguf", "flash-unsloth")
+        self.assertEqual(rc, 0)
+        self.assertEqual(seen, ["flash-unsloth-iq3 --clients"])
+
+    def test_the_same_target_needs_nothing(self):
+        out, rc, seen = run_follow("UD-Q4_K_XL/model-00001-of-00004.gguf", "flash-unsloth")
+        self.assertEqual((rc, seen), (0, []))
+
+    def test_no_unit_target_or_no_entry_target_leaves_the_clients_alone(self):
+        for model, oc in ((None, "flash-unsloth"), ("elsewhere/model.gguf", "flash-unsloth"),
+                          ("UD-IQ3_XXS/model.gguf", "")):
+            with self.subTest(model=model, oc=oc):
+                out, rc, seen = run_follow(model, oc)
+                self.assertEqual((rc, seen), (0, []))
+
+    def test_a_refused_switch_says_how_to_do_it_by_hand_and_the_run_goes_on(self):
+        out, rc, seen = run_follow("UD-IQ3_XXS/model-00001-of-00004.gguf", "flash-unsloth", switch_fails=True)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(seen, ["flash-unsloth-iq3 --clients"])
+        self.assertIn("NOTE: the clients still name flash-unsloth for the Qwen3.8 Flash-Next Unsloth GGUF lane", out)
+        self.assertIn("./switch-model.sh flash-unsloth-iq3 --clients", out)
 
 
 if __name__ == "__main__":

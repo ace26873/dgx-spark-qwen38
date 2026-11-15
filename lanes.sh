@@ -420,6 +420,11 @@ flash_unsloth_target(){  # $1 a unit file, $2 install-flash-unsloth.sh
   done
   return 0
 }
+# The target the Unsloth GGUF lane declares as its default: the one line of its installer that sets it (v1.49.0),
+# read by install.sh once and by its clients' block through the same door (independent review of v1.49.0).
+flash_unsloth_default(){  # $1 install-flash-unsloth.sh
+  { sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$1" 2>/dev/null || true; } | head -1   # (the installer may be absent: a pipefail run must not die on the empty answer)
+}
 existing(){  # $1 a path
   local p="$1"; while [ ! -e "$p" ]; do p="$(dirname "$p")"; done; printf '%s\n' "$p"
 }
