@@ -3808,32 +3808,25 @@ TARGET_FILES = {"flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_PAR
                 "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_IQ3_PART")}
 
 
-def target_files(target: str) -> list | None:
-    """The paths of its repository a target of TARGET_FILES serves, as its installer pins them; None for a target that
-    serves a whole repository. OSError when the installer is not read."""
-    if target not in TARGET_FILES:
-        return None
-    script, prefix = TARGET_FILES[target]
-    return rg.pinned_paths((REPO_DIR / script).read_text(), prefix)
-
-
 def parts_whole(paths: list) -> bool:
-    """A target's pinned GGUF parts all there: each "-0000k-of-0000N" from 1 to N, once (a list read cut short
-    inside its PART lines names fewer)."""
-    seen = [re.search(r"-(\d+)-of-(\d+)\.gguf$", p) for p in paths]
-    if not paths or not all(seen):
-        return bool(paths) and not any(seen)
-    n = {int(m.group(2)) for m in seen}
-    return len(n) == 1 and sorted(int(m.group(1)) for m in seen) == list(range(1, n.pop() + 1))
+    """A target's pinned GGUF parts all named: each "-0000k-of-0000N" from 1 to N once (rg.GGUF_PART_RE, the cache's own
+    reading of split files), or one file that is not split (a list read cut inside its PART lines names fewer)."""
+    seen = [rg.GGUF_PART_RE.match(p) for p in paths]
+    if not any(seen):
+        return len(paths) == 1
+    n = {int(m.group(3)) for m in seen if m}
+    return all(seen) and len(n) == 1 and sorted(int(m.group(2)) for m in seen) == list(range(1, n.pop() + 1))
 
 
-def read_pins(tries: int = 3, pause: float = 0.5) -> tuple:
-    """(pins, {target: its files}, missed): every pin of the clone's scripts and every TARGET_FILES target's parts, and
-    what could not be read. A checkout rewrites a script in an instant: read gone, empty or cut short, a pin of this
-    release is missing (second and third reviews of v1.49.0: the checkpoint it pins then read absent, or stray and so
-    deletable), so a read that misses one is made again, `tries` times. What is still missed is said."""
+def read_pins(tries: int = 3, pause: float = 0.5) -> dict:
+    """What the clone's scripts pin, read once for a scan: {pins, texts, files: {TARGET_FILES target: its parts}, missed:
+    what could not be read, said in words, repos and targets: those it leaves unknown}. A checkout rewrites a script in
+    an instant, and a script read gone, empty or cut short leaves a pin out: the checkpoint it pins then read absent, or
+    stray and so deletable (the reviews of v1.49.0). So a read that misses a pin of rg.PIN_MODELS, a target's part or the
+    video lane's patterns is made again, `tries` times in all; what is still missed is said, and only the repositories
+    and targets it touches are left unknown."""
     for attempt in range(tries):
-        pins, files, missed, texts = {}, {}, [], {}
+        pins, texts, missed = {}, {}, []
         for f in rg.PIN_FILES:
             try:
                 texts[f] = (REPO_DIR / f).read_text()
@@ -3841,16 +3834,23 @@ def read_pins(tries: int = 3, pause: float = 0.5) -> tuple:
                 missed.append(f"{f} not read")
                 continue
             pins.update(rg.parse_pins(texts[f]))
-        missed += [f"{var} not found" for var in sorted(set(rg.PIN_MODELS) - set(pins))]
-        for t, (script, prefix) in TARGET_FILES.items():
-            files[t] = rg.pinned_paths(texts.get(script, ""), prefix)
-            if not parts_whole(files[t]):
-                missed.append(f"{t}'s parts not all found in {script}")
+        lost = sorted(set(rg.PIN_MODELS) - set(pins))
+        missed += [f"{var} not found" for var in lost]
+        repos, targets = {rg.PIN_MODELS[var] for var in lost}, set()
+        files = {t: rg.pinned_paths(texts.get(script, ""), prefix) for t, (script, prefix) in TARGET_FILES.items()}
+        for t, paths in files.items():
+            if not parts_whole(paths):
+                missed.append(f"{t}'s parts not all found in {TARGET_FILES[t][0]}")
+                targets.add(t)
+                repos.add(rg.PIN_MODELS[TARGET_PIN[t]])
+        if not rg.VIDEO_ALLOW_RE.search(texts.get("switch-model.sh", "")):
+            missed.append("the video lane's patterns not found in switch-model.sh")
+            targets.add("video")
         if not missed:
             break
         if attempt < tries - 1:
             time.sleep(pause)
-    return pins, files, missed
+    return {"pins": pins, "texts": texts, "files": files, "missed": missed, "repos": repos, "targets": targets}
 
 
 def target_unit(target: str) -> Path:
@@ -5820,6 +5820,10 @@ def job_delete_strays(job: Job):
         REGISTRY_CACHE.update(ts=0.0, data=None)
     lines.append(f"{gone} stray revision{'s' if gone != 1 else ''} deleted, {freed / 2**30:.2f} GiB freed"
                  if gone else "no stray revision to delete")
+    if reg.get("partial"):
+        # not "the disk is clean": what it could not read, it could not tell stray or not
+        lines.append("this scan could not read every pin (" + ", ".join(reg["partial"][:3]) + "): nothing of what it "
+                     "touches was deleted; scan again once the clone is whole")
     return True, lines, {"ok": True, "deleted": gone, "bytes": freed}
 
 
@@ -6016,8 +6020,10 @@ def upstream_snapshot(max_age: float = 3600.0) -> dict:
     """Are our pins behind their upstreams? Cached 1h, offline-tolerant:
     every remote failure degrades to status offline for that row only."""
     with UPSTREAM_LOCK:
-        if UPSTREAM_CACHE["data"] and time.time() - UPSTREAM_CACHE["ts"] < max_age:
-            return UPSTREAM_CACHE["data"]
+        up = UPSTREAM_CACHE["data"]
+        # built on a scan that missed a pin, it lacks that pin's rows: kept a minute, not the hour
+        if up and time.time() - UPSTREAM_CACHE["ts"] < (min(max_age, 60.0) if up.get("partial") else max_age):
+            return up
         reg = registry_snapshot()
         rows = []
         for var, model_id in rg.PIN_MODELS.items():
@@ -6054,9 +6060,8 @@ def upstream_snapshot(max_age: float = 3600.0) -> dict:
         stale = code_is_stale()
         if stale:
             rel["stale_code"] = stale
-        data = {"models": rows, "release": rel, "ts": time.time()}
-        # built on a scan that missed a pin, it lacks that pin's rows: handed, not kept for the hour
-        UPSTREAM_CACHE.update(ts=0.0 if reg.get("partial") else time.time(), data=data)
+        data = {"models": rows, "release": rel, "partial": reg.get("partial") or [], "ts": time.time()}
+        UPSTREAM_CACHE.update(ts=time.time(), data=data)
         return data
 
 
@@ -6122,6 +6127,7 @@ def recipes_snapshot(max_age: float = 60.0) -> dict:
 
 
 REGISTRY_CACHE: dict = {"ts": 0.0, "data": None}
+PARTIAL_TTL = 15.0     # s a scan that missed a pin is kept (registry_snapshot)
 REGISTRY_LOCK = threading.Lock()
 
 
@@ -6150,11 +6156,15 @@ def video_variant():
 def registry_snapshot(max_age: float = 300.0) -> dict:
     """Local registry, cached; the scan is metadata-only but not free."""
     with REGISTRY_LOCK:
-        if REGISTRY_CACHE["data"] and time.time() - REGISTRY_CACHE["ts"] < max_age:
-            return REGISTRY_CACHE["data"]
-        # What it could not read even when read again (read_pins) is said in "partial", and concludes nothing: no
-        # revision is called stray or offered for deletion, and no target it touches is called absent
-        pins, tfiles, partial = read_pins()
+        cached = REGISTRY_CACHE["data"]
+        # a scan that missed a pin is kept a few seconds only: the checkout that caused it is over by then
+        if cached and time.time() - REGISTRY_CACHE["ts"] < (min(max_age, PARTIAL_TTL) if cached["partial"] else max_age):
+            return cached
+        # What it could not read even when read again is said in "partial" and concludes nothing of the repositories
+        # and targets it touches: none of their revisions is called stray or offered for deletion, none of those
+        # targets absent (read_pins)
+        read = read_pins()
+        pins, partial = read["pins"], read["missed"]
         caches = lane_caches()
         models = []
         for d in caches:
@@ -6170,9 +6180,9 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
             for r in m["revisions"]:
                 if r.get("status") != "stray":
                     continue
-                if partial:
+                if m["repo_id"] in read["repos"]:
                     r["status"] = "unknown"
-                    r["delete"] = {"refused": "this scan could not read every pin (" + ", ".join(partial[:3])
+                    r["delete"] = {"refused": "this scan could not read every pin of it (" + ", ".join(partial[:3])
                                    + "): a pinned revision would read stray; scan again"}
                     continue
                 if r["rev"] in named:
@@ -6197,16 +6207,13 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
         # begun or absent in the caches the lanes read, and whether its lane is installed.
         # The video lane fetches the revision its refs/main names, the pin when there is none,
         # and serves one partition of it, as switch-model.sh does.
-        try:
-            switch_text = (REPO_DIR / "switch-model.sh").read_text()
-        except OSError:
-            switch_text = ""
+        switch_text = read["texts"].get("switch-model.sh", "")
         variant = video_variant()
         targets = []
 
         def ckpt_state(t, repo, rev, allow=None, files=None):
             """complete, incomplete or absent: the checkpoint at its pin in the caches the lanes read. files: the paths
-            a target serves of a repository that holds others (target_files), of which none there is no download
+            a target serves of a repository that holds others (TARGET_FILES), of which none there is no download
             begun, whatever the others' files."""
             state = "absent"
             for d in caches:
@@ -6231,11 +6238,11 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
             var = TARGET_PIN[t]
             repo, rev = rg.PIN_MODELS[var], pins.get(var, "")
             allow = rg.video_allow(switch_text, variant or "fl2va") if t == "video" else None
-            files = tfiles.get(t)
+            files = read["files"].get(t)
             dvar = TARGET_DRAFT_PIN.get(t)
-            if not rev or (dvar and not pins.get(dvar)) or (files is not None and not parts_whole(files)):
-                # its pin, its draft's, or the parts its installer pins, not read: not "absent", which offers a
-                # Download of what may be on the disk
+            if not rev or (dvar and not pins.get(dvar)) or t in read["targets"]:
+                # its pin, its draft's, the parts its installer pins or the video lane's patterns, not read: not
+                # "absent", which offers a Download of what may be on the disk
                 targets.append({"target": t, "repo": repo, "rev": rev, "state": "unknown",
                                 "installed": target_unit(t).exists()})
                 continue

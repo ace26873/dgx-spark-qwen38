@@ -14,6 +14,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve()
 DASH = HERE.parents[1]
 REPO = HERE.parents[2]
+sys.path.insert(0, str(HERE.parent))
+from fake_time import cockpit_time  # noqa: E402
 sys.path.insert(0, str(DASH))
 ENV_BEFORE = dict(os.environ)
 
@@ -23,16 +25,6 @@ def tearDownModule():
     os.environ.update(ENV_BEFORE)
 
 
-
-def cockpit_time(cp, test, sleep):
-    """The cockpit's own `time`, with this sleep: a copy of the module, so the test's waits are untouched."""
-    import types
-    fake = types.ModuleType("time")
-    fake.__dict__.update(cp.time.__dict__)
-    fake.sleep = sleep
-    real = cp.time
-    cp.time = fake
-    test.addCleanup(setattr, cp, "time", real)
 
 class Fetch(unittest.TestCase):
     @classmethod
@@ -181,17 +173,16 @@ class Fetch(unittest.TestCase):
         draft.write_text("w")
         return text
 
-    def half_repo(self, content):
-        """The repository with install-flash-unsloth.sh as a checkout may leave it for an instant: gone (None), or this
-        text."""
+    def half_repo(self, content, name="install-flash-unsloth.sh"):
+        """The repository with one script as a checkout may leave it for an instant: gone (None), or this text."""
         half = self.tmp / "half-repo"
         shutil.rmtree(half, ignore_errors=True)
         half.mkdir()
         for f in REPO.iterdir():
-            if f.name != "install-flash-unsloth.sh":
+            if f.name != name:
                 (half / f.name).symlink_to(f)
         if content is not None:
-            (half / "install-flash-unsloth.sh").write_text(content)
+            (half / name).write_text(content)
         real = self.cp.REPO_DIR
         self.cp.REPO_DIR = half
         self.addCleanup(setattr, self.cp, "REPO_DIR", real)
@@ -216,7 +207,7 @@ class Fetch(unittest.TestCase):
                # every pin there but one part's line: only the parts tell
                "one part's line gone": "".join(ln for ln in text.splitlines(keepends=True)
                                                if not ln.startswith("FLASH_UNSLOTH_IQ3_PART4="))}
-        cockpit_time(self.cp, self, lambda s: None)
+        cockpit_time(self.cp, self, sleep=lambda s: None)
         for how, content in cut.items():
             with self.subTest(how):
                 self.half_repo(content)
@@ -235,18 +226,48 @@ class Fetch(unittest.TestCase):
         # the pause between two reads is the instant the checkout needs: the second read finds the file whole
         text = self.gguf_on_disk()
         half = self.half_repo("")
-        cockpit_time(self.cp, self, lambda s: (half / "install-flash-unsloth.sh").write_text(text))
+        cockpit_time(self.cp, self, sleep=lambda s: (half / "install-flash-unsloth.sh").write_text(text))
         reg = self.cp.registry_snapshot(max_age=0.0)
         self.assertEqual((self.states(reg), reg["partial"]), (dict.fromkeys(self.BOTH, "complete"), []))
 
-    def test_the_upstream_view_keeps_no_scan_that_missed_a_pin(self):
-        # it is kept an hour: built on a partial scan, it would lack that pin's rows for the hour
-        real = self.cp.registry_snapshot
+    def test_a_scan_that_missed_a_pin_is_kept_seconds_not_minutes(self):
+        # the checkout is over in an instant: kept the cache's 5 minutes, its "not read" outlived it (fifth review)
+        self.gguf_on_disk()
+        cockpit_time(self.cp, self, sleep=lambda s: None)
+        self.half_repo("")
+        self.assertTrue(self.cp.registry_snapshot(max_age=0.0)["partial"])
+        self.cp.REPO_DIR = REPO
+        self.assertTrue(self.cp.registry_snapshot()["partial"], "within its seconds, the same scan")
+        self.cp.REGISTRY_CACHE["ts"] -= self.cp.PARTIAL_TTL + 1
+        reg = self.cp.registry_snapshot()
+        self.assertEqual((reg["partial"], self.states(reg)), ([], dict.fromkeys(self.BOTH, "complete")))
+
+    def test_the_video_lanes_patterns_not_read_leave_it_alone_unknown(self):
+        # switch-model.sh cut after its pins and before the patterns the video lane serves: the video target unknown,
+        # the others read as ever (fifth review: that read was outside the reads made again)
+        text = (REPO / "switch-model.sh").read_text()
+        cockpit_time(self.cp, self, sleep=lambda s: None)
+        self.half_repo(text[:text.index('if [ "$VID_VARIANT" = "fl2va" ]; then VID_ALLOW=')], name="switch-model.sh")
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        state = {t["target"]: t["state"] for t in reg["targets"]}
+        self.assertIn("the video lane's patterns not found in switch-model.sh", reg["partial"])
+        self.assertEqual((state["video"], state["stock"]), ("unknown", "absent"))
+
+    def test_the_upstream_view_keeps_a_scan_that_missed_a_pin_a_minute(self):
+        # kept an hour, it would lack that pin's rows for the hour; rebuilt on every call, it would ask the Hub each time
+        real, real_get = self.cp.registry_snapshot, self.cp._get_json
         self.addCleanup(setattr, self.cp, "registry_snapshot", real)
-        self.cp.registry_snapshot = lambda max_age=300.0: {"pins": {}, "partial": ["install.sh not read"]}
+        self.addCleanup(setattr, self.cp, "_get_json", real_get)
+        asked = []
+        self.cp.registry_snapshot = lambda max_age=300.0: asked.append(1) or {"pins": {}, "partial": ["install.sh not read"]}
+        self.cp._get_json = lambda url, timeout=5.0: (_ for _ in ()).throw(OSError(f"offline test: {url}"))
         self.cp.UPSTREAM_CACHE.update(ts=0.0, data=None)
-        self.cp.upstream_snapshot(max_age=0.0)
-        self.assertEqual(self.cp.UPSTREAM_CACHE["ts"], 0.0)
+        self.assertEqual(self.cp.upstream_snapshot()["partial"], ["install.sh not read"])
+        self.cp.upstream_snapshot()
+        self.assertEqual(len(asked), 1, "within its minute, the same view")
+        self.cp.UPSTREAM_CACHE["ts"] -= 61
+        self.cp.upstream_snapshot()
+        self.assertEqual(len(asked), 2)
 
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})

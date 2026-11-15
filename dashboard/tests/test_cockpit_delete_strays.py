@@ -16,6 +16,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve()
 DASH = HERE.parents[1]
 REPO = HERE.parents[2]
+sys.path.insert(0, str(HERE.parent))
+from fake_time import cockpit_time  # noqa: E402
 sys.path.insert(0, str(DASH))
 sys.path.insert(0, str(HERE.parent))
 from test_registry import fake_repo  # noqa: E402
@@ -29,16 +31,6 @@ def tearDownModule():
     os.environ.update(ENV_BEFORE)
 
 
-
-def cockpit_time(cp, test, sleep):
-    """The cockpit's own `time`, with this sleep: a copy of the module, so the test's waits are untouched."""
-    import types
-    fake = types.ModuleType("time")
-    fake.__dict__.update(cp.time.__dict__)
-    fake.sleep = sleep
-    real = cp.time
-    cp.time = fake
-    test.addCleanup(setattr, cp, "time", real)
 
 class Delete(unittest.TestCase):
     @classmethod
@@ -123,7 +115,7 @@ class Delete(unittest.TestCase):
         real = self.cp.REPO_DIR
         self.cp.REPO_DIR = half
         self.addCleanup(setattr, self.cp, "REPO_DIR", real)
-        cockpit_time(self.cp, self, lambda s: None)
+        cockpit_time(self.cp, self, sleep=lambda s: None)
         # the scan says what it missed, and calls neither revision stray
         reg = self.cp.registry_snapshot(max_age=0.0)
         self.assertIn("DRAFT_REV not found", reg["partial"])
@@ -135,11 +127,32 @@ class Delete(unittest.TestCase):
         self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
         self.assertTrue((self.repo / "snapshots" / self.stray).is_dir())
         self.assertTrue(any("kept" in ln and "could not read every pin" in ln for ln in body["lines"]), body["lines"])
+        self.assertIn("nothing of what it touches was deleted", body["lines"][-1], "not \"the disk is clean\"")
         # read whole again, the stray goes and the pinned stays
         self.cp.REPO_DIR = real
         code, body = self.act()
         self.assertEqual(body["result"].get("deleted"), 1, body)
         self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
+
+    def test_a_pin_of_another_repository_not_read_keeps_this_ones_strays_deletable(self):
+        # only the repositories whose pins were not read are left unknown (fifth review: a scan that missed any pin
+        # kept every stray of the box)
+        half = self.tmp / "half-repo-2"
+        shutil.rmtree(half, ignore_errors=True)
+        half.mkdir()
+        for f in REPO.iterdir():
+            if f.name != "install-video.sh":
+                (half / f.name).symlink_to(f)
+        (half / "install-video.sh").write_text("")
+        real = self.cp.REPO_DIR
+        self.cp.REPO_DIR = half
+        self.addCleanup(setattr, self.cp, "REPO_DIR", real)
+        cockpit_time(self.cp, self, sleep=lambda s: None)
+        code, body = self.act()
+        self.assertEqual(body["result"].get("deleted"), 1, body)
+        self.assertFalse((self.repo / "snapshots" / self.stray).exists())
+        self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
+        self.assertTrue(any("could not read every pin" in ln for ln in body["lines"]), "and says what it missed")
 
     def test_what_a_ref_or_a_unit_names_is_kept_and_said(self):
         (self.repo / "refs").mkdir()
