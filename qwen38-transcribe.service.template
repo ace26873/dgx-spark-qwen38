@@ -1,0 +1,77 @@
+[Unit]
+Description=NVIDIA Nemotron Transcribe (llama.cpp), OpenAI audio API :__TRANSCRIBE_PORT__
+Wants=network-online.target
+Requires=docker.service
+# One engine at a time on this box, said to systemd: starting this lane stops the others
+# and starting another stops this one, the stop finishing before the start in both
+# directions (Conflicts= alone orders nothing, hence After= on the same units). This lane carries
+# 37 GB of weights and does not hold beside one of them (docs/transcribe-lane.md): it loads when no
+# engine serves, as the image lane and the video lane do, and the speech lane (a CPU lane) is the
+# only one it does not conflict with.
+Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-lfm3.service
+After=network-online.target docker.service qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-lfm3.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+ExecStartPre=-/usr/bin/docker rm -f qwen38-transcribe
+# The memory the last engine held has to be back before this one starts (see engine-preflight.sh).
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-transcribe.service
+# What the engine reads has to be there before it runs: llamacpp-files.sh, the head of ExecStart (after the
+# memory guard above) and so the unit's main process, checks the two pinned GGUF files the engine loads
+# (it says why), gives a cache on a disk mounted late at boot 90 s, and exits 78 without them, which
+# leaves the unit failed with the reason on the lane's card. The check itself gone, bash exits 78 too,
+# with its line.
+# mradermacher's GGUF Q8_0 of NVIDIA's Nemotron-3.5-Transcribe-30B-A4B (35 GB, its F16 projector beside
+# it, 1.4 GB) served by llama.cpp's own server, from the image its project publishes for arm64 with
+# CUDA 13 (pinned by digest, b12316, the Qwen3.8 Flash-Next Unsloth GGUF lane's image), with the options
+# the reference box measured it with (~/qa-tools/etudes/nouvelles-lanes/essai-20261114-1436, 2026-11-14:
+# French WER 2.76 % over 20 excerpts, English 0.40 %, ready in 15 s, real time factor 0.096):
+#   --reasoning off: what the measured run passed. The model answers the transcription prompt directly;
+#     left on, its thinking tokens would be billed into the transcription (its card and the run agree).
+#   -c __CTX__: the window the measured run held (65,536 tokens), no -np (one recognizer at a time is
+#     what the run measured; parallel pieces are the client's own batch of requests).
+#   No --alias: in single-model mode llama.cpp ignores the "model" of a request (its server README), the
+#     name the measured run gave its alias answers no route of this lane.
+#   --api-key-file: the box's key, asked on every route but /health and /v1/health (read in llama.cpp's
+#     server-http.cpp), from the file mounted read-only, so it is in no argv. The routes are the OpenAI
+#     ones the study used: /v1/audio/transcriptions (multipart) and the /v1/realtime websocket.
+#   --metrics: its Prometheus endpoint, which the cockpit reads with the key; --no-ui: the web interface
+#     the server embeds is off, the cockpit is this box's interface.
+# Of the config directory, the one file the engine reads, read-only: its key. --mount, not -v: a source
+# that is not there fails the start, where -v made a directory in its place, owned by root. The Hugging
+# Face cache read-only: the engine reads its GGUF and writes nothing.
+# LLAMA_ARG_HOST and LLAMA_ARG_PORT: the image sets 0.0.0.0 and 8080, which the command line below
+# overrides (llama-server says so in one line at each start); set again here, so that the engine never
+# listens beyond this box's bind even without its --host. --no-healthcheck: the image's own check asks
+# localhost:8080, where this lane does not listen, and docker would call the container unhealthy; the
+# cockpit and the install proof ask /health on the lane's port.
+# --memory 110g: the cap every engine lane of this box runs under (flash-unsloth's value); the measured
+# run left 81 GiB available at ready and 76 at the lowest, far under it (essai.log, 2026-11-14).
+ExecStart=/bin/bash -c 'check=__HOME__/.config/qwen38/llamacpp-files.sh; [ -f "$$check" ] || { echo "preflight: qwen38-transcribe.service lacks its files: $$check is missing (the check of its files). Load the lane from the cockpit, or run ./switch-model.sh transcribe" >&2; exit 78; }; \
+  bash "$$check" qwen38-transcribe.service transcribe __FILES__ || exit $$?; \
+  exec /usr/bin/docker run --rm --name qwen38-transcribe --gpus all \
+  --memory 110g --memory-swap 110g --network host --no-healthcheck \
+  -e LLAMA_ARG_HOST=__ENGINE_BIND__ -e LLAMA_ARG_PORT=__TRANSCRIBE_PORT__ \
+  -v __HF_CACHE__:/root/.cache/huggingface:ro \
+  --mount type=bind,source=__HOME__/.config/qwen38/api-key,target=/out/api-key,readonly \
+  __IMAGE__ \
+    -m __MODEL__ \
+    --mmproj __MMPROJ__ \
+    --reasoning off \
+    -c __CTX__ \
+    --metrics --no-ui --api-key-file /out/api-key \
+    --host __ENGINE_BIND__ --port __TRANSCRIBE_PORT__'
+ExecStop=-/usr/bin/docker stop -t 20 qwen38-transcribe
+Restart=always
+# 78: what the engine reads is missing (llamacpp-files.sh, the head of ExecStart above and so its main process,
+# the only one this setting holds for), which no new start brings back; the unit stays failed with the reason
+# in its journal
+RestartPreventExitStatus=78
+# docker stops llama-server with SIGTERM (143) or SIGKILL (137) on a plain stop: a clean stop, not a failure
+SuccessExitStatus=137 143
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

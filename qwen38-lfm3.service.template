@@ -1,0 +1,81 @@
+[Unit]
+Description=Liquid AI LFM3 (llama.cpp router), OpenAI API with decisions and audio :__PORT__
+Wants=network-online.target
+Requires=docker.service
+# One engine at a time on this box, said to systemd: starting this lane stops the others
+# and starting another stops this one, the stop finishing before the start in both
+# directions (Conflicts= alone orders nothing, hence After= on the same units).
+Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-transcribe.service
+After=network-online.target docker.service qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-transcribe.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+ExecStartPre=-/usr/bin/docker rm -f qwen38-lfm3
+# The memory the last engine held has to be back before this one starts (see engine-preflight.sh).
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-lfm3.service
+# What the engine reads has to be there before it runs: llamacpp-files.sh, the head of ExecStart (after the
+# memory guard above) and so the unit's main process, checks the five pinned GGUF files and the router
+# presets the engine loads (it says why), gives a cache on a disk mounted late at boot 90 s, and exits 78
+# without them, which leaves the unit failed with the reason on the lane's card. The check itself gone,
+# bash exits 78 too, with its line.
+# The three Liquid AI models this lane serves (LFM3-1.7B Q8_0 in chat, d1-2B Q8_0 with its mmproj for the
+# decisions, LFM3-Audio-2B Q8_0 with its mmproj for the audio) by ONE llama-server in its router mode, from
+# the image its project publishes for arm64 with CUDA 13 (pinned by digest, b12316, the Unsloth GGUF lane's
+# own image):
+#   --models-preset /out/lfm3-models.ini, the router presets this lane's installer renders (its three
+#     sections name the three models a client asks for, and hold the per-model flags measured on the
+#     reference box the 14/11: -c 65536 -np 8 --jinja on the chat model, -c 32768 -b 8192 -ub 8192 on d1,
+#     -c 32768 on the audio model, each with its mmproj). The router loads its models automatically at its
+#     start (--models-autoload, its default) and keeps them; each request names its model in "model" and
+#     the router forwards it to that child (its tools/server/README.md, "Using multiple models").
+#   -e LLAMA_CACHE=__ROUTER_CACHE__: the router's own model list, besides its presets, is the models the
+#     Hugging Face cache holds (common/hf-cache.cpp reads LLAMA_CACHE first, then HOME/.cache/huggingface/
+#     hub), and the container mounts the box's real cache: left to itself, every GGUF the box downloaded,
+#     the Unsloth lane's 112 GB among them, would be a model a client could ask this engine to load. An
+#     empty cache of its own leaves the router with the three presets and nothing else; the lane's files
+#     are read by absolute path, which asks no cache (install-lfm3.sh says where this was read).
+#   --api-key-file: the box's key, asked on every route but /health and /v1/health (read in llama.cpp's
+#     server-http.cpp), from the file mounted read-only, so it is in no argv. The router answers those two
+#     itself and forwards the rest; its children take no key of their own (the router rewrites the key
+#     options upon load, its server-models.cpp).
+#   --metrics: its Prometheus endpoint, which the cockpit reads with the key; in router mode /metrics names
+#     the model it reports (its server README), so the cockpit asks it per model. --no-ui: the web interface
+#     the server embeds is off, the cockpit is this box's interface.
+#   No -ngl, no draft, no cache cap: the measured runs (essai.log, 2026-11-14) answered with none of them,
+#     on models of 1.7 to 2 billion parameters whose whole weights the pinned image keeps on the GPU.
+# Of the config directory, the two files the engine reads, read-only, and nothing else: its key and its
+# router presets. --mount, not -v: a source that is not there fails the start, where -v made a directory in
+# its place, owned by root. The Hugging Face cache read-only: the engine reads its GGUF and writes nothing.
+# LLAMA_ARG_HOST and LLAMA_ARG_PORT: the image sets 0.0.0.0 and 8080, which the command line below overrides
+# (llama-server says so in one line at each start); set again here, so that the engine never listens beyond
+# this box's bind even without its --host. --no-healthcheck: the image's own check asks localhost:8080, where
+# this lane does not listen, and docker would call the container unhealthy; the proxy and the cockpit ask
+# /health on the lane's port.
+# --memory 110g: the cap every engine lane of this box runs under (flash-unsloth's value); the study ran
+# these three engines one at a time with 112 to 107 GiB of the box left available (essai.log), far under it.
+ExecStart=/bin/bash -c 'check=__HOME__/.config/qwen38/llamacpp-files.sh; [ -f "$$check" ] || { echo "preflight: qwen38-lfm3.service lacks its files: $$check is missing (the check of its files). Load the lane from the cockpit, or run ./switch-model.sh lfm3" >&2; exit 78; }; \
+  bash "$$check" qwen38-lfm3.service lfm3 __FILES__ || exit $$?; \
+  exec /usr/bin/docker run --rm --name qwen38-lfm3 --gpus all \
+  --memory 110g --memory-swap 110g --network host --no-healthcheck \
+  -e LLAMA_ARG_HOST=__ENGINE_BIND__ -e LLAMA_ARG_PORT=__PORT__ -e LLAMA_CACHE=__ROUTER_CACHE__ \
+  -v __HF_CACHE__:/root/.cache/huggingface:ro \
+  --mount type=bind,source=__HOME__/.config/qwen38/api-key,target=/out/api-key,readonly \
+  --mount type=bind,source=__INI_HOST__,target=/out/lfm3-models.ini,readonly \
+  __IMAGE__ \
+    --models-preset __INI_BOX__ \
+    --metrics --no-ui --api-key-file /out/api-key \
+    --host __ENGINE_BIND__ --port __PORT__'
+ExecStop=-/usr/bin/docker stop -t 20 qwen38-lfm3
+Restart=always
+# 78: what the engine reads is missing (llamacpp-files.sh, the head of ExecStart above and so its main process,
+# the only one this setting holds for), which no new start brings back; the unit stays failed with the reason
+# in its journal
+RestartPreventExitStatus=78
+# docker stops llama-server with SIGTERM (143) or SIGKILL (137) on a plain stop: a clean stop, not a failure
+SuccessExitStatus=137 143
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

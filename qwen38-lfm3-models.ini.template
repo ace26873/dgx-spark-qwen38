@@ -1,0 +1,33 @@
+; The Liquid AI LFM3 lane's router presets: the three models one llama-server serves in its router
+; mode, one section each (llama.cpp's tools/server/README.md, "Model presets"; the pinned commit reads
+; them in common/preset.cpp). The section's name is what a client puts in "model": the router gives each
+; child its instance's name as --alias and keeps any other of the router's arguments, so each model
+; answers under its own name on one port. The paths are the pinned files where the container reads the
+; Hugging Face cache (install-lfm3.sh renders them); a model and its projector stay one pair: the
+; preset's own mmproj key is what the child opens (mtmd reads it the same way a -mm on its command line
+; would).
+;
+; The flags are the ones these engines answered with on the reference box on 2026-11-14, one model at a
+; time (~/qa-tools/etudes/nouvelles-lanes/essai-20261114-1436/essai.log): the chat model at -c 65536
+; -np 8 --jinja (103.6 tok/s one stream, GSM8K 250 at 0.844), d1-2B at -c 32768 -b 8192 -ub 8192 (the
+; decision contract in 54 to 60 ms), the audio model at -c 32768 (French WER 8.02 %, and the speech
+; synthesis). Nothing else was added to a model: a preset-only key the router controls (host, port,
+; api-key, alias) is rewritten on load anyway.
+
+[lfm3-1.7b]
+model = __CHAT_MODEL__
+c = 65536
+np = 8
+jinja = true
+
+[d1-2b]
+model = __D1_MODEL__
+mmproj = __D1_MMPROJ__
+c = 32768
+b = 8192
+ub = 8192
+
+[lfm3-audio]
+model = __AUDIO_MODEL__
+mmproj = __AUDIO_MMPROJ__
+c = 32768
