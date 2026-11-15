@@ -242,16 +242,40 @@ class Fetch(unittest.TestCase):
             calls.append(1)
             if len(calls) % 2:
                 read["pins"] = {**read["pins"], "STOCK_REV": "f" * 40}
+                read["texts"] = {**read["texts"], "install.sh": read["texts"]["install.sh"] + "\n# the next release"}
             return read
         self.cp._read_once = moving
         cockpit_time(self.cp, self, sleep=lambda s: None)
         reg = self.cp.registry_snapshot(max_age=0.0)
-        self.assertIn("the pins changed while read (a checkout?)", reg["partial"])
-        self.assertEqual(next(t["state"] for t in reg["targets"] if t["target"] == "flash"), "absent",
-                         "a scan that missed something still reads what it read")
+        self.assertIn("the scripts changed while read (a checkout?): install.sh", reg["partial"])
+        state = {t["target"]: t["state"] for t in reg["targets"]}
+        self.assertEqual((state["stock"], state["flash"]), ("unknown", "absent"),
+                         "the target whose pin moved is not read; the others are read as ever")
         # once it holds still, the second read agrees and the scan is whole
         self.cp._read_once = real
         self.assertEqual(self.cp.registry_snapshot(max_age=0.0)["partial"], [])
+
+    def test_a_second_read_that_misses_a_file_says_that_file(self):
+        # the checkout removes install.sh between the two reads: the cause said is that file, not "changed while read"
+        real = self.cp._read_once
+        self.addCleanup(setattr, self.cp, "_read_once", real)
+        calls = []
+
+        def second_misses():
+            calls.append(1)
+            if len(calls) % 2 == 0:
+                self.half_repo(None, name="install.sh")
+                try:
+                    return real()
+                finally:
+                    self.cp.REPO_DIR = REPO
+            return real()
+        self.cp._read_once = second_misses
+        cockpit_time(self.cp, self, sleep=lambda s: None)
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        self.assertIn("install.sh not read", reg["partial"])
+        self.assertFalse([m for m in reg["partial"] if "changed while read" in m])
+        self.assertTrue(reg["pins_lost"])
 
     def test_a_scan_that_missed_a_pin_is_kept_seconds_not_minutes(self):
         # the checkout is over in an instant: kept the cache's 5 minutes, its "not read" outlived it (fifth review)

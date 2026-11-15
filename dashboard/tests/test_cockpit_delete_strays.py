@@ -128,6 +128,7 @@ class Delete(unittest.TestCase):
         self.assertTrue(any("kept" in ln and "could not read its pins (DRAFT_REV not found" in ln for ln in body["lines"]),
                         body["lines"])
         self.assertIn("nothing was deleted", body["lines"][-1], "not \"the disk is clean\"")
+        self.assertNotIn("no stray revision to delete", body["lines"])
         # read whole again, the stray goes and the pinned stays
         self.cp.REPO_DIR = real
         code, body = self.act()

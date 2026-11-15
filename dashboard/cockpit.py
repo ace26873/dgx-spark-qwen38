@@ -3811,12 +3811,13 @@ TARGET_FILES = {"flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_PAR
 def _read_once() -> dict:
     """One read of what the clone's scripts pin (read_pins): {pins, texts, files, missed, why: {repository: what it
     missed of it}, targets it leaves unknown, pins_lost}."""
-    pins, texts, missed, why, targets = {}, {}, [], {}, set()
+    pins, texts, missed, why, targets, unread = {}, {}, [], {}, set(), False
     for f in rg.PIN_FILES:
         try:
             texts[f] = (REPO_DIR / f).read_text()
         except OSError:
             missed.append(f"{f} not read")
+            unread = True
             continue
         pins.update(rg.parse_pins(texts[f]))
     lost = sorted(set(rg.PIN_MODELS) - set(pins))
@@ -3834,7 +3835,7 @@ def _read_once() -> dict:
         missed.append("the video lane's patterns not found in switch-model.sh")
         targets.add("video")
     return {"pins": pins, "texts": texts, "files": files, "missed": missed, "why": why, "targets": targets,
-            "pins_lost": bool(lost) or any(m.endswith(" not read") for m in missed)}
+            "pins_lost": bool(lost) or unread}
 
 
 def read_pins(tries: int = 3, pause: float = 0.5) -> dict:
@@ -3847,14 +3848,24 @@ def read_pins(tries: int = 3, pause: float = 0.5) -> dict:
         read = _read_once()
         if not read["missed"]:
             again = _read_once()
-            if (again["pins"], again["files"], again["missed"]) == (read["pins"], read["files"], []):
-                return read
-            moved = sorted(v for v in set(read["pins"]) | set(again["pins"]) if read["pins"].get(v) != again["pins"].get(v))
-            read["missed"].append("the pins changed while read (a checkout?)")
-            for var in moved:
-                if var in rg.PIN_MODELS:
+            if again["missed"]:
+                # the second read missed a file or a pin: its own causes are the ones to say
+                read = again
+            elif again["texts"] != read["texts"]:
+                # every script read whole twice, but not the same: a checkout between the two reads
+                changed = sorted(f for f in set(read["texts"]) | set(again["texts"])
+                                 if read["texts"].get(f) != again["texts"].get(f))
+                moved = {v for v in set(read["pins"]) | set(again["pins"]) if read["pins"].get(v) != again["pins"].get(v)}
+                read["missed"].append("the scripts changed while read (a checkout?): " + ", ".join(changed))
+                for var in sorted(moved & set(rg.PIN_MODELS)):
                     read["why"].setdefault(rg.PIN_MODELS[var], []).append(f"{var} changed while read")
-            read["pins_lost"] = True
+                read["targets"] |= {t for t, var in TARGET_PIN.items() if var in moved or TARGET_DRAFT_PIN.get(t) in moved}
+                read["targets"] |= set(TARGET_FILES) if any(TARGET_FILES[t][0] in changed for t in TARGET_FILES) else set()
+                if "switch-model.sh" in changed:
+                    read["targets"].add("video")
+                read["pins_lost"] = True
+            else:
+                return read
         if attempt < tries - 1:
             time.sleep(pause)
     return read
@@ -5825,8 +5836,9 @@ def job_delete_strays(job: Job):
                    "blobs": len(plan["blobs"]), "bytes": plan["bytes"]})
     with REGISTRY_LOCK:
         REGISTRY_CACHE.update(ts=0.0, data=None)
-    lines.append(f"{gone} stray revision{'s' if gone != 1 else ''} deleted, {freed / 2**30:.2f} GiB freed"
-                 if gone else "no stray revision to delete")
+    if gone or not reg.get("partial"):
+        lines.append(f"{gone} stray revision{'s' if gone != 1 else ''} deleted, {freed / 2**30:.2f} GiB freed"
+                     if gone else "no stray revision to delete")
     if reg.get("partial"):
         # not "the disk is clean": a scan that missed anything deletes nothing
         lines.append("this scan missed something (" + ", ".join(reg["partial"][:3]) + "): nothing was deleted; scan "

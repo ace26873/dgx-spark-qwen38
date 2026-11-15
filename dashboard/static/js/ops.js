@@ -499,7 +499,7 @@ async function scanRegistry(fresh = true){
     if (!others.length) emptyRow(to, 2, 'None.');
     setText('reg-other-tag', others.length ? fmtGiB(others.reduce((a, m) => a + m.disk_bytes, 0)) + ' in ' + others.length : '');
     const strays = (d.models || []).flatMap(m => m.revisions).filter(rv => rv.status === 'stray');
-    setText(b, strays.length ? `Rescan (${strays.length} stray)` : 'Rescan'); setText('reg-age', (d.partial || []).length ? 'scan incomplete, nothing offered for what it missed: ' + d.partial.join(', ') : 'scanned ' + new Date().toLocaleTimeString([], {hour12: false}));
+    setText(b, strays.length ? `Rescan (${strays.length} stray)` : 'Rescan'); setText('reg-age', (d.partial || []).length ? 'scan incomplete, nothing deleted and nothing offered for what it missed: ' + d.partial.join(', ') : 'scanned ' + new Date().toLocaleTimeString([], {hour12: false}));
   }catch(e){ setText(b, 'Retry'); setText('reg-age', 'scan failed: ' + e.message); }
   finally{ b.disabled = false; }
 }
