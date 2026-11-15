@@ -401,8 +401,8 @@ def config_docs_auto_state(entries, deny_patterns=None) -> dict | None:
     """What OpenCode 2's served /api/config says about tool calls, for the Agent line.
     The documents merge in the order the server lists them and the last matching rule
     wins (measured 2026-11-14): the unit's injected content is the document with no path.
-    Returns {"auto": is a shell call allowed, "deny_ok": every guard still denies} or
-    None when the answer is not documents we can read. deny_patterns are the command
+    Returns {"auto": is a shell call allowed, "deny_ok": every guard still denies, None
+    with no pattern to check} or None when the answer is not documents we can read. deny_patterns are the command
     patterns our guard denies: they must still evaluate to deny whoever allowed what after."""
     if not isinstance(entries, list) or not entries:
         return None
@@ -432,10 +432,8 @@ def config_docs_auto_state(entries, deny_patterns=None) -> dict | None:
         return got     # None: no rule matched, the server's own default applies (ask)
 
     auto = evaluate("shell", "echo x") == "allow"
-    deny_ok = True
-    for p in (deny_patterns or ()):
-        if evaluate("shell", p) != "deny":
-            deny_ok = False
+    # no pattern to check (the guard's list could not be read) proves nothing: None, never True
+    deny_ok = all(evaluate("shell", p) == "deny" for p in deny_patterns) if deny_patterns else None
     return {"auto": auto, "deny_ok": deny_ok}
 
 

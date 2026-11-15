@@ -888,6 +888,10 @@ class PureHelpers(unittest.TestCase):
             ["*a.example*"]), {"auto": False, "deny_ok": True})
         for bad in ([], None, ["x"], [d("not-a-list")], [{"type": "document", "info": 3}]):
             self.assertIsNone(ar.config_docs_auto_state(bad, []), bad)
+        # no pattern to check (the guard's module could not be read): nothing proves the guards, so deny_ok is None,
+        # never True; auto is still read
+        for none in (None, []):
+            self.assertEqual(ar.config_docs_auto_state([d(guard)], none), {"auto": False, "deny_ok": None})
 
     def test_host_name(self):
         self.assertEqual(ar.host_name("100.64.0.1:30090"), "100.64.0.1")
