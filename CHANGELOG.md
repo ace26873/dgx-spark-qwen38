@@ -41,6 +41,13 @@ the SHA-1 of the snapshot's revision and the file's path in it, 40 hexadecimal c
 revision; the other engines' `--revision` is read as before. A box on v6.56 or older serving that lane says the
 revision alone and shares nothing with one on v6.57: the two boxes of a pair update together.
 
+**The Library deletes nothing on a scan that missed a pin.** The cockpit reads the pins from the clone's scripts. A
+script read while a checkout rewrote it (gone, empty or cut short) left a pin out, and the scan took the checkpoint that
+pin names for a stray revision: Delete stray revisions would have deleted it, and the Library offered to download what
+was on the disk. Such a scan now says what it missed, deletes nothing and offers no download (the target reads "not
+read"), and is not kept, so the next one reads again. Found by the review of this release; the test that deletes
+nothing fails on v1.48.1.
+
 ## v1.48.1 (2026-11-14): three themes for the cockpit, by x42en, and a vLLM lane stopped while it loads ends stopped
 
 **Three themes for the cockpit (pull request #71, by x42en).** The cockpit draws every color from role tokens (`--surface`,

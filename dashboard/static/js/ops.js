@@ -472,6 +472,8 @@ async function scanRegistry(fresh = true){
       const tr = tt.insertRow(); tr.insertCell().textContent = TARGET_NAME[t.target] || t.target;
       tr.insertCell().textContent = String(t.repo || '').split('/').pop();
       const st = tr.insertCell();
+      // unknown: its pin was not read this time (a checkout rewriting its installer): nothing offered until the next scan
+      if (t.state === 'unknown'){ st.append(tag('not read', 'warn'), ' ', el('span', 'muted', 'its pin was not read this time; the next scan reads it again')); return; }
       st.append(tag(t.state === 'complete' ? 'on disk' : t.state === 'incomplete' ? 'begun' : 'not downloaded', t.state === 'complete' ? 'cool' : 'warn'));
       // a lane installed on demand and not prepared yet: the download runs in the image or the
       // venv its first Load builds, so that Load is what downloads it

@@ -17,6 +17,7 @@ from the units the test says are enabled.
 """
 import atexit
 import datetime
+import functools
 import importlib.util
 import json
 import os
@@ -102,8 +103,9 @@ def walled(script="install.sh", at=None, after=False, units=None):
     return str(copy)
 
 
+@functools.lru_cache(maxsize=1)
 def side_installers():
-    """The installers conformity.py reads its side lanes' values from (its SIDE), sorted."""
+    """The installers conformity.py reads its side lanes' values from (its SIDE), sorted (read once)."""
     spec = importlib.util.spec_from_file_location("conformity_for_the_wall", REPO / "conformity.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

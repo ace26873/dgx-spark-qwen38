@@ -2424,9 +2424,9 @@ def refresh_owed():
 # This box against what its clone recommends (v1.36.0, 2026-10-17): conformity.py's plan for the
 # text lane the box serves from, with nothing set on a command line, so the same list the next
 # ./install.sh prints before its first step. Read again only once a file it reads has changed:
-# the units of the two text lanes, of the proxy and of the Kolibri, image and video lanes, the
-# flash launcher, installed.json, the API key (whose date is the age of a box with no record),
-# the clone's install.sh, the installers of those three lanes (their defaults) and CHANGELOG.md.
+# the units of the two text lanes, of the proxy and of the Kolibri, image, video and Unsloth GGUF
+# lanes, the flash launcher, installed.json, the API key (whose date is the age of a box with no
+# record), the clone's install.sh, the installers conformity.py reads (its SIDE) and CHANGELOG.md.
 _CONFORM_CACHE: dict = {}
 
 
@@ -6117,12 +6117,17 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
         if REGISTRY_CACHE["data"] and time.time() - REGISTRY_CACHE["ts"] < max_age:
             return REGISTRY_CACHE["data"]
         pins = {}
-        unread = []         # the repository's files not read this time (a checkout rewriting one, say)
+        # What this scan could not read, if anything: a pin file gone, or read empty or cut short (a checkout rewriting
+        # it), leaves a pin of this release missing. Without it a pinned checkpoint reads absent, or stray and so
+        # deletable (second and third reviews of v1.49.0): such a scan concludes nothing of what it misses and deletes
+        # nothing, and is not kept, so the next call reads again.
+        partial = []
         for f in rg.PIN_FILES:
             try:
                 pins.update(rg.parse_pins((REPO_DIR / f).read_text()))
             except OSError:
-                unread.append(f)
+                partial.append(f"{f} not read")
+        partial += [f"{var} not found" for var in sorted(set(rg.PIN_MODELS) - set(pins))]
         caches = lane_caches()
         models = []
         for d in caches:
@@ -6137,6 +6142,10 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
         for m in models:
             for r in m["revisions"]:
                 if r.get("status") != "stray":
+                    continue
+                if partial:
+                    r["delete"] = {"refused": "this scan could not read every pin (" + ", ".join(partial[:3])
+                                   + "): a pinned revision would read stray; scan again"}
                     continue
                 if r["rev"] in named:
                     r["delete"] = {"refused": "an installed unit or launcher names it"}
@@ -6197,8 +6206,15 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
             try:
                 files = target_files(t)
             except OSError:
-                unread.append(TARGET_FILES[t][0])
-                files = None
+                files = []
+            if not rev or (t in TARGET_FILES and not files):
+                # its pin, or the files its installer pins, not read this time: not "absent", which offers a Download
+                # of what may be on the disk, but unknown until the next scan
+                if t in TARGET_FILES and not files and rev:
+                    partial.append(f"{TARGET_FILES[t][0]}: {t}'s files not found")
+                targets.append({"target": t, "repo": repo, "rev": rev, "state": "unknown",
+                                "installed": target_unit(t).exists()})
+                continue
             state = ckpt_state(t, repo, rev, files or allow, files)
             dvar = TARGET_DRAFT_PIN.get(t)
             if dvar:
@@ -6216,16 +6232,9 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                                   "disk_bytes": m["disk_bytes"]}
                                  for m in models if not m["managed"]],
                 "images": [i for i in images if i["engine"]],
+                "partial": partial,
                 "ts": time.time()}
-        if unread:
-            # without a pin file, its checkpoints read absent or stray and the Library offers to fetch what is on the
-            # disk (second review of v1.49.0): what was said before stands, and nothing of this read is kept, so the
-            # next call reads again
-            if REGISTRY_CACHE["data"]:
-                return REGISTRY_CACHE["data"]
-            REGISTRY_CACHE.update(ts=0.0, data=None)
-            return data
-        REGISTRY_CACHE.update(ts=time.time(), data=data)
+        REGISTRY_CACHE.update(ts=0.0 if partial else time.time(), data=None if partial else data)
         return data
 LOGIN_FAILS: dict[str, list] = {}
 LOGIN_LOCK = threading.Lock()

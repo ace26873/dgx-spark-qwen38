@@ -157,9 +157,9 @@ class Fetch(unittest.TestCase):
         self.assertEqual(states(), ("incomplete", "absent"))
 
     def test_an_installer_not_read_this_time_concludes_nothing(self):
-        # a checkout rewriting install-flash-unsloth.sh: its pins and its targets' files unread, the two GGUF targets
-        # read absent and the Library offered to fetch 85 GB on the disk, for the cache's 5 minutes (second review of
-        # v1.49.0). What was said stands, and the next call reads again.
+        # a checkout rewriting install-flash-unsloth.sh: gone, or read empty. Its pins and its targets' files not read,
+        # the two GGUF targets read absent and the Library offered to fetch 85 GB on the disk (second and third reviews
+        # of v1.49.0). They read unknown, the scan says it is partial, and it is not kept: the next call reads again.
         import re
         text = (REPO / "install-flash-unsloth.sh").read_text()
         snap = self.hub / "models--unsloth--Qwen3.8-Flash-Next-GGUF" / "snapshots" / self.pins["FLASH_UNSLOTH_REV"]
@@ -170,26 +170,36 @@ class Fetch(unittest.TestCase):
                  / re.search(r'^FLASH_UNSLOTH_DRAFT="([^"=]+)=', text, re.M).group(1))
         draft.parent.mkdir(parents=True)
         draft.write_text("w")
-        said = {t: self.targets()[t]["state"] for t in ("flash-unsloth", "flash-unsloth-iq3")}
-        self.assertEqual(said, {"flash-unsloth": "complete", "flash-unsloth-iq3": "complete"})
-        # the same repository without that one file
-        half = self.tmp / "half-repo"
-        shutil.rmtree(half, ignore_errors=True)
-        half.mkdir()
-        for f in REPO.iterdir():
-            if f.name != "install-flash-unsloth.sh":
-                (half / f.name).symlink_to(f)
+        both = ("flash-unsloth", "flash-unsloth-iq3")
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        self.assertEqual(reg["partial"], [])
+        self.assertEqual({t["target"]: t["state"] for t in reg["targets"] if t["target"] in both},
+                         {"flash-unsloth": "complete", "flash-unsloth-iq3": "complete"})
         real = self.cp.REPO_DIR
-        self.cp.REPO_DIR = half
         self.addCleanup(setattr, self.cp, "REPO_DIR", real)
-        got = self.targets()
-        self.assertEqual({t: got[t]["state"] for t in said}, said)
-        # nothing said before: this read is handed, and not kept
-        self.cp.REGISTRY_CACHE.update(ts=0.0, data=None)
-        self.targets()
-        self.assertIsNone(self.cp.REGISTRY_CACHE["data"])
+        # cut where its pins of the revision end and its targets' parts begin
+        cut = text[:text.index("FLASH_UNSLOTH_PART1=")]
+        for how, content in (("gone", None), ("read empty", ""), ("cut short", cut)):
+            with self.subTest(how):
+                half = self.tmp / "half-repo"
+                shutil.rmtree(half, ignore_errors=True)
+                half.mkdir()
+                for f in REPO.iterdir():
+                    if f.name != "install-flash-unsloth.sh":
+                        (half / f.name).symlink_to(f)
+                if content is not None:
+                    (half / "install-flash-unsloth.sh").write_text(content)
+                self.cp.REPO_DIR = half
+                reg = self.cp.registry_snapshot(max_age=0.0)
+                self.assertTrue(reg["partial"], "the scan says it missed something")
+                self.assertEqual({t["target"]: t["state"] for t in reg["targets"] if t["target"] in both},
+                                 dict.fromkeys(both, "unknown"))
+                self.assertIsNone(self.cp.REGISTRY_CACHE["data"], "not kept")
+                self.assertEqual(self.cp.registry_snapshot()["partial"], reg["partial"], "the next call reads again")
         self.cp.REPO_DIR = real
-        self.assertEqual({t: self.targets()[t]["state"] for t in said}, said)
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        self.assertEqual(({t["target"]: t["state"] for t in reg["targets"] if t["target"] in both}, reg["partial"]),
+                         ({"flash-unsloth": "complete", "flash-unsloth-iq3": "complete"}, []))
 
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})

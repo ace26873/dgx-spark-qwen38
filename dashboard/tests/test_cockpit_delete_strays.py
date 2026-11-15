@@ -96,6 +96,34 @@ class Delete(unittest.TestCase):
         self.assertEqual(sorted(b.name for b in (self.repo / "blobs").iterdir()),
                          sorted(["config.json", f"{self.pinned[:4]}-w.safetensors"]))
 
+    def test_a_scan_that_misses_a_pin_deletes_nothing(self):
+        # a checkout rewriting the file that pins this repository: read empty, its pin is not found and the pinned
+        # revision reads stray. The scan deletes nothing, pinned or not, and says why (third review of v1.49.0: the
+        # job deleted what such a scan called stray)
+        pin_file = next(f for f in self.cp.rg.PIN_FILES
+                        if "DRAFT_REV" in self.cp.rg.parse_pins((REPO / f).read_text()))
+        half = self.tmp / "half-repo"
+        shutil.rmtree(half, ignore_errors=True)
+        half.mkdir()
+        for f in REPO.iterdir():
+            if f.name != pin_file:
+                (half / f.name).symlink_to(f)
+        (half / pin_file).write_text("")
+        real = self.cp.REPO_DIR
+        self.cp.REPO_DIR = half
+        self.addCleanup(setattr, self.cp, "REPO_DIR", real)
+        code, body = self.act()
+        self.assertEqual((code, body["result"].get("deleted")), (202, 0), body)
+        self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
+        self.assertTrue((self.repo / "snapshots" / self.stray).is_dir())
+        self.assertTrue(any("kept" in ln and "could not read every pin" in ln for ln in body["lines"]), body["lines"])
+        self.assertIsNone(self.cp.REGISTRY_CACHE["data"], "a scan that missed a pin is not kept")
+        # read whole again, the stray goes and the pinned stays
+        self.cp.REPO_DIR = real
+        code, body = self.act()
+        self.assertEqual(body["result"].get("deleted"), 1, body)
+        self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
+
     def test_what_a_ref_or_a_unit_names_is_kept_and_said(self):
         (self.repo / "refs").mkdir()
         (self.repo / "refs" / "main").write_text(self.stray)
