@@ -60,6 +60,11 @@ Ten roles, nothing else:
    shared: a conversation stays on the box that holds its prefix, a new one goes to the box with the
    fewest requests in flight (v6.52, docs/pair.md).
 
+v6.58: a client is told the box serves images while either image lane serves: the MiniMax-H3-Image lane, a second
+one beside Qwen-Image 2.1, holds the GPU instead of a text engine the same way, and a text request then read "It is
+stopped, restarting or still loading (about 9 minutes)" of an engine that comes back only by a switch. The message
+names the image lane's unit that serves.
+
 v6.57: a GGUF lane's checkpoint is its file. One revision of Unsloth's repository holds every quantization of the
 model, and the Unsloth lane serves two of them under one name (v1.49.0): read as the revision alone, a box on
 UD-Q4_K_XL and one on UD-IQ3_XXS shared their requests as one checkpoint (decision 1018), and a Load from one to the
@@ -67,10 +72,6 @@ other was no change of checkpoint (decision 1041). llama-server's -m names a fil
 the SHA-1 of the revision and that file's path, 40 hexadecimal characters as the pair carries a revision. A box on
 v6.56 or older serving that lane says the revision alone, and shares nothing with this one: two boxes of one pair
 update together. The other engines' --revision is read as before.
-v6.58: a client is told the box serves images while either image lane serves: the MiniMax-H3-Image lane, a second
-one beside Qwen-Image 2.1, holds the GPU instead of a text engine the same way, and a text request then read "It is
-stopped, restarting or still loading (about 9 minutes)" of an engine that comes back only by a switch. The message
-names the image lane's unit that serves.
 
 v6.56: a client's bearer reaches every engine spelled the way the engine spells it. The door reads the scheme in any
 case, as SGLang's own check does (measured 2026-10-08: "bearer <key>" admitted) and v6.38 only stripped the whitespace

@@ -314,8 +314,8 @@ function renderActivity(){
   if (isImageLane(unit)){
     setText('act-title', 'Images'); setText('act-v', IMG_NOW.label ? 'Busy' : 'Idle'); setText('act-k', IMG_NOW.label || 'one image at a time on this lane');
     facts(fx, [['Up', e.elapsed ? fmtDur(e.elapsed) : null],
-               ['Listens on', IMG_NOW.port ? `127.0.0.1:${IMG_NOW.port}, behind this cockpit` : 'behind this cockpit']]);
-    imgPortAsk();
+               ['Listens on', `127.0.0.1:${imgNowPort(unit)}, behind this cockpit`]]);
+    imgPortAsk(unit);
     return;
   }
   // a text lane
@@ -465,14 +465,17 @@ const VID_NOW = {label: '', run: null, port: 30022};
 // the port belongs to whichever image lane serves (Qwen-Image 2.1 on 30020, MiniMax-H3-Image on
 // 30026): no default may claim one for the other, so the Image view fills it from /api/image and
 // the Now view asks that route once of its own (found in review of v1.50)
-const IMG_NOW = {label: '', port: null};
-let imgPortAsked = false;
-function imgPortAsk(){
-  if (imgPortAsked || IMG_NOW.port) return;
-  imgPortAsked = true;
+// The port is the one the cockpit read for the unit that serves (its "unit" with it): until it says, each lane's own
+// default (30020 and 30026), never the other's; a switch from one image lane to the other asks again.
+const IMG_NOW = {label: '', port: null, unit: null};
+let imgPortAsked = null;
+const imgNowPort = unit => (IMG_NOW.unit === unit && IMG_NOW.port) || (unit === IMAGE_H3_UNIT ? 30026 : 30020);
+function imgPortAsk(unit){
+  if (imgPortAsked === unit || (IMG_NOW.unit === unit && IMG_NOW.port)) return;
+  imgPortAsked = unit;
   fetch('/api/image').then(r => r.status === 401 ? null : r.json())
-    .then(d => { if (d && d.port) IMG_NOW.port = d.port; })
-    .catch(() => { imgPortAsked = false; });
+    .then(d => { if (d && d.port) Object.assign(IMG_NOW, {port: d.port, unit: d.unit || null}); })
+    .catch(() => { imgPortAsked = null; });
 }
 
 afterApply(() => {

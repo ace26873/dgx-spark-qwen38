@@ -1210,7 +1210,7 @@ class TheNowViewSaysThePortTheImageLaneListensOn(unittest.TestCase):
     def test_the_port_the_cockpit_reads_in_the_unit(self):
         r = run(self, r"""
         __fetch = async url => url === '/api/image' ? __response(200, {installed: true, available: true, state: 'ready',
-            port: 30120, host: '127.0.0.1', progress: {}}) : new Promise(() => {});
+            port: 30120, host: '127.0.0.1', unit: 'qwen38-image.service', progress: {}}) : new Promise(() => {});
         const U = JSON.parse(JSON.stringify(UNITS));
         U.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
         U.units['qwen38-image.service'] = {active: 'active', enabled: 'enabled'};
@@ -1223,6 +1223,25 @@ class TheNowViewSaysThePortTheImageLaneListensOn(unittest.TestCase):
         """)
         self.assertIn("127.0.0.1:30020, behind this cockpit", r["before"], "until the cockpit says it, the default")
         self.assertIn("127.0.0.1:30120, behind this cockpit", r["after"])
+
+    def test_the_other_image_lane_says_its_own_default_then_its_own_port(self):
+        # MiniMax-H3-Image (30026): neither Qwen-Image's default nor the port the cockpit read for that other lane
+        r = run(self, r"""
+        __fetch = async url => url === '/api/image' ? __response(200, {installed: true, available: true, state: 'ready',
+            port: 30126, host: '127.0.0.1', unit: 'qwen38-image-h3.service', progress: {}}) : new Promise(() => {});
+        Object.assign(IMG_NOW, {port: 30120, unit: 'qwen38-image.service'});
+        const U = JSON.parse(JSON.stringify(UNITS));
+        U.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
+        U.units['qwen38-image-h3.service'] = {active: 'active', enabled: 'enabled'};
+        feed({config: CONFIG, units: U, lifecycle: life({'qwen38-sglang.service': eng('stopped'),
+                                                         'qwen38-image-h3.service': eng('ready', {target: 'image-h3'})})});
+        const before = txt('act-facts');
+        await imgLane();
+        renderActivity();
+        report({before, after: txt('act-facts')});
+        """)
+        self.assertIn("127.0.0.1:30026, behind this cockpit", r["before"], "its own default, not the other lane's port")
+        self.assertIn("127.0.0.1:30126, behind this cockpit", r["after"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -207,7 +207,7 @@ class TheEncoderRuleIsReadOnce(unittest.TestCase):
         self.assertNotIn('FL2VA\" / \"text_encoder', sw, "the switch keeps no copy of the rule")
 
     def test_the_reading_itself(self):
-        import tempfile, subprocess, os
+        import tempfile, subprocess
         t = pathlib.Path(tempfile.mkdtemp(prefix="h3-enc-"))
         self.addCleanup(__import__("shutil").rmtree, t, True)
         snap = t / "snap"
