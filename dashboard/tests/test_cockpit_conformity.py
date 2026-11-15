@@ -139,6 +139,20 @@ class TheUpdateTierCarriesIt(unittest.TestCase):
         self.assertEqual([(i["group"], i["knob"], i["value"]) for i in got["items"]],
                          [("moves", "FLASH_UNSLOTH_TARGET", "flash-unsloth")])
 
+    def test_every_installer_observe_reads_busts_the_plan_cache(self):
+        # conformity.py reads the side lanes' installers (its SIDE: defaults, the Unsloth GGUF lane's two targets); a
+        # list of them kept by hand in the cache's key missed install-flash-unsloth.sh (second review of v1.49.0)
+        cp, _, _ = self.box("cockpit_conform_side", key_at=OLD_BOX)
+        seen = []
+        real = cp._mtime_ns
+        cp._mtime_ns = lambda f: seen.append(Path(f)) or real(f)
+        self.addCleanup(setattr, cp, "_mtime_ns", real)
+        cp._CONFORM_CACHE.clear()
+        cp.conformity_state()
+        scripts = {script for script, _ in cp._conformity().SIDE.values()}
+        self.assertIn("install-flash-unsloth.sh", scripts)
+        self.assertLessEqual({cp.REPO_DIR / n for n in scripts}, set(seen))
+
     def test_what_cannot_be_read_is_not_said(self):
         cp, _, _ = self.box("cockpit_conform_e", key_at=OLD_BOX)
         mod = cp._conformity()

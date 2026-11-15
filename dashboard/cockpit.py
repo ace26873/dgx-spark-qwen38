@@ -2456,8 +2456,10 @@ def conformity_state():
                                          # is part of what the plan depends on, so it busts the cache too
                                          "qwen38-flash-unsloth.service")]
                  + [CONFIG_DIR / n for n in ("launch-flash.sh", "installed.json", "api-key", "text-lane")]
-                 + [REPO_DIR / n for n in ("install.sh", "install-kolibri.sh", "install-image.sh", "install-video.sh",
-                                           "CHANGELOG.md")])
+                 # the installers conformity.py reads (its SIDE): a list of them here missed the Unsloth GGUF lane's,
+                 # whose default and two targets observe reads (second review of v1.49.0)
+                 + [REPO_DIR / n for n in sorted({"install.sh", "CHANGELOG.md"}
+                                                 | {script for script, _ in mod.SIDE.values()})])
         key = (lane,) + tuple(_mtime_ns(f) for f in files)
         if _CONFORM_CACHE.get("key") != key:
             items = mod.plan(CONFIG_DIR, lane, {}, repo_dir=REPO_DIR, units_dir=UNIT_DIR)
@@ -3808,14 +3810,12 @@ TARGET_FILES = {"flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_PAR
 
 def target_files(target: str) -> list | None:
     """The paths of its repository a target of TARGET_FILES serves, as its installer pins them; [] when the installer
-    is not read or pins none so (nothing of it then counts as there); None for a target that serves a whole repository."""
+    pins none so (nothing of it then counts as there); None for a target that serves a whole repository. OSError when
+    the installer is not read: the caller concludes nothing from that."""
     if target not in TARGET_FILES:
         return None
     script, prefix = TARGET_FILES[target]
-    try:
-        return rg.pinned_paths((REPO_DIR / script).read_text(), prefix)
-    except OSError:
-        return []
+    return rg.pinned_paths((REPO_DIR / script).read_text(), prefix)
 
 
 def target_unit(target: str) -> Path:
@@ -6117,11 +6117,12 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
         if REGISTRY_CACHE["data"] and time.time() - REGISTRY_CACHE["ts"] < max_age:
             return REGISTRY_CACHE["data"]
         pins = {}
+        unread = []         # the repository's files not read this time (a checkout rewriting one, say)
         for f in rg.PIN_FILES:
             try:
                 pins.update(rg.parse_pins((REPO_DIR / f).read_text()))
             except OSError:
-                pass
+                unread.append(f)
         caches = lane_caches()
         models = []
         for d in caches:
@@ -6193,7 +6194,11 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
             var = TARGET_PIN[t]
             repo, rev = rg.PIN_MODELS[var], pins.get(var, "")
             allow = rg.video_allow(switch_text, variant or "fl2va") if t == "video" else None
-            files = target_files(t)
+            try:
+                files = target_files(t)
+            except OSError:
+                unread.append(TARGET_FILES[t][0])
+                files = None
             state = ckpt_state(t, repo, rev, files or allow, files)
             dvar = TARGET_DRAFT_PIN.get(t)
             if dvar:
@@ -6212,6 +6217,14 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                                  for m in models if not m["managed"]],
                 "images": [i for i in images if i["engine"]],
                 "ts": time.time()}
+        if unread:
+            # without a pin file, its checkpoints read absent or stray and the Library offers to fetch what is on the
+            # disk (second review of v1.49.0): what was said before stands, and nothing of this read is kept, so the
+            # next call reads again
+            if REGISTRY_CACHE["data"]:
+                return REGISTRY_CACHE["data"]
+            REGISTRY_CACHE.update(ts=0.0, data=None)
+            return data
         REGISTRY_CACHE.update(ts=time.time(), data=data)
         return data
 LOGIN_FAILS: dict[str, list] = {}

@@ -156,6 +156,41 @@ class Fetch(unittest.TestCase):
         draft.unlink()
         self.assertEqual(states(), ("incomplete", "absent"))
 
+    def test_an_installer_not_read_this_time_concludes_nothing(self):
+        # a checkout rewriting install-flash-unsloth.sh: its pins and its targets' files unread, the two GGUF targets
+        # read absent and the Library offered to fetch 85 GB on the disk, for the cache's 5 minutes (second review of
+        # v1.49.0). What was said stands, and the next call reads again.
+        import re
+        text = (REPO / "install-flash-unsloth.sh").read_text()
+        snap = self.hub / "models--unsloth--Qwen3.8-Flash-Next-GGUF" / "snapshots" / self.pins["FLASH_UNSLOTH_REV"]
+        for rel in re.findall(r'^FLASH_UNSLOTH_(?:IQ3_)?PART[1-4]="([^"=]+)=', text, re.M):
+            (snap / rel).parent.mkdir(parents=True, exist_ok=True)
+            (snap / rel).write_text("w")
+        draft = (self.hub / "models--ggml-org--Qwen3.8-Flash-Next-GGUF" / "snapshots" / self.pins["FLASH_UNSLOTH_DRAFT_REV"]
+                 / re.search(r'^FLASH_UNSLOTH_DRAFT="([^"=]+)=', text, re.M).group(1))
+        draft.parent.mkdir(parents=True)
+        draft.write_text("w")
+        said = {t: self.targets()[t]["state"] for t in ("flash-unsloth", "flash-unsloth-iq3")}
+        self.assertEqual(said, {"flash-unsloth": "complete", "flash-unsloth-iq3": "complete"})
+        # the same repository without that one file
+        half = self.tmp / "half-repo"
+        shutil.rmtree(half, ignore_errors=True)
+        half.mkdir()
+        for f in REPO.iterdir():
+            if f.name != "install-flash-unsloth.sh":
+                (half / f.name).symlink_to(f)
+        real = self.cp.REPO_DIR
+        self.cp.REPO_DIR = half
+        self.addCleanup(setattr, self.cp, "REPO_DIR", real)
+        got = self.targets()
+        self.assertEqual({t: got[t]["state"] for t in said}, said)
+        # nothing said before: this read is handed, and not kept
+        self.cp.REGISTRY_CACHE.update(ts=0.0, data=None)
+        self.targets()
+        self.assertIsNone(self.cp.REGISTRY_CACHE["data"])
+        self.cp.REPO_DIR = real
+        self.assertEqual({t: self.targets()[t]["state"] for t in said}, said)
+
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})
         self.assertEqual(code, 202, body)
