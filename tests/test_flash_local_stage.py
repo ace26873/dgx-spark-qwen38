@@ -258,7 +258,9 @@ class TheStagedUnit(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         guard = " ".join(self.guard(self.box.out.read_text()))
         self.assertNotIn("/blobs/", guard)
-        self.assertNotIn("__", guard)
+        # a placeholder left, not any "__": the box's temporary folder may hold one (GitHub's CI of v1.49.0's notes,
+        # tmp "flash-local-stage-0__zerjk", about one run in 200)
+        self.assertNotRegex(guard, r"__[A-Z][A-Z0-9_]*__")
 
     def test_copies_of_the_table_are_mounted_over_the_caches_files(self):
         folder = self.box.t / "copies"
