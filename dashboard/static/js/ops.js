@@ -473,7 +473,7 @@ async function scanRegistry(fresh = true){
       tr.insertCell().textContent = String(t.repo || '').split('/').pop();
       const st = tr.insertCell();
       // unknown: its pin was not read this time (a checkout rewriting its installer): nothing offered until the next scan
-      if (t.state === 'unknown'){ st.append(tag('not read', 'warn'), ' ', el('span', 'muted', 'its pin was not read this time; the next scan reads it again')); return; }
+      if (t.state === 'unknown'){ st.append(tag('not read', 'warn'), ' ', el('span', 'muted', 'what it needs was not read in its installer; nothing is offered until a scan reads it')); return; }
       st.append(tag(t.state === 'complete' ? 'on disk' : t.state === 'incomplete' ? 'begun' : 'not downloaded', t.state === 'complete' ? 'cool' : 'warn'));
       // a lane installed on demand and not prepared yet: the download runs in the image or the
       // venv its first Load builds, so that Load is what downloads it
@@ -499,7 +499,7 @@ async function scanRegistry(fresh = true){
     if (!others.length) emptyRow(to, 2, 'None.');
     setText('reg-other-tag', others.length ? fmtGiB(others.reduce((a, m) => a + m.disk_bytes, 0)) + ' in ' + others.length : '');
     const strays = (d.models || []).flatMap(m => m.revisions).filter(rv => rv.status === 'stray');
-    setText(b, strays.length ? `Rescan (${strays.length} stray)` : 'Rescan'); setText('reg-age', 'scanned ' + new Date().toLocaleTimeString([], {hour12: false}));
+    setText(b, strays.length ? `Rescan (${strays.length} stray)` : 'Rescan'); setText('reg-age', (d.partial || []).length ? 'scan incomplete, nothing offered for what it missed: ' + d.partial.join(', ') : 'scanned ' + new Date().toLocaleTimeString([], {hour12: false}));
   }catch(e){ setText(b, 'Retry'); setText('reg-age', 'scan failed: ' + e.message); }
   finally{ b.disabled = false; }
 }

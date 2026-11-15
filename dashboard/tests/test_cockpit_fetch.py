@@ -23,6 +23,17 @@ def tearDownModule():
     os.environ.update(ENV_BEFORE)
 
 
+
+def cockpit_time(cp, test, sleep):
+    """The cockpit's own `time`, with this sleep: a copy of the module, so the test's waits are untouched."""
+    import types
+    fake = types.ModuleType("time")
+    fake.__dict__.update(cp.time.__dict__)
+    fake.sleep = sleep
+    real = cp.time
+    cp.time = fake
+    test.addCleanup(setattr, cp, "time", real)
+
 class Fetch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -156,10 +167,8 @@ class Fetch(unittest.TestCase):
         draft.unlink()
         self.assertEqual(states(), ("incomplete", "absent"))
 
-    def test_an_installer_not_read_this_time_concludes_nothing(self):
-        # a checkout rewriting install-flash-unsloth.sh: gone, or read empty. Its pins and its targets' files not read,
-        # the two GGUF targets read absent and the Library offered to fetch 85 GB on the disk (second and third reviews
-        # of v1.49.0). They read unknown, the scan says it is partial, and it is not kept: the next call reads again.
+    def gguf_on_disk(self):
+        """Both GGUF targets whole in the cache, with their draft; the installer's text."""
         import re
         text = (REPO / "install-flash-unsloth.sh").read_text()
         snap = self.hub / "models--unsloth--Qwen3.8-Flash-Next-GGUF" / "snapshots" / self.pins["FLASH_UNSLOTH_REV"]
@@ -170,36 +179,74 @@ class Fetch(unittest.TestCase):
                  / re.search(r'^FLASH_UNSLOTH_DRAFT="([^"=]+)=', text, re.M).group(1))
         draft.parent.mkdir(parents=True)
         draft.write_text("w")
-        both = ("flash-unsloth", "flash-unsloth-iq3")
-        reg = self.cp.registry_snapshot(max_age=0.0)
-        self.assertEqual(reg["partial"], [])
-        self.assertEqual({t["target"]: t["state"] for t in reg["targets"] if t["target"] in both},
-                         {"flash-unsloth": "complete", "flash-unsloth-iq3": "complete"})
+        return text
+
+    def half_repo(self, content):
+        """The repository with install-flash-unsloth.sh as a checkout may leave it for an instant: gone (None), or this
+        text."""
+        half = self.tmp / "half-repo"
+        shutil.rmtree(half, ignore_errors=True)
+        half.mkdir()
+        for f in REPO.iterdir():
+            if f.name != "install-flash-unsloth.sh":
+                (half / f.name).symlink_to(f)
+        if content is not None:
+            (half / "install-flash-unsloth.sh").write_text(content)
         real = self.cp.REPO_DIR
+        self.cp.REPO_DIR = half
         self.addCleanup(setattr, self.cp, "REPO_DIR", real)
-        # cut where its pins of the revision end and its targets' parts begin
-        cut = text[:text.index("FLASH_UNSLOTH_PART1=")]
-        for how, content in (("gone", None), ("read empty", ""), ("cut short", cut)):
-            with self.subTest(how):
-                half = self.tmp / "half-repo"
-                shutil.rmtree(half, ignore_errors=True)
-                half.mkdir()
-                for f in REPO.iterdir():
-                    if f.name != "install-flash-unsloth.sh":
-                        (half / f.name).symlink_to(f)
-                if content is not None:
-                    (half / "install-flash-unsloth.sh").write_text(content)
-                self.cp.REPO_DIR = half
-                reg = self.cp.registry_snapshot(max_age=0.0)
-                self.assertTrue(reg["partial"], "the scan says it missed something")
-                self.assertEqual({t["target"]: t["state"] for t in reg["targets"] if t["target"] in both},
-                                 dict.fromkeys(both, "unknown"))
-                self.assertIsNone(self.cp.REGISTRY_CACHE["data"], "not kept")
-                self.assertEqual(self.cp.registry_snapshot()["partial"], reg["partial"], "the next call reads again")
-        self.cp.REPO_DIR = real
+        return half
+
+    BOTH = ("flash-unsloth", "flash-unsloth-iq3")
+
+    def states(self, reg):
+        return {t["target"]: t["state"] for t in reg["targets"] if t["target"] in self.BOTH}
+
+    def test_an_installer_read_cut_short_concludes_nothing_of_what_it_misses(self):
+        # a checkout rewriting install-flash-unsloth.sh, caught gone, empty or cut short on every read: the two GGUF
+        # targets read absent and the Library offered to fetch 85 GB on the disk (second and third reviews of v1.49.0).
+        # Each such read leaves them unknown and says what it missed; the other targets are read as ever.
+        text = self.gguf_on_disk()
         reg = self.cp.registry_snapshot(max_age=0.0)
-        self.assertEqual(({t["target"]: t["state"] for t in reg["targets"] if t["target"] in both}, reg["partial"]),
-                         ({"flash-unsloth": "complete", "flash-unsloth-iq3": "complete"}, []))
+        self.assertEqual((self.states(reg), reg["partial"]), (dict.fromkeys(self.BOTH, "complete"), []))
+        cut = {"gone": None, "empty": "",
+               "before its parts": text[:text.index("FLASH_UNSLOTH_PART1=")],
+               "inside its parts": text[:text.index("FLASH_UNSLOTH_IQ3_PART3=")],
+               "before its draft's pin": text[:text.index("FLASH_UNSLOTH_DRAFT_REV=")],
+               # every pin there but one part's line: only the parts tell
+               "one part's line gone": "".join(ln for ln in text.splitlines(keepends=True)
+                                               if not ln.startswith("FLASH_UNSLOTH_IQ3_PART4="))}
+        cockpit_time(self.cp, self, lambda s: None)
+        for how, content in cut.items():
+            with self.subTest(how):
+                self.half_repo(content)
+                reg = self.cp.registry_snapshot(max_age=0.0)
+                self.assertTrue(reg["partial"], "the scan says what it missed")
+                # unknown, each target whose pins or parts were not all read; the other, read whole, as ever
+                want = dict.fromkeys(self.BOTH, "unknown")
+                if how == "one part's line gone":
+                    want["flash-unsloth"] = "complete"
+                self.assertEqual(self.states(reg), want)
+                self.assertEqual(next(t["state"] for t in reg["targets"] if t["target"] == "stock"), "absent",
+                                 "a target whose pins were read is read as ever")
+                self.assertIn("flash-unsloth-iq3", [t["target"] for t in reg["targets"]])
+
+    def test_a_checkout_that_ends_between_two_reads_is_read_whole(self):
+        # the pause between two reads is the instant the checkout needs: the second read finds the file whole
+        text = self.gguf_on_disk()
+        half = self.half_repo("")
+        cockpit_time(self.cp, self, lambda s: (half / "install-flash-unsloth.sh").write_text(text))
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        self.assertEqual((self.states(reg), reg["partial"]), (dict.fromkeys(self.BOTH, "complete"), []))
+
+    def test_the_upstream_view_keeps_no_scan_that_missed_a_pin(self):
+        # it is kept an hour: built on a partial scan, it would lack that pin's rows for the hour
+        real = self.cp.registry_snapshot
+        self.addCleanup(setattr, self.cp, "registry_snapshot", real)
+        self.cp.registry_snapshot = lambda max_age=300.0: {"pins": {}, "partial": ["install.sh not read"]}
+        self.cp.UPSTREAM_CACHE.update(ts=0.0, data=None)
+        self.cp.upstream_snapshot(max_age=0.0)
+        self.assertEqual(self.cp.UPSTREAM_CACHE["ts"], 0.0)
 
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})

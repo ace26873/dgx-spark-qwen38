@@ -109,7 +109,7 @@ def side_installers():
     spec = importlib.util.spec_from_file_location("conformity_for_the_wall", REPO / "conformity.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return sorted({script for script, _ in mod.SIDE.values()})
+    return tuple(sorted({script for script, _ in mod.SIDE.values()}))
 
 
 def units_dir(units=None):

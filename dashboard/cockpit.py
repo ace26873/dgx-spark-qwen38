@@ -3809,13 +3809,48 @@ TARGET_FILES = {"flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_PAR
 
 
 def target_files(target: str) -> list | None:
-    """The paths of its repository a target of TARGET_FILES serves, as its installer pins them; [] when the installer
-    pins none so (nothing of it then counts as there); None for a target that serves a whole repository. OSError when
-    the installer is not read: the caller concludes nothing from that."""
+    """The paths of its repository a target of TARGET_FILES serves, as its installer pins them; None for a target that
+    serves a whole repository. OSError when the installer is not read."""
     if target not in TARGET_FILES:
         return None
     script, prefix = TARGET_FILES[target]
     return rg.pinned_paths((REPO_DIR / script).read_text(), prefix)
+
+
+def parts_whole(paths: list) -> bool:
+    """A target's pinned GGUF parts all there: each "-0000k-of-0000N" from 1 to N, once (a list read cut short
+    inside its PART lines names fewer)."""
+    seen = [re.search(r"-(\d+)-of-(\d+)\.gguf$", p) for p in paths]
+    if not paths or not all(seen):
+        return bool(paths) and not any(seen)
+    n = {int(m.group(2)) for m in seen}
+    return len(n) == 1 and sorted(int(m.group(1)) for m in seen) == list(range(1, n.pop() + 1))
+
+
+def read_pins(tries: int = 3, pause: float = 0.5) -> tuple:
+    """(pins, {target: its files}, missed): every pin of the clone's scripts and every TARGET_FILES target's parts, and
+    what could not be read. A checkout rewrites a script in an instant: read gone, empty or cut short, a pin of this
+    release is missing (second and third reviews of v1.49.0: the checkpoint it pins then read absent, or stray and so
+    deletable), so a read that misses one is made again, `tries` times. What is still missed is said."""
+    for attempt in range(tries):
+        pins, files, missed, texts = {}, {}, [], {}
+        for f in rg.PIN_FILES:
+            try:
+                texts[f] = (REPO_DIR / f).read_text()
+            except OSError:
+                missed.append(f"{f} not read")
+                continue
+            pins.update(rg.parse_pins(texts[f]))
+        missed += [f"{var} not found" for var in sorted(set(rg.PIN_MODELS) - set(pins))]
+        for t, (script, prefix) in TARGET_FILES.items():
+            files[t] = rg.pinned_paths(texts.get(script, ""), prefix)
+            if not parts_whole(files[t]):
+                missed.append(f"{t}'s parts not all found in {script}")
+        if not missed:
+            break
+        if attempt < tries - 1:
+            time.sleep(pause)
+    return pins, files, missed
 
 
 def target_unit(target: str) -> Path:
@@ -6020,7 +6055,8 @@ def upstream_snapshot(max_age: float = 3600.0) -> dict:
         if stale:
             rel["stale_code"] = stale
         data = {"models": rows, "release": rel, "ts": time.time()}
-        UPSTREAM_CACHE.update(ts=time.time(), data=data)
+        # built on a scan that missed a pin, it lacks that pin's rows: handed, not kept for the hour
+        UPSTREAM_CACHE.update(ts=0.0 if reg.get("partial") else time.time(), data=data)
         return data
 
 
@@ -6116,18 +6152,9 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
     with REGISTRY_LOCK:
         if REGISTRY_CACHE["data"] and time.time() - REGISTRY_CACHE["ts"] < max_age:
             return REGISTRY_CACHE["data"]
-        pins = {}
-        # What this scan could not read, if anything: a pin file gone, or read empty or cut short (a checkout rewriting
-        # it), leaves a pin of this release missing. Without it a pinned checkpoint reads absent, or stray and so
-        # deletable (second and third reviews of v1.49.0): such a scan concludes nothing of what it misses and deletes
-        # nothing, and is not kept, so the next call reads again.
-        partial = []
-        for f in rg.PIN_FILES:
-            try:
-                pins.update(rg.parse_pins((REPO_DIR / f).read_text()))
-            except OSError:
-                partial.append(f"{f} not read")
-        partial += [f"{var} not found" for var in sorted(set(rg.PIN_MODELS) - set(pins))]
+        # What it could not read even when read again (read_pins) is said in "partial", and concludes nothing: no
+        # revision is called stray or offered for deletion, and no target it touches is called absent
+        pins, tfiles, partial = read_pins()
         caches = lane_caches()
         models = []
         for d in caches:
@@ -6144,6 +6171,7 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                 if r.get("status") != "stray":
                     continue
                 if partial:
+                    r["status"] = "unknown"
                     r["delete"] = {"refused": "this scan could not read every pin (" + ", ".join(partial[:3])
                                    + "): a pinned revision would read stray; scan again"}
                     continue
@@ -6203,20 +6231,15 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
             var = TARGET_PIN[t]
             repo, rev = rg.PIN_MODELS[var], pins.get(var, "")
             allow = rg.video_allow(switch_text, variant or "fl2va") if t == "video" else None
-            try:
-                files = target_files(t)
-            except OSError:
-                files = []
-            if not rev or (t in TARGET_FILES and not files):
-                # its pin, or the files its installer pins, not read this time: not "absent", which offers a Download
-                # of what may be on the disk, but unknown until the next scan
-                if t in TARGET_FILES and not files and rev:
-                    partial.append(f"{TARGET_FILES[t][0]}: {t}'s files not found")
+            files = tfiles.get(t)
+            dvar = TARGET_DRAFT_PIN.get(t)
+            if not rev or (dvar and not pins.get(dvar)) or (files is not None and not parts_whole(files)):
+                # its pin, its draft's, or the parts its installer pins, not read: not "absent", which offers a
+                # Download of what may be on the disk
                 targets.append({"target": t, "repo": repo, "rev": rev, "state": "unknown",
                                 "installed": target_unit(t).exists()})
                 continue
             state = ckpt_state(t, repo, rev, files or allow, files)
-            dvar = TARGET_DRAFT_PIN.get(t)
             if dvar:
                 # whole with its drafter whole, absent with none of the two, begun otherwise; a target of
                 # TARGET_FILES with none of its files is absent whatever its drafter, which the lane's other target
@@ -6234,7 +6257,7 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                 "images": [i for i in images if i["engine"]],
                 "partial": partial,
                 "ts": time.time()}
-        REGISTRY_CACHE.update(ts=0.0 if partial else time.time(), data=None if partial else data)
+        REGISTRY_CACHE.update(ts=time.time(), data=data)
         return data
 LOGIN_FAILS: dict[str, list] = {}
 LOGIN_LOCK = threading.Lock()

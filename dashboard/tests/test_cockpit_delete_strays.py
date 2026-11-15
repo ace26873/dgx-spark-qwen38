@@ -29,6 +29,17 @@ def tearDownModule():
     os.environ.update(ENV_BEFORE)
 
 
+
+def cockpit_time(cp, test, sleep):
+    """The cockpit's own `time`, with this sleep: a copy of the module, so the test's waits are untouched."""
+    import types
+    fake = types.ModuleType("time")
+    fake.__dict__.update(cp.time.__dict__)
+    fake.sleep = sleep
+    real = cp.time
+    cp.time = fake
+    test.addCleanup(setattr, cp, "time", real)
+
 class Delete(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -112,12 +123,18 @@ class Delete(unittest.TestCase):
         real = self.cp.REPO_DIR
         self.cp.REPO_DIR = half
         self.addCleanup(setattr, self.cp, "REPO_DIR", real)
+        cockpit_time(self.cp, self, lambda s: None)
+        # the scan says what it missed, and calls neither revision stray
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        self.assertIn("DRAFT_REV not found", reg["partial"])
+        mine = next(m for m in reg["models"] if m["repo_id"] == "RadixArk/Qwen3.8-27B-DSpark")
+        self.assertEqual({r["rev"]: r["status"] for r in mine["revisions"]},
+                         {self.pinned: "unknown", self.stray: "unknown"})
         code, body = self.act()
         self.assertEqual((code, body["result"].get("deleted")), (202, 0), body)
         self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
         self.assertTrue((self.repo / "snapshots" / self.stray).is_dir())
         self.assertTrue(any("kept" in ln and "could not read every pin" in ln for ln in body["lines"]), body["lines"])
-        self.assertIsNone(self.cp.REGISTRY_CACHE["data"], "a scan that missed a pin is not kept")
         # read whole again, the stray goes and the pinned stays
         self.cp.REPO_DIR = real
         code, body = self.act()
