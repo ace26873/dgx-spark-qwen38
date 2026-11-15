@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The MiniMax-H3-Image lane (v1.49): its unit, its installer's bind, its weights and the licence said where it is said.
+"""The MiniMax-H3-Image lane (v1.50): its unit, its installer's bind, its weights and the licence said where it is said.
 
 The runtime at the lane's SGLang commit has, as flags, what the image and video lanes patch in at theirs: the unit
 passes them, and the CI's gate holds --sleep-on-idle there. The lane binds loopback only: its runtime has no API key,

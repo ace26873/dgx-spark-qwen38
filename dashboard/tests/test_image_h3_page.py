@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Image view on the MiniMax-H3-Image lane (v1.49): the view addresses the image lane that serves, else the one
+"""The Image view on the MiniMax-H3-Image lane (v1.50): the view addresses the image lane that serves, else the one
 installed, Qwen-Image 2.1 first, by the rule the cockpit's routes follow (cockpit.py image_unit), and takes that
 lane's sizes, steps, controls and licence. Same harness as test_page_behaviour.py."""
 import pathlib

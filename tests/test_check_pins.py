@@ -305,7 +305,7 @@ class ThePinsOutsideThePinBlock(PinsBase):
 
     def test_the_minimax_h3_image_lane_is_checked_too(self):
         # its checkpoint and its text encoder at their revisions, SGLang's commit and its wheel, the recipe's flash-attn-4
-        # on PyPI and FlashInfer's two wheels by the digest their release publishes (v1.49)
+        # on PyPI and FlashInfer's two wheels by the digest their release publishes (v1.50)
         rc, out = self.run_pins(None, None, "image-h3")
         self.assertEqual(rc, 0, out)
         for label in ("image-h3", "image-h3-encoder", "sglang-source-image-h3", "sglang-wheel-image-h3", "image-h3-fa4",

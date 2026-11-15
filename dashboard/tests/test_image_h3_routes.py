@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Image view's routes on the MiniMax-H3-Image lane (v1.49): one view and one set of routes for the image lane
+"""The Image view's routes on the MiniMax-H3-Image lane (v1.50): one view and one set of routes for the image lane
 that serves, else the one installed, Qwen-Image 2.1 first; each call by the rules of the lane it goes to. Same harness
 as test_image_routes.py, its cockpit loaded with run() silenced and the engine's urlopen captured."""
 import json

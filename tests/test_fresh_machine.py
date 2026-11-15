@@ -614,7 +614,7 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
         self.assertEqual(self.run_step(1, 0, headers=True), [])
 
     def test_the_minimax_h3_image_lane_alone_needs_the_headers_too(self):
-        # sglang[diffusion] builds xatlas against them at its first Load, as for the Qwen-Image 2.1 lane (v1.49)
+        # sglang[diffusion] builds xatlas against them at its first Load, as for the Qwen-Image 2.1 lane (v1.50)
         apt = self.run_step(0, 0, headers=False, want_image_h3=1)
         self.assertEqual(len(apt), 1, apt)
         self.assertTrue(apt[0].endswith("install python3-dev"), apt)
