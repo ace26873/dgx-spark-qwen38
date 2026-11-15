@@ -150,9 +150,22 @@ const unitPath = join(root, 'opencode-web.service');
 // as install-agent.sh builds it since v1.40.4: the shell rules after its "*" (oc-merge-limits.py)
 const AUTO_PERMISSION = execFileSync('python3', [join(HERE, '..', '..', 'oc-merge-limits.py'), '--agent-auto-permission'],
   { encoding: 'utf8' }).trim();
-const AUTO_LINE = `Environment='OPENCODE_PERMISSION=${AUTO_PERMISSION}'`;
+// the unit lines are the ones install-agent.sh renders for the major under test (2026-11-14 and 15,
+// measured on 2.3.0): 1.x takes its approvals in OPENCODE_PERMISSION and its cap in the environment,
+// 2.x reads neither and takes the approvals in the content it merges last, in lower-case logs
+const IS_V2 = /^2\./.test(UNDER_TEST || '');
+const AUTO_CONTENT = IS_V2 ? execFileSync('python3', [join(HERE, '..', '..', 'oc-merge-limits.py'), '--agent-auto-config-content'],
+  { encoding: 'utf8' }).trim() : null;
+const AUTO_LINE = IS_V2 ? `Environment='OPENCODE_CONFIG_CONTENT=${AUTO_CONTENT}'` : `Environment='OPENCODE_PERMISSION=${AUTO_PERMISSION}'`;
+const CAP_LINE = IS_V2 ? "# OpenCode 2 sends max_completion_tokens from the model's limit.output in the config\n" +
+  "# (measured on 2.3.0 the 2026-11-14): there is no 32000 ceiling to lift here, and\n" +
+  "# OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX is read by nobody of it."
+  : "# Same cap as the oc launcher: without it long thinking is cut at 32000 tokens\n" +
+  "# and the turn ends silently.\nEnvironment=OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=32000";
+const SERVE_FLAGS = IS_V2 ? '--print-logs --log-level info' : '--print-logs --log-level INFO';
 const unitText = readFileSync(join(HERE, '..', 'opencode-web.service.template'), 'utf8')
   .replaceAll('__OPENCODE_BIN__', OC).replaceAll('__AUTO_LINE__', AUTO_LINE).replaceAll('__HOME__', home)
+  .replaceAll('__CAP_LINE__', CAP_LINE).replaceAll('__SERVE_FLAGS__', SERVE_FLAGS)
   .replaceAll('__PATH__', process.env.PATH).replaceAll('__OUTPUT_TOKEN_MAX__', '32000').replaceAll('__USER__', 'bench')
   .replaceAll('__GROUP__', 'bench').replaceAll('__OPENCODE_PORT__', String(OC_PORT));
 writeFileSync(unitPath, unitText);
@@ -169,7 +182,8 @@ ocServer = spawn(exe, ocArgs, {
   // the unit's environment (dashboard/opencode-web.service.template), every path under the bench's root,
   // and AGENT_AUTO=1's permission line, which our boxes run with
   env: { PATH: process.env.PATH, HOME: home, TMPDIR: scratch, ...xdg, OPENCODE_SERVER_USERNAME: 'opencode', OPENCODE_SERVER_PASSWORD: password,
-         OPENCODE_CONFIG: ocConfig, OPENCODE_PERMISSION: AUTO_PERMISSION, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: '32000',
+         OPENCODE_CONFIG: ocConfig, ...(IS_V2 ? { OPENCODE_CONFIG_CONTENT: AUTO_CONTENT }
+           : { OPENCODE_PERMISSION: AUTO_PERMISSION, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: '32000' }),
          OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_PROJECT_CONFIG: '1',
          OPENCODE_DISABLE_CLAUDE_CODE: '1', OPENCODE_DISABLE_LSP_DOWNLOAD: '1' },
 });

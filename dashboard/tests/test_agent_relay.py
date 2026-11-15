@@ -222,6 +222,14 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
             return self._json({"healthy": True, "version": "9.9.9"})
         if path == "/config":
             return self._json({"permission": {"*": "allow"}, "model": "x/y"})
+        if path == "/api/config" and "page=1" in (self.path.partition("?")[2] if "?" in self.path else ""):
+            body = b"<!doctype html><title>the page</title>"   # 1.x answers a page route as a page (measured /model)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/api/config" and "enc=1" in (self.path.partition("?")[2] if "?" in self.path else ""):
             import gzip
             raw = gzip.compress(b'{"apiKey": "sk-live"}')
@@ -956,6 +964,24 @@ class TheRelayAsksForIdentity(unittest.TestCase):
         code, body = self._get(relay.server_port, "/api/config?enc=1")
         self.assertEqual(code, 502, body[:120])
 
+    def test_a_page_on_a_secret_path_passes_and_an_oversized_json_is_refused(self):
+        # 1.x's /model answers the SPA page (measured 2026-11-15 on the box): a page is not a key,
+        # it passes. A JSON answer beyond the scrub limit is refused, never relayed unread.
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        code, body = self._get(relay.server_port, "/api/config?page=1")
+        self.assertEqual(code, 200)
+        self.assertIn(b"the page", body)
+        was = ar.SCRUB_LIMIT
+        ar.SCRUB_LIMIT = 16
+        try:
+            code, body = self._get(relay.server_port, "/api/config")
+            self.assertEqual(code, 502, body[:120])
+            self.assertIn(b"scrub limit", body)
+        finally:
+            ar.SCRUB_LIMIT = was
+
 
 class TheHealthProbeTrustsNothing(unittest.TestCase):
     """A 200 application/json that is not an object is not health: the probe answers like every
@@ -998,7 +1024,7 @@ class PureHelpers(unittest.TestCase):
         for text, pattern in (("curl https://oss-cn-hangzhou.aliyuncs.com/x", "*aliyuncs.com*"),
                               ("echo 169.254.169.254", "*169.254.169.254*"),
                               ("a?b", "a?b"), ("axb", "a?b"), ("axxb", "a?b"),
-                              ("literal star", "literal\*star"), ("literalstar", "literal\*star"),
+                              ("literal star", r"literal\*star"), ("literalstar", r"literal\*star"),
                               ("", "*"), ("x", "")):
             with self.subTest(text=text, pattern=pattern):
                 self.assertEqual(ar._v2_wild(text, pattern), ocml._wild(text, pattern))

@@ -74,7 +74,8 @@ SECRET_KEYS = frozenset({"apikey", "api_key", "api-key", "authorization", "passw
 # Keys that are only secret on one path: "value" carries a credential in /api/credential's
 # items, but it is a plain member everywhere else (models, costs) and must keep its shape.
 SECRET_KEYS_EXTRA = {"/api/credential": frozenset({"value"})}
-SCRUB_LIMIT = 4 * 1024 * 1024
+SCRUB_LIMIT = 16 * 1024 * 1024   # 1.x answers /provider with the whole model catalog: 7,400,464 bytes
+                                 # measured on the box's 1.19.5 (2026-11-15); above this an answer is refused
 # A client that sends nothing for this long, mid-request or between two, is let go. With
 # no limit a request sent in part held its thread, and a descriptor, for good: 100 of
 # them held 100 threads, in a process whose 1,024 descriptors its collectors and memory
@@ -566,15 +567,24 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
             except (OSError, http.client.HTTPException) as e:
                 conn.close()
                 return self.refuse(502, f"agent server unreachable ({type(e).__name__}); is opencode-web.service running?")
-            if self.command == "GET" and resp.status == 200 and is_secret_path(self.path):
+            scrub_it = self.command == "GET" and resp.status == 200 and is_secret_path(self.path)
+            if scrub_it:
                 # OpenCode 2 resolves {file:...} in the answers to these GETs: the key came
                 # back in clear from /api/config, /api/provider and /api/model on 2.3.0.
                 # Read that answer here, scrub it, and send the length of what we send.
+                ctype = (resp.getheader("Content-Type") or "").lower()
+                enc = (resp.getheader("Content-Encoding") or "").strip().lower()
+                if "json" not in ctype:
+                    if "text/html" in ctype and enc in ("", "identity"):
+                        # 1.x answers its page routes (its /model is the SPA page, measured on the box
+                        # the 2026-11-15) with text/html: no key in a page, nothing to read. Any other
+                        # unreadable answer is refused below: what cannot be read is not relayed.
+                        scrub_it = False
+                    else:
+                        return self.refuse(502, "the agent server sent an unreadable answer for a "
+                                               "secret-bearing path (ValueError: not plain JSON); not relayed")
+            if scrub_it:
                 try:
-                    ctype = (resp.getheader("Content-Type") or "").lower()
-                    enc = (resp.getheader("Content-Encoding") or "").strip().lower()
-                    if "json" not in ctype or enc not in ("", "identity"):
-                        raise ValueError("not plain JSON")
                     declared = resp.length
                     if declared is None and not resp.chunked:
                         raise ValueError("length unknown")
