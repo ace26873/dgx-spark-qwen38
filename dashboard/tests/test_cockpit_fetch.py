@@ -230,6 +230,29 @@ class Fetch(unittest.TestCase):
         reg = self.cp.registry_snapshot(max_age=0.0)
         self.assertEqual((self.states(reg), reg["partial"]), (dict.fromkeys(self.BOTH, "complete"), []))
 
+    def test_pins_that_change_between_two_reads_are_a_checkout_in_progress(self):
+        # every file read whole, but install.sh of one release and switch-model.sh of the next: a second read finds other
+        # pins, and the scan says so (sixth review)
+        real = self.cp._read_once
+        self.addCleanup(setattr, self.cp, "_read_once", real)
+        calls = []
+
+        def moving():
+            read = real()
+            calls.append(1)
+            if len(calls) % 2:
+                read["pins"] = {**read["pins"], "STOCK_REV": "f" * 40}
+            return read
+        self.cp._read_once = moving
+        cockpit_time(self.cp, self, sleep=lambda s: None)
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        self.assertIn("the pins changed while read (a checkout?)", reg["partial"])
+        self.assertEqual(next(t["state"] for t in reg["targets"] if t["target"] == "flash"), "absent",
+                         "a scan that missed something still reads what it read")
+        # once it holds still, the second read agrees and the scan is whole
+        self.cp._read_once = real
+        self.assertEqual(self.cp.registry_snapshot(max_age=0.0)["partial"], [])
+
     def test_a_scan_that_missed_a_pin_is_kept_seconds_not_minutes(self):
         # the checkout is over in an instant: kept the cache's 5 minutes, its "not read" outlived it (fifth review)
         self.gguf_on_disk()
@@ -259,15 +282,23 @@ class Fetch(unittest.TestCase):
         self.addCleanup(setattr, self.cp, "registry_snapshot", real)
         self.addCleanup(setattr, self.cp, "_get_json", real_get)
         asked = []
-        self.cp.registry_snapshot = lambda max_age=300.0: asked.append(1) or {"pins": {}, "partial": ["install.sh not read"]}
+        lost = {"pins_lost": True}
+        self.cp.registry_snapshot = lambda max_age=300.0: asked.append(1) or {"pins": {}, "partial": ["x"], **lost}
         self.cp._get_json = lambda url, timeout=5.0: (_ for _ in ()).throw(OSError(f"offline test: {url}"))
         self.cp.UPSTREAM_CACHE.update(ts=0.0, data=None)
-        self.assertEqual(self.cp.upstream_snapshot()["partial"], ["install.sh not read"])
+        self.assertTrue(self.cp.upstream_snapshot()["pins_lost"])
         self.cp.upstream_snapshot()
         self.assertEqual(len(asked), 1, "within its minute, the same view")
-        self.cp.UPSTREAM_CACHE["ts"] -= 61
+        self.cp.UPSTREAM_CACHE["ts"] -= self.cp.UPSTREAM_PARTIAL_TTL + 1
         self.cp.upstream_snapshot()
         self.assertEqual(len(asked), 2)
+        # a miss that loses no pin (a target's parts, the video lane's patterns) leaves every row: kept the hour
+        lost["pins_lost"] = False
+        self.cp.UPSTREAM_CACHE.update(ts=0.0, data=None)
+        self.cp.upstream_snapshot()
+        self.cp.UPSTREAM_CACHE["ts"] -= self.cp.UPSTREAM_PARTIAL_TTL + 1
+        self.cp.upstream_snapshot()
+        self.assertEqual(len(asked), 3, "the hour holds")
 
     def test_the_action_runs_the_switch_with_fetch_and_nothing_else(self):
         code, body = self.cp.start_action("fetch", {"target": "kolibri-nvfp4"})

@@ -157,7 +157,13 @@ def gguf_complete(snap: Path, allow=None) -> bool:
     files = [p for p in snap.rglob("*.gguf") if allowed(p.relative_to(snap).as_posix(), allow) and p.exists()]
     if not files:
         return False
-    names = {p.relative_to(snap).as_posix() for p in files}
+    return splits_whole(p.relative_to(snap).as_posix() for p in files)
+
+
+def splits_whole(names) -> bool:
+    """Every split GGUF among these names has all its parts, 1 to N of its own stem; a name that is not split counts
+    whole (gguf_complete for the files of a snapshot, the cockpit for the parts an installer pins)."""
+    names = set(names)
     for name in names:
         m = GGUF_PART_RE.match(name)
         if m and any(f"{m.group(1)}-{i:05d}-of-{m.group(3)}.gguf" not in names for i in range(1, int(m.group(3)) + 1)):

@@ -16,11 +16,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve()
 DASH = HERE.parents[1]
 REPO = HERE.parents[2]
-sys.path.insert(0, str(HERE.parent))
-from fake_time import cockpit_time  # noqa: E402
 sys.path.insert(0, str(DASH))
 sys.path.insert(0, str(HERE.parent))
 from test_registry import fake_repo  # noqa: E402
+from fake_time import cockpit_time  # noqa: E402
 
 ENV_BEFORE = dict(os.environ)
 DSPARK = "RadixArk/Qwen3.8-27B-DSpark"
@@ -126,17 +125,18 @@ class Delete(unittest.TestCase):
         self.assertEqual((code, body["result"].get("deleted")), (202, 0), body)
         self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
         self.assertTrue((self.repo / "snapshots" / self.stray).is_dir())
-        self.assertTrue(any("kept" in ln and "could not read every pin" in ln for ln in body["lines"]), body["lines"])
-        self.assertIn("nothing of what it touches was deleted", body["lines"][-1], "not \"the disk is clean\"")
+        self.assertTrue(any("kept" in ln and "could not read its pins (DRAFT_REV not found" in ln for ln in body["lines"]),
+                        body["lines"])
+        self.assertIn("nothing was deleted", body["lines"][-1], "not \"the disk is clean\"")
         # read whole again, the stray goes and the pinned stays
         self.cp.REPO_DIR = real
         code, body = self.act()
         self.assertEqual(body["result"].get("deleted"), 1, body)
         self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
 
-    def test_a_pin_of_another_repository_not_read_keeps_this_ones_strays_deletable(self):
-        # only the repositories whose pins were not read are left unknown (fifth review: a scan that missed any pin
-        # kept every stray of the box)
+    def test_a_scan_that_missed_anything_deletes_nothing_and_says_the_rest_as_read(self):
+        # a pin of another repository not read: this one's revisions are still told pinned and stray, but nothing is
+        # deleted (sixth review: a file not read is a checkout in progress, and what it did read may mix two releases)
         half = self.tmp / "half-repo-2"
         shutil.rmtree(half, ignore_errors=True)
         half.mkdir()
@@ -148,11 +148,15 @@ class Delete(unittest.TestCase):
         self.cp.REPO_DIR = half
         self.addCleanup(setattr, self.cp, "REPO_DIR", real)
         cockpit_time(self.cp, self, sleep=lambda s: None)
+        reg = self.cp.registry_snapshot(max_age=0.0)
+        mine = next(m for m in reg["models"] if m["repo_id"] == "RadixArk/Qwen3.8-27B-DSpark")
+        self.assertEqual({r["rev"]: r["status"] for r in mine["revisions"]}, {self.pinned: "pinned", self.stray: "stray"})
         code, body = self.act()
-        self.assertEqual(body["result"].get("deleted"), 1, body)
-        self.assertFalse((self.repo / "snapshots" / self.stray).exists())
-        self.assertTrue((self.repo / "snapshots" / self.pinned / "w.safetensors").exists())
-        self.assertTrue(any("could not read every pin" in ln for ln in body["lines"]), "and says what it missed")
+        self.assertEqual(body["result"].get("deleted"), 0, body)
+        self.assertTrue((self.repo / "snapshots" / self.stray).is_dir())
+        self.assertTrue(any("kept" in ln and "nothing is deleted until a scan reads the clone whole" in ln
+                            for ln in body["lines"]), body["lines"])
+        self.assertIn("nothing was deleted", body["lines"][-1])
 
     def test_what_a_ref_or_a_unit_names_is_kept_and_said(self):
         (self.repo / "refs").mkdir()

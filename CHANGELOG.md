@@ -44,10 +44,11 @@ revision alone and shares nothing with one on v6.57: the two boxes of a pair upd
 **The Library deletes nothing on a scan that missed a pin.** The cockpit reads the pins from the clone's scripts. A
 script read while a checkout rewrote it (gone, empty or cut short) left a pin out, and the scan took the checkpoint that
 pin names for a stray revision: Delete stray revisions would have deleted it, and the Library offered to download what
-was on the disk. The cockpit now reads the pins again when one is missing, as a checkout takes an instant. A scan that
-still misses one says what it missed beside the Scan button, calls no revision of the repositories it could not read
-stray and deletes none of them, offers no download for a target whose pins or parts it did not read (the target reads
-"not read"), and is kept 15 seconds rather than 5 minutes. Found by the reviews of this release; the test that deletes
+was on the disk. The cockpit now reads the pins again when one is missing, and takes a read only when a second one
+finds the same pins: a checkout takes an instant, and a read in its middle can mix two releases. A scan that still
+misses something says what beside the Scan button and deletes nothing. It calls no revision of a repository whose pins
+it could not read stray, offers no download for a target whose pins or parts it did not read (the target reads "not
+read"), and is kept 15 seconds rather than 5 minutes. Found by the reviews of this release; the test that deletes
 nothing fails on v1.48.1.
 
 ## v1.48.1 (2026-11-14): three themes for the cockpit, by x42en, and a vLLM lane stopped while it loads ends stopped
