@@ -51,6 +51,21 @@ it could not read stray, offers no download for a target whose pins or parts it 
 read"), and is kept 15 seconds rather than 5 minutes. Found by the reviews of this release; the test that deletes
 nothing fails on v1.48.1.
 
+**On the reference box, before the push.** The box was installed from this release by the update path: it moved its
+Unsloth GGUF lane from UD-Q4_K_XL to UD-IQ3_XXS and said so, with the way to keep UD-Q4_K_XL. Each target the release
+touches then ran as the cockpit loads it, with the eight real clients (Claude Code, opencode, Hermes, pi, the Anthropic
+SDK, fetch from Node and Bun, LiteLLM): `stock`, `arete`, `flash-unsloth` and `flash-unsloth-iq3`, 32 cells of 32 at
+the first try. Arete served under the lane's unit with its target's KV cache in fp8 and its draft's in bf16, a pool of
+900,668 tokens, ready in 223 s; UD-IQ3_XXS with four windows of 262,144 tokens in q8_0, ready in 41 s (UD-Q4_K_XL in
+51 s). An agent's conversation of six turns was served from the prefix cache from its second turn: on Arete over a
+prompt of 40,000 tokens, the first token in 0.2 s against 23.5 s; on UD-IQ3_XXS over 80,700 tokens, 0.9 s a turn
+against 100 s.
+
+**After the push.** GitHub's CI of `main` passed: 95 steps, none skipped, in 11 min. The reference box then updated
+itself with the README's one-liner from its clone, as a user does: v1.49.0 installed in 1 min 37 s, only the cockpit
+restarted, the 27B lane serving, the eight real clients answering on it, and the cockpit's one banner the one it already
+showed.
+
 ## v1.48.1 (2026-11-14): three themes for the cockpit, by x42en, and a vLLM lane stopped while it loads ends stopped
 
 **Three themes for the cockpit (pull request #71, by x42en).** The cockpit draws every color from role tokens (`--surface`,
