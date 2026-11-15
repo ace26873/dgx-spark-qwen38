@@ -421,7 +421,8 @@ v6.22: an engine that is gone because the box switched to its image lane says so
 text engine is stopped on purpose by that switch and nothing brings it back until someone
 switches back, so "stopped, restarting or still loading (about 9 minutes)" sent clients
 to wait for an engine that was not coming. The error path, and only it, asks systemd
-whether qwen38-image.service is active (at most every 5 s) and names the way back.
+whether an image lane is active (at most every 5 s) and names the way back (v6.58: the two of them,
+qwen38-image and qwen38-image-h3).
 
 v6.21: PROXY_BIND chooses the interface this proxy answers on, and it answered on every
 one of them before. Seven days of journal on the reference box: 8,288 requests, all from

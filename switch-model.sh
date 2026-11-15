@@ -64,7 +64,7 @@ _ENV_HF_CACHE="${HF_CACHE:-}"      # before the pins below give it install.sh's 
 # 27B lane and restarting what follows it, where the usage was all anyone wanted (found
 # in review, 2026-09-24). MODEL_CHOICE= still names one, as install.sh takes it.
 CHOICE="${1:-${MODEL_CHOICE:-}}"
-case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3|image-h3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
+case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
 # --fetch: the target's checkpoint only, fetched as a switch fetches it (the cache first,
 # resumable, its room checked), and nothing else: no unit, no boot, no engine, no record.
 # Library's Download runs it, and a lane installed without its weights gets them so.
@@ -1217,19 +1217,7 @@ if [ "$CHOICE" = "image-h3" ]; then
   H3_HAVE_B="$({ du -s --apparent-size -B1 "$H3_MODEL_DIR/blobs" 2>/dev/null || true; } | cut -f1)"
   H3_NEED=$((WEIGHTS_GB - ${H3_HAVE_B:-0} / 1073741824)); [ "$H3_NEED" -ge 10 ] || H3_NEED=10
   H3_ENC_SNAP="${H3_HF:-$HF_CACHE}/hub/models--${IMAGE_H3_ENCODER_PIN//\//--}/snapshots/$IMAGE_H3_ENCODER_PIN_REV"
-  if ! python3 -I - "$H3_ENC_SNAP" <<'PY'
-import json, pathlib, sys
-snap = pathlib.Path(sys.argv[1])
-for d in (snap / "text_encoder", snap / "FL2VA" / "text_encoder", snap / "Ref2VA" / "text_encoder"):
-    try:
-        shards = set(json.loads((d / "model.safetensors.index.json").read_text())["weight_map"].values())
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        continue
-    if shards and all((d / s).exists() for s in shards):
-        sys.exit(0)
-sys.exit(1)
-PY
-  then H3_NEED=$((H3_NEED + ENCODER_GB)); fi
+  if ! h3_encoder_cached "$H3_ENC_SNAP"; then H3_NEED=$((H3_NEED + ENCODER_GB)); fi
   H3_FREE="$(dl_free_gb "${H3_HF:-$HF_CACHE}")"
   [ "${H3_FREE:-0}" -ge "$H3_NEED" ] \
     || die "not enough room for $H3_MODEL and its text encoder under HF_HOME=${H3_HF:-$HF_CACHE}: ${H3_FREE:-?} GiB free, about $H3_NEED GiB needed (nothing was changed). Free some space first, or point HF_HOME at a bigger disk."

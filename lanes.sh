@@ -425,6 +425,26 @@ flash_unsloth_target(){  # $1 a unit file, $2 install-flash-unsloth.sh
 flash_unsloth_default(){  # $1 install-flash-unsloth.sh
   { sed -n 's/^FLASH_UNSLOTH_DEFAULT="\([a-z0-9-]*\)"$/\1/p' "$1" 2>/dev/null || true; } | head -1   # (the installer may be absent: a pipefail run must not die on the empty answer)
 }
+# Whether the pinned MiniMax-H3 revision already holds the text encoder's 14 shards whole in any of
+# its three text_encoder folders (the root's, FL2VA's or Ref2VA's: the same blobs), so a fetch of
+# text_encoder/ only links what is there. $1 the snapshot folder of the pinned revision. One reading
+# for the lane's installer and the switch: two copies of this heredoc meant a rename by MiniMax
+# fixed one and left the other re-downloading 63 GiB (found in review of v1.50).
+h3_encoder_cached(){  # $1 snapshot dir
+  python3 -I - "$1" <<'PY'
+import json, pathlib, sys
+snap = pathlib.Path(sys.argv[1])
+for d in (snap / "text_encoder", snap / "FL2VA" / "text_encoder", snap / "Ref2VA" / "text_encoder"):
+    try:
+        shards = set(json.loads((d / "model.safetensors.index.json").read_text())["weight_map"].values())
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        continue
+    if shards and all((d / s).exists() for s in shards):
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
 existing(){  # $1 a path
   local p="$1"; while [ ! -e "$p" ]; do p="$(dirname "$p")"; done; printf '%s\n' "$p"
 }

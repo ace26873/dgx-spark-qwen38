@@ -60,7 +60,10 @@ class TheBind(unittest.TestCase):
             self.assertEqual((r.returncode, r.stdout.strip()), (0, f"bind={value}"), r.stderr)
 
     def test_anything_past_loopback_is_refused_with_the_reason(self):
-        for value in ("0.0.0.0", "192.168.1.20", "100.64.0.1", "127.0.0.1;x", "::1"):
+        # 127.0.0.300 is no address: sglang could not bind it and the smoke would burn 20 min on it
+        # (independent review of v1.50)
+        for value in ("0.0.0.0", "192.168.1.20", "100.64.0.1", "127.0.0.1;x", "::1",
+                      "127.0.0.300", "127.0.256.1", "127.1", "127.0.0"):
             r = self.bind(f"'{value}'")
             self.assertEqual(r.returncode, 1, (value, r.stdout))
             self.assertIn("IMAGE_H3_BIND", r.stderr)
@@ -103,3 +106,123 @@ class TheLicenceIsSaidPlainly(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheFlashinferGate(unittest.TestCase):
+    """An update of a complete runtime must NOT re-download the 1.6 GB of FlashInfer wheels: the gate
+    compares importlib.metadata's version with the version the wheel FILE names (a review of v1.50
+    found it comparing "0.7.2" with "0.7.2-py3-none-any.whl", true forever, which also touched the
+    runtime note on every run and made the cockpit claim the serving lane ran older files)."""
+
+    def gate(self, versions):
+        t = pathlib.Path(self.subdir)
+        venv = t / "venv"
+        (venv / "bin").mkdir(parents=True, exist_ok=True)
+        (venv / "bin" / "python").write_text(
+            "#!/bin/sh\n"
+            'case "$3" in\n'    # python -c CODE PKG: the package name reaches the stub third
+            + "".join(f'  {k}) echo {v} ;;\n' for k, v in versions.items())
+            + '  *) echo "" ;;\nesac\n')
+        (venv / "bin" / "python").chmod(0o755)
+        pip = t / "pip-calls.log"
+        (venv / "bin" / "pip").write_text(f'#!/bin/sh\necho pip "$*" >> "{pip}"\n')
+        (venv / "bin" / "pip").chmod(0o755)
+        fakebin = t / "bin"
+        fakebin.mkdir(exist_ok=True)
+        (fakebin / "curl").write_text('#!/bin/sh\nout=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done\n'
+                                      'printf x > "$out"\n')
+        (fakebin / "curl").chmod(0o755)
+        # the wheel FILE names as the installer spells them, digests faked for the stubbed curl
+        import hashlib
+        x = hashlib.sha256(b"x").hexdigest()
+        derives = "\n".join(ln for ln in INST.splitlines()
+                              if re.match(r"^FLASHINFER_(CUBIN|JIT)_VERSION=", ln))
+        self.assertTrue(derives, "install-image-h3.sh no longer derives the versions from the file names")
+        assigns = (
+            'FLASHINFER_CUBIN_FILE="flashinfer_cubin-0.7.2-py3-none-any.whl"\n'
+            f'FLASHINFER_CUBIN_SHA256="{x}"\n'
+            'FLASHINFER_JIT_FILE="flashinfer_jit_cache-0.7.2+cu130-cp39-abi3-manylinux_2_28_aarch64.whl"\n'
+            f'FLASHINFER_JIT_SHA256="{x}"\nFLASHINFER_RELEASE="http://127.0.0.1:1"\n' + derives + "\n")
+        fn_start = INST.index("kernel_version(){")
+        fn_end = INST.index('|| true; }', fn_start) + len('|| true; }')
+        fn = INST[fn_start:fn_end] + "\n"
+        start = INST.index('if [ "$(kernel_version flashinfer-cubin)"')
+        end = INST.index('\nfi\n', INST.index('rm -rf "$WHEELS"\n  touch "$RUNTIME_NOTE"', start)) + len("\nfi\n")
+        block = fn + INST[start:end]
+        script = ("set -uo pipefail\ndie(){ echo \"DIE: $*\" >&2; exit 1; }\n"
+                  f'VENV="{venv}"; RUNTIME_NOTE="{t}/note"; {assigns}\n' + block + 'echo DONE\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                           env={"PATH": f"{fakebin}:/usr/bin:/bin", "HOME": str(t)})
+        return r.returncode, r.stdout + r.stderr, pip.exists(), (t / "note").exists()
+
+    def setUp(self):
+        import tempfile
+        self.subdir = tempfile.mkdtemp(prefix="h3-gate-")
+        self.addCleanup(__import__("shutil").rmtree, self.subdir, True)
+
+    def test_a_complete_runtime_is_left_alone(self):
+        rc, out, pip_called, note = self.gate({"flash-attn-4": "2.8.3",
+                                               "flashinfer-cubin": "0.7.2",
+                                               "flashinfer-jit-cache": "0.7.2+cu130"})
+        self.assertEqual(rc, 0, out)
+        self.assertIn("DONE", out)
+        self.assertNotIn("installing FlashInfer", out, out)
+        self.assertFalse(pip_called, "the 1.6 GB came down again")
+        self.assertFalse(note, "the note must not move: it feeds the cockpit's older-files warning")
+
+    def test_a_missing_package_still_installs(self):
+        rc, out, pip_called, _ = self.gate({"flash-attn-4": "2.8.3", "flashinfer-cubin": "",
+                                            "flashinfer-jit-cache": ""})
+        self.assertEqual(rc, 0, out)
+        self.assertIn("installing FlashInfer", out)
+
+
+class TheNowViewNamesTheServingImagePort(unittest.TestCase):
+    """The Now view must not print Qwen-Image's port while MiniMax-H3-Image serves: it asks the
+    image route, which answers the port of the lane that serves (found in review of v1.50)."""
+
+    def test_no_default_port_for_an_image_lane(self):
+        js = (REPO / "dashboard/static/js/now.js").read_text()
+        self.assertNotIn("IMG_NOW.port || 30020", js)
+        self.assertIn("const IMG_NOW = {label: '', port: null};", js)
+        self.assertIn("fetch('/api/image')", js)
+
+
+class TheEncoderRuleIsReadOnce(unittest.TestCase):
+    """install-image-h3.sh and switch-model.sh asked the same question about MiniMax-H3's text
+    encoder with two copies of one python heredoc: a rename of a partition folder by MiniMax fixes
+    one copy and lets the other re-download 63 GiB (found in review of v1.50; the lanes.sh lesson
+    of 2026-10-16 says the same). One reading, in lanes.sh."""
+
+    def lanes_sh(self):
+        return (REPO / "lanes.sh").read_text()
+
+    def test_both_callers_use_it(self):
+        lanes = self.lanes_sh()
+        self.assertIn("h3_encoder_cached(){", lanes)
+        inst = (REPO / "install-image-h3.sh").read_text()
+        self.assertIn('encoder_cached(){ h3_encoder_cached "$HF_CACHE', inst)
+        sw = (REPO / "switch-model.sh").read_text()
+        self.assertIn('if ! h3_encoder_cached "$H3_ENC_SNAP"; then', sw)
+        self.assertNotIn('FL2VA\" / \"text_encoder', sw, "the switch keeps no copy of the rule")
+
+    def test_the_reading_itself(self):
+        import tempfile, subprocess, os
+        t = pathlib.Path(tempfile.mkdtemp(prefix="h3-enc-"))
+        self.addCleanup(__import__("shutil").rmtree, t, True)
+        snap = t / "snap"
+        def whole(d, names):
+            d.mkdir(parents=True, exist_ok=True)
+            import json
+            (d / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {f"t{i}": n for i, n in enumerate(names)}}))
+            for n in names:
+                (d / n).write_text("x")
+        def ask():
+            r = subprocess.run(["bash", "-c", f'. "{REPO}/lanes.sh"; h3_encoder_cached "{snap}"; echo rc=$?'],
+                               capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "HOME": str(t)})
+            return r.stdout.strip().splitlines()[-1]
+        self.assertEqual(ask(), "rc=1", "an empty snapshot caches nothing")
+        whole(snap / "FL2VA" / "text_encoder", ["e1.safetensors", "e2.safetensors"])
+        self.assertEqual(ask(), "rc=0", "a partition folder holds the same blobs")
+        (snap / "FL2VA" / "text_encoder" / "e2.safetensors").unlink()
+        self.assertEqual(ask(), "rc=1", "a missing shard is not the encoder")

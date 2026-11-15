@@ -1987,7 +1987,18 @@ if [ "$NO_START" -eq 0 ] && [ "$NO_SERVICE" -eq 0 ] && [ "$WANT_VIDEO" -eq 1 ] \
    && ! { command -v ffmpeg && command -v ffprobe; } >/dev/null 2>&1; then
   HOST_PKGS+=(ffmpeg)
 fi
-[ "${#HOST_PKGS[@]}" -eq 0 ] || host_packages "the image and video lanes" "${HOST_PKGS[@]}" || true
+# name the lanes that asked, as the README promises it does (found in review of v1.50); no
+# `if [ "$WANT_<lane>" -eq 1 ]; then` shape here: the lane registry reads those blocks as the
+# installs themselves (one per lane, each running its installer)
+_pk_why=(); [ "$WANT_IMAGE" -eq 1 ] && _pk_why+=("image"); [ "$WANT_VIDEO" -eq 1 ] && _pk_why+=("video")
+[ "$WANT_IMAGE_H3" -eq 1 ] && _pk_why+=("MiniMax-H3-Image")
+case "${#_pk_why[@]}" in
+  0) _pk_reason="" ;;
+  1) _pk_reason="the ${_pk_why[0]} lane" ;;
+  2) _pk_reason="the ${_pk_why[0]} and ${_pk_why[1]} lanes" ;;
+  *) _pk_reason="the ${_pk_why[0]}, ${_pk_why[1]} and ${_pk_why[2]} lanes" ;;
+esac
+[ "${#HOST_PKGS[@]}" -eq 0 ] || host_packages "$_pk_reason" "${HOST_PKGS[@]}" || true
 
 if [ "$UNITS_ONLY" -eq 1 ]; then
   if [ -n "$ATS_CANNOT" ]; then step "2/10 The Flash-Next image: not pulled, as this GPU cannot start the flash lane"

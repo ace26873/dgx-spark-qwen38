@@ -586,7 +586,7 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
 
     def step(self):
         return block(self.TEXT, "HOST_PKGS=()\n# --no-start and --no-service",
-                     '|| host_packages "the image and video lanes" "${HOST_PKGS[@]}" || true')
+                     '|| host_packages "$_pk_reason" "${HOST_PKGS[@]}" || true')
 
     def run_step(self, want_image, want_video, headers, no_start=0, no_service=0, want_image_h3=0):
         box = Box(sudo_n=0)
@@ -613,6 +613,13 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
     def test_a_box_that_has_them_is_asked_nothing(self):
         self.assertEqual(self.run_step(1, 0, headers=True), [])
 
+    def test_the_reason_names_the_lanes_that_asked(self):
+        # host_packages says which lanes need the packages; with the MiniMax-H3-Image lane in the
+        # run it must be said by its name too (found in review of v1.50)
+        t = self.TEXT
+        self.assertIn('_pk_why+=("MiniMax-H3-Image")', t)
+        self.assertIn('_pk_reason="the ${_pk_why[0]}, ${_pk_why[1]} and ${_pk_why[2]} lanes"', t)
+
     def test_the_minimax_h3_image_lane_alone_needs_the_headers_too(self):
         # sglang[diffusion] builds xatlas against them at its first Load, as for the Qwen-Image 2.1 lane (v1.50)
         apt = self.run_step(0, 0, headers=False, want_image_h3=1)
@@ -629,7 +636,7 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
 
     def test_it_comes_after_the_ticket_and_before_the_first_download(self):
         t = self.TEXT
-        at = t.index('host_packages "the image and video lanes"')
+        at = t.index('host_packages "$_pk_reason"')
         self.assertLess(t.index('sudo -v || die "sudo could not be used here'), at)
         self.assertLess(at, t.index('step "2/10'))
 

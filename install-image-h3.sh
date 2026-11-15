@@ -136,6 +136,11 @@ FLASHINFER_RELEASE="https://github.com/flashinfer-ai/flashinfer/releases/downloa
 FLASHINFER_CUBIN_FILE="flashinfer_cubin-0.7.2-py3-none-any.whl"
 FLASHINFER_CUBIN_SHA256="31704fa5b2562d459d34c67cee9e80e0abb96c82f89943d542276d5a92c88079"
 FLASHINFER_JIT_FILE="flashinfer_jit_cache-0.7.2+cu130-cp39-abi3-manylinux_2_28_aarch64.whl"
+# what importlib.metadata answers for each once installed: the file name's own version part
+# (comparing the whole file name was true forever: every update re-downloaded 1.6 GB and touched
+# the runtime note, which kept the cockpit saying the serving lane ran older files; review of v1.50)
+FLASHINFER_CUBIN_VERSION="${FLASHINFER_CUBIN_FILE#flashinfer_cubin-}"; FLASHINFER_CUBIN_VERSION="${FLASHINFER_CUBIN_VERSION%%-*}"
+FLASHINFER_JIT_VERSION="${FLASHINFER_JIT_FILE#flashinfer_jit_cache-}"; FLASHINFER_JIT_VERSION="${FLASHINFER_JIT_VERSION%%-cp*}"
 FLASHINFER_JIT_SHA256="157e74a786c84df49c59cf1d7568a531a8833ec47a58e9fd52de52737705cc21"
 # Loopback only. The runtime has no --api-key, so a bind past loopback puts a keyless image
 # generator on that interface; and at this commit its scheduler, a socket that unpickles what it is
@@ -144,7 +149,11 @@ FLASHINFER_JIT_SHA256="157e74a786c84df49c59cf1d7568a531a8833ec47a58e9fd52de52737
 IMAGE_H3_BIND="${IMAGE_H3_BIND:-$(unit_flag --host)}"; IMAGE_H3_BIND="${IMAGE_H3_BIND:-127.0.0.1}"
 case "$IMAGE_H3_BIND" in
   localhost) ;;
-  127.*) case "$IMAGE_H3_BIND" in *[!0-9.]*|*..*) die "IMAGE_H3_BIND takes an IPv4 loopback address, got: $IMAGE_H3_BIND" ;; esac ;;
+  127.*) case "$IMAGE_H3_BIND" in *[!0-9.]*|*..*) die "IMAGE_H3_BIND takes an IPv4 loopback address, got: $IMAGE_H3_BIND" ;; esac
+         IFS=. read -r -a _h3o <<<"$IMAGE_H3_BIND"; _h3bad=0
+         [ "${#_h3o[@]}" -eq 4 ] || _h3bad=1
+         for _o in ${_h3o[@]+"${_h3o[@]}"}; do case "$_o" in ''|*[!0-9]*) _h3bad=1 ;; *) [ "$_o" -le 255 ] || _h3bad=1 ;; esac; done
+         [ "$_h3bad" = 0 ] || die "IMAGE_H3_BIND takes an IPv4 loopback address, got: $IMAGE_H3_BIND (four dotted octets, each up to 255)" ;;
   *) die "IMAGE_H3_BIND=$IMAGE_H3_BIND: this lane binds loopback only (127.0.0.1 or localhost). It has no API key, and at its SGLang commit its scheduler's unauthenticated socket would follow the address. The cockpit is the door to it." ;;
 esac
 # Its licence's Excluded Territories, said as its weights come and as its unit goes in (docs/image-h3-lane.md).
@@ -262,21 +271,7 @@ WEIGHTS_NEED=$(( (WEIGHTS_GB * 1073741824 - ${HAVE_B:-0}) / 1073741824 )); [ "$W
 # The text encoder: nothing when the pinned revision of MiniMax-H3 holds its 14 shards whole in
 # any of its three text_encoder folders (the root's, FL2VA's or Ref2VA's: the same blobs), since
 # a fetch of text_encoder/ then links the blobs already there.
-encoder_cached(){
-  local snap="$HF_CACHE/hub/models--${IMAGE_H3_ENCODER_PIN//\//--}/snapshots/$IMAGE_H3_ENCODER_PIN_REV"
-  python3 -I - "$snap" <<'PY'
-import json, pathlib, sys
-snap = pathlib.Path(sys.argv[1])
-for d in (snap / "text_encoder", snap / "FL2VA" / "text_encoder", snap / "Ref2VA" / "text_encoder"):
-    try:
-        shards = set(json.loads((d / "model.safetensors.index.json").read_text())["weight_map"].values())
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        continue
-    if shards and all((d / s).exists() for s in shards):
-        sys.exit(0)
-sys.exit(1)
-PY
-}
+encoder_cached(){ h3_encoder_cached "$HF_CACHE/hub/models--${IMAGE_H3_ENCODER_PIN//\//--}/snapshots/$IMAGE_H3_ENCODER_PIN_REV"; }
 ENCODER_NEED="$ENCODER_GB"; encoder_cached && ENCODER_NEED=0
 # --prepare: the weights are the Load's switch's to fetch, and to measure
 if [ "$MODE" = prepare ]; then WEIGHTS_NEED=0; ENCODER_NEED=0; fi
@@ -357,8 +352,8 @@ if [ "$(kernel_version flash-attn-4)" != "$FA4_VERSION" ]; then
     || die "flash-attn-4==$FA4_VERSION would not install (no internet, or PyPI dropped it). Re-run to retry."
   touch "$RUNTIME_NOTE"
 fi
-if [ "$(kernel_version flashinfer-cubin)" != "${FLASHINFER_CUBIN_FILE#flashinfer_cubin-}" ] \
-   || [ "$(kernel_version flashinfer-jit-cache)" != "0.7.2+cu130" ]; then
+if [ "$(kernel_version flashinfer-cubin)" != "$FLASHINFER_CUBIN_VERSION" ] \
+   || [ "$(kernel_version flashinfer-jit-cache)" != "$FLASHINFER_JIT_VERSION" ]; then
   echo "installing FlashInfer's cubins and jit-cache package 0.7.2 (the recipe's, 1.6 GB, each checked by its sha256)"
   WHEELS="$(mktemp -d)"
   for W in "$FLASHINFER_CUBIN_FILE|$FLASHINFER_CUBIN_SHA256" "$FLASHINFER_JIT_FILE|$FLASHINFER_JIT_SHA256"; do

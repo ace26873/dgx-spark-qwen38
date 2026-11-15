@@ -313,7 +313,9 @@ function renderActivity(){
   }
   if (isImageLane(unit)){
     setText('act-title', 'Images'); setText('act-v', IMG_NOW.label ? 'Busy' : 'Idle'); setText('act-k', IMG_NOW.label || 'one image at a time on this lane');
-    facts(fx, [['Up', e.elapsed ? fmtDur(e.elapsed) : null], ['Listens on', `127.0.0.1:${IMG_NOW.port || 30020}, behind this cockpit`]]);
+    facts(fx, [['Up', e.elapsed ? fmtDur(e.elapsed) : null],
+               ['Listens on', IMG_NOW.port ? `127.0.0.1:${IMG_NOW.port}, behind this cockpit` : 'behind this cockpit']]);
+    imgPortAsk();
     return;
   }
   // a text lane
@@ -460,7 +462,18 @@ function renderPair(){
 
 // the facts the spine and the video/image studios share, filled by their own views
 const VID_NOW = {label: '', run: null, port: 30022};
-const IMG_NOW = {label: '', port: 30020};
+// the port belongs to whichever image lane serves (Qwen-Image 2.1 on 30020, MiniMax-H3-Image on
+// 30026): no default may claim one for the other, so the Image view fills it from /api/image and
+// the Now view asks that route once of its own (found in review of v1.50)
+const IMG_NOW = {label: '', port: null};
+let imgPortAsked = false;
+function imgPortAsk(){
+  if (imgPortAsked || IMG_NOW.port) return;
+  imgPortAsked = true;
+  fetch('/api/image').then(r => r.status === 401 ? null : r.json())
+    .then(d => { if (d && d.port) IMG_NOW.port = d.port; })
+    .catch(() => { imgPortAsked = false; });
+}
 
 afterApply(() => {
   renderServing(); renderPool(); renderRack(); renderActivity(); renderVitals(); renderPair();
