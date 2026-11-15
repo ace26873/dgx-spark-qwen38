@@ -419,9 +419,15 @@ try {
         for (const t0 = Date.now(); Date.now() - t0 < 10000 && !existsSync(marker); await sleep(300)) { /* the shell writes it */ }
       }
     }
+    // v2: what was listed, under which location, and what each DELETE answered, said with the count (the bench's
+    // first 2.3.0 runs read 0 with no error, 2026-11-15: an empty list or a refused DELETE, told apart here)
     ptys = await t.evalJs(v2
-      ? `fetch(${JSON.stringify('/api/pty?' + locQ)}).then(r => r.json()).then(async j => { let n = 0; for (const s of (j.data || [])) {
-          if (s && s.id && (await fetch('/api/pty/' + s.id + ${JSON.stringify('?' + locQ)}, { method: 'DELETE' })).ok) n++; } return n; }).catch(e => -1)`
+      ? `fetch(${JSON.stringify('/api/pty?' + locQ)}).then(r => r.json()).then(async j => { let n = 0; const said = [];
+          for (const s of (j.data || [])) { if (!(s && s.id)) continue;
+            const r = await fetch('/api/pty/' + s.id + ${JSON.stringify('?' + locQ)}, { method: 'DELETE' });
+            said.push(r.status); if (r.ok) n++; }
+          ptyWhy = 'listed ' + (j.data || []).length + ' under ' + JSON.stringify(j.location) + ', DELETE ' + (said.join(',') || 'none');
+          return n; }).catch(e => -1)`
       : `fetch(${JSON.stringify('/pty?' + dirQ)}).then(r => r.json()).then(async l => { let n = 0; for (const s of (l || [])) {
           if (s && s.id && (await fetch('/pty/' + s.id + ${JSON.stringify('?' + dirQ)}, { method: 'DELETE' })).ok) n++; } return n; }).catch(e => -1)`);
     gone = await t.evalJs(v2 ? `fetch('/api/session/${sid}', { method: 'DELETE' }).then(r => r.status).catch(e => 'err ' + e)`
@@ -432,7 +438,8 @@ try {
      hs.map(m => m.params.response.status).join(',') || 'no handshake');
   ok('terminal: a command typed in it runs in the shell', existsSync(marker) && readFileSync(marker, 'utf8').trim() === 'AGENT-BENCH-42',
      focused ? (existsSync(marker) ? readFileSync(marker, 'utf8').trim() : 'no marker') : 'the terminal never held the focus: nothing typed');
-  ok('terminal: its session is removed through the relay', ptys >= 1, String(ptys));
+  ok('terminal: its session is removed through the relay', ptys >= 1,
+     v2 ? `${ptys} (${await t.evalJs('typeof ptyWhy === "string" ? ptyWhy : "no answer"').catch(() => 'unread')})` : String(ptys));
   ok('terminal: the empty session is deleted through the relay', gone === 200 || gone === 204, String(gone));
   ok('terminal: the pages raised no exception', t.jsErrors().length === 0, t.jsErrors().join(' | '));
 
