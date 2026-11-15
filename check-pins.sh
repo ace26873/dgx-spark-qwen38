@@ -44,7 +44,7 @@ eval "$pins"
 # The pins that do not live in the pin block: opencode's release and its digest, and the
 # image lane's checkpoint, source commit and wheel. None of them was checked, so a release
 # or a commit removed upstream went unseen (found in review, 2026-09-24).
-more="$(grep -E '^(OPENCODE_VERSION|OPENCODE_SHA256)=' "$REPO_DIR/install.sh")"
+more="$(grep -E '^(OPENCODE_VERSION|OPENCODE_SHA256|OPENCODE2_VERSION|OPENCODE2_SHA256)=' "$REPO_DIR/install.sh")"
 eval "$more"
 lane="$(grep -E '^(IMAGE_MODEL_PIN|IMAGE_MODEL_PIN_REV|IMAGE_TURBO_PIN|IMAGE_TURBO_PIN_REV|PIN|WHEEL)=' "$REPO_DIR/install-image.sh")"
 eval "$lane"
@@ -449,6 +449,8 @@ check_wheel  sglang-wheel-image-h3 sglang "$IMAGE_H3_WHEEL"
 check_wheel  image-h3-fa4   flash-attn-4 "$FA4_VERSION"
 check_asset  image-h3-cubin flashinfer-ai/flashinfer "$FLASHINFER_TAG" "$FLASHINFER_CUBIN_FILE" "$FLASHINFER_CUBIN_SHA256"
 check_asset  image-h3-jit   flashinfer-ai/flashinfer "$FLASHINFER_TAG" "$FLASHINFER_JIT_FILE" "$FLASHINFER_JIT_SHA256"
+# the --opencode 2 choice (opt-in, decision 1386): the same repo, the v2 tag, checked the same way
+check_asset  opencode2      anomalyco/opencode "v$OPENCODE2_VERSION" opencode-linux-arm64.tar.gz "$OPENCODE2_SHA256"
 echo "Kolibri-1 lane"
 check_model  kolibri-fp8    "$KOLIBRI_FP8_REPO"   "$KOLIBRI_FP8_REV"
 check_model  kolibri-nvfp4  "$KOLIBRI_NVFP4_REPO" "$KOLIBRI_NVFP4_REV"

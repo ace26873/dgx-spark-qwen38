@@ -22,6 +22,7 @@ import unittest
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "check-pins.sh"
 OC_SHA = re.search(r'^OPENCODE_SHA256="\$\{OPENCODE_SHA256:-([0-9a-f]{64})\}"', (REPO / "install.sh").read_text(), re.M).group(1)
+OC2_SHA = re.search(r'^OPENCODE2_SHA256="\$\{OPENCODE2_SHA256:-([0-9a-f]{64})\}"', (REPO / "install.sh").read_text(), re.M).group(1)
 SPEECH = (REPO / "install-speech.sh").read_text()
 
 
@@ -112,8 +113,10 @@ elif body is None and url.startswith("https://pypi.nvidia.com/"):
     body = "".join('<a href="%s#sha256=%s">%s</a><br/>\n' % (f, "0" * 64, f) for f in up.get("nvidia", {}).get(url.split("/")[3], []))
 elif body is None and "/releases/tags/" in url:
     repo = url.split("/repos/", 1)[1].split("/releases/", 1)[0]
+    tag = url.split("/releases/tags/")[-1]
+    sha = os.environ.get("FAKE_OC_SHA2", "") if tag.startswith("v2") else os.environ.get("FAKE_OC_SHA", "")
     body = json.dumps({"assets": up.get("assets", {}).get(repo) or [{"name": "opencode-linux-arm64.tar.gz",
-                                   "digest": "sha256:" + os.environ.get("FAKE_OC_SHA", "")}]})
+                                   "digest": "sha256:" + sha}]})
 elif body is None and url.startswith("https://huggingface.co/") and url.rsplit("/", 1)[-1] in up.get("lfs", {}):
     body = "version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize 804749248\n" % up["lfs"][url.rsplit("/", 1)[-1]]
 elif body is None and "/manifests/" in url:
@@ -150,7 +153,7 @@ class PinsBase(unittest.TestCase):
         # a cloud review, 2026-10-18, in a container that exports it)
         env = {k: v for k, v in os.environ.items() if k not in ("HF_TOKEN", "GITHUB_TOKEN")}
         env.update(PATH=f"{self.bin}:{env['PATH']}", FAKE_PINS=json.dumps(scenario or {}),
-                   FAKE_LOG=str(self.log), FAKE_OC_SHA=OC_SHA)
+                   FAKE_LOG=str(self.log), FAKE_OC_SHA=OC_SHA, FAKE_OC_SHA2=OC2_SHA)
         if token is not None:
             env["HF_TOKEN"] = token
         r = subprocess.run(["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True,
@@ -202,12 +205,12 @@ class TheCheckPins(PinsBase):
         address is shared, and both tries of 2026-10-02 got 403 with the limit spent."""
         env_tok = "ghs_secretvalue456"
         env = {k: v for k, v in os.environ.items() if k not in ("HF_TOKEN", "GITHUB_TOKEN")}
-        env.update(PATH=f"{self.bin}:{env['PATH']}", FAKE_PINS="{}", FAKE_LOG=str(self.log), FAKE_OC_SHA=OC_SHA,
+        env.update(PATH=f"{self.bin}:{env['PATH']}", FAKE_PINS="{}", FAKE_LOG=str(self.log), FAKE_OC_SHA=OC_SHA, FAKE_OC_SHA2=OC2_SHA,
                    GITHUB_TOKEN=env_tok)
         r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         gh = [c for c in self.calls() if c["url"].startswith("https://api.github.com/")]
-        self.assertEqual(len(gh), 9, gh)          # the three source commits, the opencode release, llama.cpp's commit, Kokoro's release and FlashInfer's, once per file
+        self.assertEqual(len(gh), 10, gh)          # the three source commits, the two opencode releases (1.x and the --opencode 2 pin), llama.cpp's commit, Kokoro's release and FlashInfer's, once per file
         for c in gh:
             self.assertIn(f"Authorization: Bearer {env_tok}", c["stdin"], c)
             self.assertFalse(any(env_tok in a for a in c["argv"]), c["argv"])
@@ -300,7 +303,7 @@ class ThePinsOutsideThePinBlock(PinsBase):
     def test_they_are_all_checked(self):
         rc, out = self.run_pins()
         self.assertEqual(rc, 0, out)
-        for label in ("qwen-image", "qwen-image-turbo", "sglang-source", "sglang-wheel", "opencode"):
+        for label in ("qwen-image", "qwen-image-turbo", "sglang-source", "sglang-wheel", "opencode", "opencode2"):
             self.assertIn("ok", self.line(out, label), out)
         self.assertTrue(any("Qwen/Qwen-Image-2.1/raw/790c9263" in c["url"] and c["url"].endswith("/model_index.json")
                             for c in self.calls()), "the image checkpoint is asked for at its pinned revision")
@@ -580,7 +583,7 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
         for label in self.GITHUB:
             self.assertIn("HTTP 504 from the GitHub API, so not checked", self.line(out, label), out)
             self.assertNotIn("no such", self.line(out, label), out)
-        self.assertIn("9 of 68 pins could not be asked about", out)
+        self.assertIn("10 of 69 pins could not be asked about", out)
         self.assertIn("run it again before re-pinning anything", out)
         self.assertNotIn("A removed upstream revision", out)
 

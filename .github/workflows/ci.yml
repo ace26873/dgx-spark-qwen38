@@ -90,7 +90,7 @@ jobs:
           py=$(git ls-files '*.py' ':!flash-sglang/')
           [ "$(echo "$py" | wc -l)" -ge 100 ] || { echo "found only: $py"; exit 1; }
           ruff check --select F,E9 $py
-          python3 -m py_compile patch-template.py patch-yarn.py patch-kv.py keepalive-proxy.py engine-inputs.py oc-merge-limits.py oc-point-default.py oc-fit-limits.py bench-agent.py conc-check.py build-token-map.py tools-check.py systemone-check.py bench-systemone.py evals/mmlu.py evals/humaneval.py flash-sglang/qwen4_exp.py flash-sglang/qwen_sparse_attn_backend.py flash-sglang/sm121_varlen.py dashboard/cockpit.py dashboard/lifecycle.py dashboard/recipes.py dashboard/registry.py dashboard/agent_relay.py
+          python3 -m py_compile patch-template.py patch-yarn.py patch-kv.py keepalive-proxy.py engine-inputs.py oc-merge-limits.py oc-point-default.py oc-fit-limits.py bench-agent.py conc-check.py build-token-map.py tools-check.py systemone-check.py bench-systemone.py evals/mmlu.py evals/humaneval.py flash-sglang/qwen4_exp.py flash-sglang/qwen_sparse_attn_backend.py flash-sglang/sm121_varlen.py dashboard/cockpit.py dashboard/lifecycle.py dashboard/recipes.py dashboard/registry.py dashboard/agent_relay.py oc-permissions.py
 
       - name: Pin contracts (every consumer's own block runs against install.sh)
         run: |
@@ -1341,20 +1341,24 @@ jobs:
           pip install 'jinja2==3.1.6'
           "$(./tests/testpy.sh jinja2)" tests/lane-templates-check.py
 
-      - name: The pinned opencode release is the one its sha256 names
-        # install.sh installs this exact asset on every box that has no opencode or an
-        # older one, and refuses a download that does not match. A pin bumped without
-        # its checksum, or a release asset replaced upstream, fails here instead of on a
-        # user's box. The asset itself is checked, not the API's word for it.
+      - name: The pinned opencode releases are the ones their sha256 name
+        # install.sh installs these exact assets, and refuses a download that does not match:
+        # 1.x is the pin of every box, the --opencode 2 choice (opt-in, decision 1386) is pinned
+        # the same way on the same repo. A pin bumped without its checksum, or a release asset
+        # replaced upstream, fails here instead of on a user's box. The asset itself is checked,
+        # not the API's word for it.
         run: |
-          v=$(grep -oE '^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-[0-9.]+\}"' install.sh | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          sha=$(grep -oE '^OPENCODE_SHA256="\$\{OPENCODE_SHA256:-[0-9a-f]{64}\}"' install.sh | grep -oE '[0-9a-f]{64}')
-          test -n "$v" && test -n "$sha" || { echo "install.sh no longer declares OPENCODE_VERSION and OPENCODE_SHA256 the way this step reads them"; exit 1; }
-          d=$(mktemp -d)
-          curl -fsSL --retry 3 -o "$d/oc.tar.gz" "https://github.com/anomalyco/opencode/releases/download/v$v/opencode-linux-arm64.tar.gz"
-          echo "$sha  $d/oc.tar.gz" | sha256sum -c --quiet -
-          tar -tzf "$d/oc.tar.gz" | grep -qx opencode || { echo "the asset no longer holds an opencode binary at its top"; exit 1; }
-          echo "opencode $v: the release asset matches its pinned sha256"
+          for pair in "OPENCODE_VERSION OPENCODE_SHA256" "OPENCODE2_VERSION OPENCODE2_SHA256"; do
+            set -- $pair
+            v=$(grep -oE "^$1=\"\\$\\{$1:-[0-9.]+\\}\"" install.sh | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+            sha=$(grep -oE "^$2=\"\\$\\{$2:-[0-9a-f]{64}\\}\"" install.sh | grep -oE '[0-9a-f]{64}')
+            test -n "$v" && test -n "$sha" || { echo "install.sh no longer declares $1 and $2 the way this step reads them"; exit 1; }
+            d=$(mktemp -d)
+            curl -fsSL --retry 3 -o "$d/oc.tar.gz" "https://github.com/anomalyco/opencode/releases/download/v$v/opencode-linux-arm64.tar.gz"
+            echo "$sha  $d/oc.tar.gz" | sha256sum -c --quiet -
+            tar -tzf "$d/oc.tar.gz" | grep -qx opencode || { echo "the asset of $1 no longer holds an opencode binary at its top"; exit 1; }
+            echo "opencode $v ($1): the release asset matches its pinned sha256"
+          done
 
       - name: House typography (no em/en dashes in tracked files)
         run: |
@@ -1634,7 +1638,7 @@ jobs:
           # never run there. The gate caught exactly that on the first push. Note
           # that lifecycle.py and recipes.py read 100% in both, which is what
           # being pure logic buys.
-          FLOORS = {"cockpit.py": 68, "agent_relay.py": 88, "registry.py": 88,
+          FLOORS = {"cockpit.py": 68, "agent_relay.py": 88, "oc-permissions.py": 88, "registry.py": 88,
                     "lifecycle.py": 100, "recipes.py": 100}
           TOTAL_FLOOR = 89
           got, bad = {}, []
