@@ -17,6 +17,7 @@ from the units the test says are enabled.
 """
 import atexit
 import datetime
+import importlib.util
 import json
 import os
 import pathlib
@@ -90,13 +91,23 @@ def walled(script="install.sh", at=None, after=False, units=None):
     # and boxmem.py (since the 64 GB DGX Spark), which says the box's memory class
     (d / "boxmem.py").write_text((REPO / "boxmem.py").read_text())
     # and the side lanes' installers, whose defaults it recommends (since v1.36.0): read only,
-    # so written without the execute bit, and a run that reached one would stop on it
-    for side in ("install-kolibri.sh", "install-image.sh", "install-video.sh"):
+    # so written without the execute bit, and a run that reached one would stop on it. Every one
+    # conformity.py reads (its SIDE), not a list of them here: kept by hand, it missed the Unsloth
+    # GGUF lane's (v1.49.0), and the list before step 1 failed on any box with that lane's unit
+    for side in side_installers():
         (d / side).write_text((REPO / side).read_text())
     # and the head of the CHANGELOG, whose first heading names the release the list before
     # step 1 compares the box with (since v1.36.0)
     (d / "CHANGELOG.md").write_text("".join((REPO / "CHANGELOG.md").read_text().splitlines(keepends=True)[:3]))
     return str(copy)
+
+
+def side_installers():
+    """The installers conformity.py reads its side lanes' values from (its SIDE), sorted."""
+    spec = importlib.util.spec_from_file_location("conformity_for_the_wall", REPO / "conformity.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return sorted({script for script, _ in mod.SIDE.values()})
 
 
 def units_dir(units=None):
