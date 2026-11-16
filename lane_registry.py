@@ -123,6 +123,13 @@ LANES = {
               "targets": ("lfm25",), "heavy_64": (),
               "served": "lfm2.5-24b-a2b", "provider": "lfm25", "ports": (TEXT_PORT,), "fits_64": False,
               "title": "Liquid AI LFM2.5 24B-A2B"},
+    # install-lfm3.sh: vLLM's own nightly image (60bd6dd, by its digest), Liquid AI's official NVFP4 of LFM3 1.7B, on
+    # the text lanes' port behind the proxy; LFM3_SERVED lfm3-1.7b
+    "lfm3": {"unit": "qwen38-lfm3.service", "installer": "install-lfm3.sh", "flags": True, "kind": "text",
+             "engine": "vllm", "b12x": False,
+             "targets": ("lfm3",), "heavy_64": (),
+             "served": "lfm3-1.7b", "provider": "lfm3", "ports": (TEXT_PORT,), "fits_64": False,
+             "title": "Liquid AI LFM3"},
     # install-speech.sh: on the CPU beside any lane, PORT 30024 (SPEECH_PORT) and its recognizer on the
     # next one (ASR_PORT); no switch target, no official name of its own (it is "the speech lane")
     "speech": {"unit": "qwen38-speech.service", "installer": "install-speech.sh", "flags": False, "kind": "speech",

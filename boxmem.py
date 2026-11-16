@@ -31,10 +31,11 @@ MIN_64_GIB = 48
 # budget; MiniMax-H3-Image peaked at 92.3 GB and its recipe asks 106 GiB free at its start
 # (docs/image-h3-lane.md); the NVIDIA Nemotron Transcribe lane was measured on a 128 GB box only
 # (2026-11-14): no 64 GB run, so none is claimed; nor was the Liquid AI LFM2.5 24B-A2B lane, which left 24 GiB
-# available at its lowest on a 128 GB box (2026-11-14).
+# available at its lowest on a 128 GB box (2026-11-14), nor the Liquid AI LFM3 lane, whose share of 0.75 of the memory
+# the engine sees is about 91 GiB on a 128 GB box: no 64 GB share was measured.
 FITS_64 = ("27b", "nemotron", "speech")
 LANES = ("27b", "flash", "image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local",
-         "ornith-122b", "flash-unsloth", "image-h3", "transcribe", "lfm25", "speech")
+         "ornith-122b", "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "speech")
 # Each target switch-model.sh and MODEL_CHOICE name, and its lane.
 TARGETS = {"stock": "27b", "uncensored": "27b", "fp8": "27b", "uncensored-fp8": "27b", "arete": "27b",
            "flash": "flash", "flash-nvda": "flash", "flash-uncensored": "flash",
@@ -43,7 +44,7 @@ TARGETS = {"stock": "27b", "uncensored": "27b", "fp8": "27b", "uncensored-fp8": 
            "nemotron-super": "nemotron-super", "flash-local": "flash-local", "ornith-122b": "ornith-122b",
            "flash-unsloth": "flash-unsloth", "flash-unsloth-iq3": "flash-unsloth",
            "image-h3": "image-h3", "transcribe": "transcribe",
-           "lfm25": "lfm25"}
+           "lfm25": "lfm25", "lfm3": "lfm3"}
 # Targets of a lane that fits, which a 64 GB box still does not take: Qwen's FP8 weights of the 27B
 # (30.9 GB against 21.9 GB for NVFP4) leave its KV pool too little, and no 64 GB run measured them.
 # Arete's NVFP4 (21.1 GB) weighs less than RadixArk's and takes the same KV cache: it goes where that one goes.

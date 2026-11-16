@@ -552,6 +552,8 @@ WITH_TRANSCRIBE=0
 NO_TRANSCRIBE=0
 WITH_LFM25=0
 NO_LFM25=0
+WITH_LFM3=0
+NO_LFM3=0
 ALL_WEIGHTS=0
 PLAN_ONLY=0
 # --recommended (v1.36.0): every setting the list before step 1 compares, but the site's (the
@@ -596,6 +598,8 @@ for arg in "$@"; do
     --no-transcribe) NO_TRANSCRIBE=1 ;;
     --with-lfm25) WITH_LFM25=1 ;;
     --no-lfm25) NO_LFM25=1 ;;
+    --with-lfm3) WITH_LFM3=1 ;;
+    --no-lfm3) NO_LFM3=1 ;;
     --all-weights) ALL_WEIGHTS=1 ;;
     --with-claude-warmup)
       echo "NOTE: --with-claude-warmup was removed in v1.3 (the repo's client story moved to opencode)."
@@ -614,6 +618,7 @@ Usage: ./install.sh [--no-start] [--no-service] [--no-opencode | --with-opencode
                    [--no-image-h3 | --with-image-h3]
                    [--no-transcribe | --with-transcribe]
                    [--no-lfm25 | --with-lfm25]
+                   [--no-lfm3 | --with-lfm3]
                    [--all-weights] [--plan] [--recommended]
 
 Run it as yourself. Never with sudo in front: it calls sudo itself for the
@@ -640,9 +645,10 @@ model, on llama.cpp, 90), the MiniMax-H3-Image lane (MiniMax's image
 model, up to 16.9 megapixels, its text encoder the video lane's: 84 beside
 it, else 151), the NVIDIA Nemotron Transcribe lane (NVIDIA's speech
 recognizer, on llama.cpp, in the Unsloth GGUF lane's image: 37 beside it,
-else 45) and the Liquid AI LFM2.5 24B-A2B lane (Liquid AI's mixture of
+else 45), the Liquid AI LFM2.5 24B-A2B lane (Liquid AI's mixture of
 experts and its draft, on SGLang, in the 27B lane's image: 26 beside it,
-else 74). The lane that serves proves it serves before the run ends; on a new box the 27B takes 58 GB
+else 74) and the Liquid AI LFM3 lane (Liquid AI's LFM3 1.7B, on vLLM's
+own nightly image: 41). The lane that serves proves it serves before the run ends; on a new box the 27B takes 58 GB
 of disk, about 39 GB of
 downloads (about 6 to 7 minutes at 100 MB/s). A lane installed whole (--all-weights, --with-<lane>)
 that does not fit on the disk is left out and named at the end, with the
@@ -708,13 +714,16 @@ without a terminal.
   --no-lfm25            leave the Liquid AI LFM2.5 24B-A2B lane (SGLang, 74 GB) out of
                         this run, the same way (./install-lfm25.sh --uninstall)
   --with-lfm25          install it whole now and prove it
+  --no-lfm3             leave the Liquid AI LFM3 lane (vLLM, 41 GB) out of this run,
+                        the same way (./install-lfm3.sh --uninstall)
+  --with-lfm3           install it whole now and prove it
   --all-weights         install every lane whole now (the flash beside the 27B,
                         the image, video, Kolibri, both Nemotron, the Flash
                         FP4-Local, the Ornith, the Unsloth GGUF, the
-                        MiniMax-H3-Image, the NVIDIA Nemotron Transcribe and
-                        the Liquid AI LFM2.5 24B-A2B lanes), runtime and
-                        weights, about 1194 GB of disk (1227 with the cache on
-                        another disk), and prove each new one
+                        MiniMax-H3-Image, the NVIDIA Nemotron Transcribe, the
+                        Liquid AI LFM2.5 24B-A2B and the Liquid AI LFM3 lanes),
+                        runtime and weights, about 1235 GB of disk (1268 with
+                        the cache on another disk), and prove each new one
                         (without it, each is prepared at its first Load from
                         the cockpit; --with-<lane> does the same for that one
                         lane)
@@ -861,6 +870,7 @@ ORNITH_122B_UNIT_PATH="/etc/systemd/system/qwen38-ornith-122b.service"
 FLASH_UNSLOTH_UNIT_PATH="/etc/systemd/system/qwen38-flash-unsloth.service"
 TRANSCRIBE_UNIT_PATH="/etc/systemd/system/qwen38-transcribe.service"
 LFM25_UNIT_PATH="/etc/systemd/system/qwen38-lfm25.service"
+LFM3_UNIT_PATH="/etc/systemd/system/qwen38-lfm3.service"
 for _p in "$SGL_UNIT_PATH" "$FLASH_UNIT_PATH"; do
   if [ -f "$_p" ] && [ ! -r "$_p" ]; then
     echo "NOTE: an installed unit ($_p) exists but is not readable (pre-v1.2.3 installs used mode 600),"
@@ -1082,7 +1092,21 @@ if [ -z "$SECONDARY" ] && systemctl is-enabled --quiet qwen38-lfm25.service 2>/d
     echo "without making one of them the boot lane again. Switch from the cockpit when you want another."
   fi
 fi
-SIDE_BOOT=$((IMAGE_BOOT + VIDEO_BOOT + KOLIBRI_BOOT + NEMOTRON_BOOT + NEMOTRON_SUPER_BOOT + FLASH_LOCAL_BOOT + ORNITH_122B_BOOT + FLASH_UNSLOTH_BOOT + IMAGE_H3_BOOT + TRANSCRIBE_BOOT + LFM25_BOOT))
+# And the Liquid AI LFM3 lane, under the same promise.
+LFM3_BOOT=0
+if [ -z "$SECONDARY" ] && systemctl is-enabled --quiet qwen38-lfm3.service 2>/dev/null \
+   && [ "$SGL_ENABLED" -eq 0 ] && [ "$FLASH_ENABLED" -eq 0 ]; then
+  if [ -n "$_ENV_MODEL_CHOICE" ]; then
+    echo "MODEL_CHOICE=$_ENV_MODEL_CHOICE given on a box booting the Liquid AI LFM3 lane: making that text lane the boot lane again."
+  elif [ "$RECOMMENDED" -eq 1 ]; then
+    echo "--recommended on a box booting the Liquid AI LFM3 lane: the 27B lane becomes the boot lane again, as on a new box."
+  else
+    LFM3_BOOT=1
+    echo "The Liquid AI LFM3 lane is this box's boot lane: this run brings the other lanes up to date"
+    echo "without making one of them the boot lane again. Switch from the cockpit when you want another."
+  fi
+fi
+SIDE_BOOT=$((IMAGE_BOOT + VIDEO_BOOT + KOLIBRI_BOOT + NEMOTRON_BOOT + NEMOTRON_SUPER_BOOT + FLASH_LOCAL_BOOT + ORNITH_122B_BOOT + FLASH_UNSLOTH_BOOT + IMAGE_H3_BOOT + TRANSCRIBE_BOOT + LFM25_BOOT + LFM3_BOOT))
 # Which text lane to bring up to date on that path. Both text units can be on disk with
 # neither enabled, since a switch to a side lane disables both, so enablement cannot say which
 # one was in use; switch-model.sh writes it down instead (lanes.sh: one record since v1.30, the
@@ -1470,6 +1494,9 @@ fi
 if [ "$NO_LFM25" -eq 1 ] && [ "$WITH_LFM25" -eq 1 ]; then
   printf -- '--no-lfm25 and --with-lfm25 contradict each other (drop one flag)\n' >&2; exit 1
 fi
+if [ "$NO_LFM3" -eq 1 ] && [ "$WITH_LFM3" -eq 1 ]; then
+  printf -- '--no-lfm3 and --with-lfm3 contradict each other (drop one flag)\n' >&2; exit 1
+fi
 
 # --no-start and --no-service both return before the image step, so the flag would be
 # accepted and silently do nothing. Say so here rather than at the end of a long install.
@@ -1528,6 +1555,11 @@ if [ "$WITH_LFM25" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]
   printf -- 'Run ./install.sh without --no-start/--no-service, or ./install-lfm25.sh on its own.\n' >&2
   exit 1
 fi
+if [ "$WITH_LFM3" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
+  printf -- '--with-lfm3 needs the full install: it installs a systemd unit and proves it serves.\n' >&2
+  printf -- 'Run ./install.sh without --no-start/--no-service, or ./install-lfm3.sh on its own.\n' >&2
+  exit 1
+fi
 # the same for the whole box: --no-service did none of it, --no-start the other text lane alone
 # (found in review, 2026-10-15)
 if [ "$ALL_WEIGHTS" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
@@ -1574,7 +1606,7 @@ lane_title(){  # $1 a lane, by its flag's name: the name a run says
     nemotron-super) echo "Nemotron 3.5 Super VL" ;; flash-local) echo "Qwen3.8 Flash-Next FP4-Local" ;;
     ornith-122b) echo "Ornith 1.5 122B" ;; flash-unsloth) echo "Qwen3.8 Flash-Next Unsloth GGUF" ;;
     image-h3) echo "MiniMax-H3-Image" ;; transcribe) echo "NVIDIA Nemotron Transcribe" ;;
-    lfm25) echo "Liquid AI LFM2.5 24B-A2B" ;;
+    lfm25) echo "Liquid AI LFM2.5 24B-A2B" ;; lfm3) echo "Liquid AI LFM3" ;;
     *) echo "$1" ;;
   esac
 }
@@ -1604,7 +1636,7 @@ serves_anyway(){ [ "$1" = "$LANE" ] && [ "$SIDE_BOOT" -eq 0 ]; }   # $1 a lane l
 # Said of it, without "brought up to date": on a GPU outside its ATS mode the flash lane that serves
 # gets its units only, and the run then says so (issue #54; both said, found in review, 2026-10-21).
 serves_said(){ echo "The ${1/27b/27B} lane is the one this run serves: --no-$1 leaves nothing out of it."; }
-WANT_IMAGE=0; WANT_VIDEO=0; WANT_FLASH=0; WANT_27B=0; WANT_KOLIBRI=0; WANT_NEMOTRON=0; WANT_NEMOTRON_SUPER=0; WANT_FLASH_LOCAL=0; WANT_ORNITH_122B=0; WANT_FLASH_UNSLOTH=0; WANT_IMAGE_H3=0; WANT_TRANSCRIBE=0; WANT_LFM25=0
+WANT_IMAGE=0; WANT_VIDEO=0; WANT_FLASH=0; WANT_27B=0; WANT_KOLIBRI=0; WANT_NEMOTRON=0; WANT_NEMOTRON_SUPER=0; WANT_FLASH_LOCAL=0; WANT_ORNITH_122B=0; WANT_FLASH_UNSLOTH=0; WANT_IMAGE_H3=0; WANT_TRANSCRIBE=0; WANT_LFM25=0; WANT_LFM3=0
 TOO_BIG=()
 if [ -z "$SECONDARY" ]; then
   lane_wanted image "$NO_IMAGE" "$WITH_IMAGE"; WANT_IMAGE="$WANT"
@@ -1620,6 +1652,7 @@ if [ -z "$SECONDARY" ]; then
   lane_wanted image-h3 "$NO_IMAGE_H3" "$WITH_IMAGE_H3"; WANT_IMAGE_H3="$WANT"
   lane_wanted transcribe "$NO_TRANSCRIBE" "$WITH_TRANSCRIBE"; WANT_TRANSCRIBE="$WANT"
   lane_wanted lfm25 "$NO_LFM25" "$WITH_LFM25"; WANT_LFM25="$WANT"
+  lane_wanted lfm3 "$NO_LFM3" "$WITH_LFM3"; WANT_LFM3="$WANT"
 fi
 # The Unsloth GGUF lane's target: its installer keeps the one its unit serves, and UD-Q4_K_XL (flash-unsloth) is what
 # v1.48 installed by default. Such a unit moves to the default since v1.49.0, UD-IQ3_XXS (decision 1376), as an old
@@ -1725,7 +1758,7 @@ side_gguf_begun(){  # $1 the lane's unit
   [ -n "$dir" ] && [ -n "$hf" ] && [ -d "$hf/hub/$dir" ]
 }
 side_begun(){  # $1 lane (image, video, kolibri, nemotron, nemotron-super, flash-local, ornith-122b, flash-unsloth, image-h3,
-               # transcribe, lfm25)
+               # transcribe, lfm25, lfm3)
   case "$1" in
     image|video|image-h3) [ -x "$(side_lane_dir "$1")/venv/bin/python" ] ;;
     kolibri) side_kolibri_image ;;
@@ -1736,6 +1769,7 @@ side_begun(){  # $1 lane (image, video, kolibri, nemotron, nemotron-super, flash
     flash-unsloth) side_gguf_begun "$FLASH_UNSLOTH_UNIT_PATH" ;;
     transcribe) side_gguf_begun "$TRANSCRIBE_UNIT_PATH" ;;
     lfm25) side_pulled_begun "$LFM25_UNIT_PATH" ;;
+    lfm3) side_pulled_begun "$LFM3_UNIT_PATH" ;;
     *) return 1 ;;
   esac
 }
@@ -2142,6 +2176,8 @@ if [ -z "$SECONDARY" ] && ss -tlnH 2>/dev/null | awk '{print $4}' | grep -q ":$P
     echo "Note: the Qwen3.8 Flash-Next Unsloth GGUF lane is serving on :$PORT; this run updates the lanes beside it."
   elif docker inspect qwen38-lfm25 --format '{{join .Args " "}}' 2>/dev/null | grep -qE -- "--port ${PORT}(\s|$)"; then
     echo "Note: the Liquid AI LFM2.5 24B-A2B lane is serving on :$PORT; this run updates the lanes beside it."
+  elif docker inspect qwen38-lfm3 --format '{{join .Args " "}}' 2>/dev/null | grep -qE -- "--port ${PORT}(\s|$)"; then
+    echo "Note: the Liquid AI LFM3 lane is serving on :$PORT; this run updates the lanes beside it."
   else
     die "Port $PORT is already in use by another program (see: ss -tlnp | grep :$PORT). Free it, or install with PORT=<other> ./install.sh"
   fi
@@ -2703,7 +2739,7 @@ OC_PORT="$PROXY_PORT"
 # box (nobody should be offered a model that nothing serves); the model being
 # installed right now always appears. The default model is the one being
 # installed. json.dump writes the file: no hand-escaping.
-OC_27B=0; OC_FLASH=0; OC_KOLIBRI=0; OC_NEMOTRON=0; OC_NEMOTRON_SUPER=0; OC_FLASH_LOCAL=0; OC_ORNITH_122B=0; OC_FLASH_UNSLOTH=0; OC_LFM25=0
+OC_27B=0; OC_FLASH=0; OC_KOLIBRI=0; OC_NEMOTRON=0; OC_NEMOTRON_SUPER=0; OC_FLASH_LOCAL=0; OC_ORNITH_122B=0; OC_FLASH_UNSLOTH=0; OC_LFM25=0; OC_LFM3=0
 { [ "$LANE" = "27b" ] || [ -f "$SGL_UNIT_PATH" ]; } && OC_27B=1
 { [ "$LANE" = "flash" ] || [ -f "$FLASH_UNIT_PATH" ]; } && OC_FLASH=1
 # The Kolibri lane is installed at the end of a run (install-kolibri.sh): its provider comes
@@ -2783,6 +2819,15 @@ if [ "$OC_LFM25" -eq 1 ]; then
   OC_LFM25_CTX="${OC_LFM25_PAIR%% *}"; OC_LFM25_OUT="$(echo "$OC_LFM25_PAIR" | cut -d' ' -f2)"
   OC_LFM25_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label lfm25 131072 || true)"
 fi
+# The Liquid AI LFM3 lane, its own provider (its own served model) with its unit, at its one window.
+[ -f "$LFM3_UNIT_PATH" ] && OC_LFM3=1
+OC_LFM3_CTX=""; OC_LFM3_OUT=""; OC_LFM3_NAME=""
+if [ "$OC_LFM3" -eq 1 ]; then
+  OC_LFM3_PAIR="$("$REPO_DIR/oc-limits.sh" lfm3)" \
+    || die "oc-limits.sh refused lfm3 (repo bug: please open an issue)"
+  OC_LFM3_CTX="${OC_LFM3_PAIR%% *}"; OC_LFM3_OUT="$(echo "$OC_LFM3_PAIR" | cut -d' ' -f2)"
+  OC_LFM3_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label lfm3 262144 || true)"
+fi
 # How much of a conversation survives a compaction verbatim, from the same table.
 OC_KEEP="$("$REPO_DIR/oc-limits.sh" --preserve "$OC_CTX")" \
   || die "oc-limits.sh --preserve failed for $OC_CTX (repo bug: please open an issue)"
@@ -2841,6 +2886,10 @@ fi
 if [ "$LFM25_BOOT" -eq 1 ] && [ "$OC_LFM25" -eq 1 ] && [ -n "$OC_LFM25_CTX" ]; then
   OC_KEEP="$("$REPO_DIR/oc-limits.sh" --preserve "$OC_LFM25_CTX")" \
     || die "oc-limits.sh --preserve failed for $OC_LFM25_CTX (repo bug: please open an issue)"
+fi
+if [ "$LFM3_BOOT" -eq 1 ] && [ "$OC_LFM3" -eq 1 ] && [ -n "$OC_LFM3_CTX" ]; then
+  OC_KEEP="$("$REPO_DIR/oc-limits.sh" --preserve "$OC_LFM3_CTX")" \
+    || die "oc-limits.sh --preserve failed for $OC_LFM3_CTX (repo bug: please open an issue)"
 fi
 # The other engine's limits, for when both providers are present: the 27B block
 # keeps its context-mode limits, flash always serves its native window. A flash install
@@ -2915,6 +2964,8 @@ OC_FLASH_UNSLOTH="$OC_FLASH_UNSLOTH" OC_FLASH_UNSLOTH_CTX="$OC_FLASH_UNSLOTH_CTX
 OC_FLASH_UNSLOTH_NAME="$OC_FLASH_UNSLOTH_NAME" OC_FLASH_UNSLOTH_BOOT="$FLASH_UNSLOTH_BOOT" \
 OC_LFM25="$OC_LFM25" OC_LFM25_CTX="$OC_LFM25_CTX" OC_LFM25_OUT="$OC_LFM25_OUT" \
 OC_LFM25_NAME="$OC_LFM25_NAME" OC_LFM25_BOOT="$LFM25_BOOT" \
+OC_LFM3="$OC_LFM3" OC_LFM3_CTX="$OC_LFM3_CTX" OC_LFM3_OUT="$OC_LFM3_OUT" \
+OC_LFM3_NAME="$OC_LFM3_NAME" OC_LFM3_BOOT="$LFM3_BOOT" \
 OC_KEEP="$OC_KEEP" OC_PIN="$OPENCODE_PIN" OC_DENY="$(python3 "$REPO_DIR/oc-merge-limits.py" --deny-permission)" \
 OC_CONFIG_DIR="$CONFIG_DIR" python3 - <<'PYEOF' || die "could not write the opencode provider config"
 import json
@@ -3047,6 +3098,15 @@ if os.environ.get("OC_LFM25") == "1":
     providers["lfm25"] = ocl.provider(base_url, f"{cfg_dir}/api-key",
                                       int(os.environ["OC_LFM25_CTX"]), int(os.environ["OC_LFM25_OUT"]),
                                       os.environ.get("OC_LFM25_NAME") or "Liquid AI LFM2.5 24B-A2B (local, 131K)")
+if os.environ.get("OC_LFM3") == "1":
+    # one definition, shared with switch-model.sh (oc-lfm3.py says why)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("oc_lfm3", os.path.join(os.environ["OC_REPO_DIR"], "oc-lfm3.py"))
+    oc3 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oc3)
+    providers["lfm3"] = oc3.provider(base_url, f"{cfg_dir}/api-key",
+                                     int(os.environ["OC_LFM3_CTX"]), int(os.environ["OC_LFM3_OUT"]),
+                                     os.environ.get("OC_LFM3_NAME") or "Liquid AI LFM3 (local, 262K)")
 
 default = "flashnext/qwen3.8-flash-next" if lane == "flash" else "qwen38/qwen3.8-27b"
 if os.environ.get("OC_KOLIBRI_BOOT") == "1" and "kolibri" in providers:
@@ -3063,6 +3123,8 @@ if os.environ.get("OC_FLASH_UNSLOTH_BOOT") == "1" and "flash-unsloth" in provide
     default = "flash-unsloth/qwen3.8-flash-next-unsloth"
 if os.environ.get("OC_LFM25_BOOT") == "1" and "lfm25" in providers:
     default = "lfm25/lfm2.5-24b-a2b"
+if os.environ.get("OC_LFM3_BOOT") == "1" and "lfm3" in providers:
+    default = "lfm3/lfm3-1.7b"
 # Compaction is global in opencode.json, not per-model, so it is sized from the
 # INSTALLED target (oc-limits.sh --preserve) and rewritten by every install and
 # switch. preserve_recent_tokens exists because opencode's own default clamps it
@@ -3120,7 +3182,7 @@ if [ ! -e "$OC_USER_CFG" ]; then
   install -m 644 "$CONFIG_DIR/opencode.json" "$OC_USER_CFG"
   echo "  no opencode config yet: installed this repo's at $OC_USER_CFG"
   # the copy carries the shell rules for the hosts of Cohere's report already (deny_permission)
-elif ! grep -qsE '"(qwen38|flashnext|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|lfm25)"' "$OC_USER_CFG"; then
+elif ! grep -qsE '"(qwen38|flashnext|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|lfm25|lfm3)"' "$OC_USER_CFG"; then
   # the user's own config, with none of this repo's providers in it: theirs to merge
   echo "  your $OC_USER_CFG has no provider for this box: merge the \"qwen38\" (or \"flashnext\")"
   echo "  block from $CONFIG_DIR/opencode.json into it (docs/opencode.md). oc and the Agent tab"
@@ -3234,6 +3296,10 @@ fi
 if [ "$LFM25_BOOT" -eq 1 ] && [ "$OC_LFM25" -eq 1 ]; then
   # the Liquid AI LFM2.5 24B-A2B lane is this box's lane: opencode's default stays on it
   OC_POINT_LANE=lfm25; OC_POINT_CHOICE=lfm25; OC_POINT_WINDOW=131072
+fi
+if [ "$LFM3_BOOT" -eq 1 ] && [ "$OC_LFM3" -eq 1 ]; then
+  # the Liquid AI LFM3 lane is this box's lane: opencode's default stays on it
+  OC_POINT_LANE=lfm3; OC_POINT_CHOICE=lfm3; OC_POINT_WINDOW=262144
 fi
 python3 "$REPO_DIR/oc-point-default.py" "$CONFIG_DIR/opencode.json" "$OC_POINT_LANE" "$OC_POINT_CHOICE" "$OC_POINT_WINDOW" \
   || die "could not point the generated opencode config at the installed lane"
@@ -3666,6 +3732,10 @@ if [ -z "$SECONDARY" ] && [ "$LFM25_BOOT" -eq 0 ] && systemctl is-enabled --quie
   echo "disabling the Liquid AI LFM2.5 24B-A2B lane at boot (unit kept, switch back anytime from the cockpit)"
   sudo systemctl disable qwen38-lfm25.service
 fi
+if [ -z "$SECONDARY" ] && [ "$LFM3_BOOT" -eq 0 ] && systemctl is-enabled --quiet qwen38-lfm3.service 2>/dev/null; then
+  echo "disabling the Liquid AI LFM3 lane at boot (unit kept, switch back anytime from the cockpit)"
+  sudo systemctl disable qwen38-lfm3.service
+fi
 KEEPALIVE_UNIT="qwen38-keepalive.service"
 KA_CHANGED=0      # whether this run changed what the proxy runs (see its restart below)
 # The proxy, its code and its unit are the serving run's (see the secondary run above).
@@ -3751,7 +3821,7 @@ if [ -n "$SECONDARY" ]; then
   fi
   exit 0
 fi
-if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ] && [ "$TRANSCRIBE_BOOT" -eq 0 ] && [ "$LFM25_BOOT" -eq 0 ]; then
+if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ] && [ "$TRANSCRIBE_BOOT" -eq 0 ] && [ "$LFM25_BOOT" -eq 0 ] && [ "$LFM3_BOOT" -eq 0 ]; then
   sudo systemctl enable "$UNIT_NAME"
   text_lane_note "$UNIT_NAME"
 else
@@ -3831,6 +3901,10 @@ else
     "$REPO_DIR/install-lfm25.sh" "$(side_mode lfm25 "$WITH_LFM25")" \
       || echo "NOTE: the Liquid AI LFM2.5 24B-A2B lane did not install or update; retry with ./install-lfm25.sh --no-smoke"
   fi
+  if [ "$WANT_LFM3" -eq 1 ]; then
+    "$REPO_DIR/install-lfm3.sh" "$(side_mode lfm3 "$WITH_LFM3")" \
+      || echo "NOTE: the Liquid AI LFM3 lane did not install or update; retry with ./install-lfm3.sh --no-smoke"
+  fi
   SERVING_LANE=""
   [ "$IMAGE_BOOT" -eq 1 ] && SERVING_LANE="image"
   [ "$VIDEO_BOOT" -eq 1 ] && SERVING_LANE="video"
@@ -3843,6 +3917,7 @@ else
   [ "$IMAGE_H3_BOOT" -eq 1 ] && SERVING_LANE="MiniMax-H3-Image"
   [ "$TRANSCRIBE_BOOT" -eq 1 ] && SERVING_LANE="NVIDIA Nemotron Transcribe"
   [ "$LFM25_BOOT" -eq 1 ] && SERVING_LANE="Liquid AI LFM2.5 24B-A2B"
+  [ "$LFM3_BOOT" -eq 1 ] && SERVING_LANE="Liquid AI LFM3"
   if [ -n "$ATS_CANNOT" ]; then
     step "Done: this box is up to date, and its flash lane, which this GPU cannot start, was not started"
     echo "  why       : $ATS_CANNOT"
@@ -4176,7 +4251,7 @@ except Exception as e:
     # New here, and proved when this run builds it whole: a lane with no unit yet, or one whose
     # runtime is not on the box (installed on demand, its units only: --all-weights on such a
     # box built every lane and proved none, found in review, 2026-10-15).
-    IMAGE_FRESH=0; VIDEO_FRESH=0; KOLIBRI_FRESH=0; NEMOTRON_FRESH=0; NEMOTRON_SUPER_FRESH=0; FLASH_LOCAL_FRESH=0; ORNITH_122B_FRESH=0; FLASH_UNSLOTH_FRESH=0; IMAGE_H3_FRESH=0; TRANSCRIBE_FRESH=0; LFM25_FRESH=0
+    IMAGE_FRESH=0; VIDEO_FRESH=0; KOLIBRI_FRESH=0; NEMOTRON_FRESH=0; NEMOTRON_SUPER_FRESH=0; FLASH_LOCAL_FRESH=0; ORNITH_122B_FRESH=0; FLASH_UNSLOTH_FRESH=0; IMAGE_H3_FRESH=0; TRANSCRIBE_FRESH=0; LFM25_FRESH=0; LFM3_FRESH=0
     { [ -f /etc/systemd/system/qwen38-image.service ] && side_begun image; } || IMAGE_FRESH=1
     { [ -f /etc/systemd/system/qwen38-video.service ] && side_begun video; } || VIDEO_FRESH=1
     { [ -f "$KOLIBRI_UNIT_PATH" ] && side_begun kolibri; } || KOLIBRI_FRESH=1
@@ -4188,7 +4263,8 @@ except Exception as e:
     { [ -f /etc/systemd/system/qwen38-image-h3.service ] && side_begun image-h3; } || IMAGE_H3_FRESH=1
     { [ -f "$TRANSCRIBE_UNIT_PATH" ] && side_begun transcribe; } || TRANSCRIBE_FRESH=1
     { [ -f "$LFM25_UNIT_PATH" ] && side_begun lfm25; } || LFM25_FRESH=1
-    IMAGE_STATE=off; VIDEO_STATE=off; KOLIBRI_STATE=off; NEMOTRON_STATE=off; NEMOTRON_SUPER_STATE=off; FLASH_LOCAL_STATE=off; ORNITH_122B_STATE=off; FLASH_UNSLOTH_STATE=off; IMAGE_H3_STATE=off; TRANSCRIBE_STATE=off; LFM25_STATE=off
+    { [ -f "$LFM3_UNIT_PATH" ] && side_begun lfm3; } || LFM3_FRESH=1
+    IMAGE_STATE=off; VIDEO_STATE=off; KOLIBRI_STATE=off; NEMOTRON_STATE=off; NEMOTRON_SUPER_STATE=off; FLASH_LOCAL_STATE=off; ORNITH_122B_STATE=off; FLASH_UNSLOTH_STATE=off; IMAGE_H3_STATE=off; TRANSCRIBE_STATE=off; LFM25_STATE=off; LFM3_STATE=off
     if [ "$WANT_IMAGE" -eq 1 ]; then
       step "Qwen-Image 2.1 lane (text-to-image, editing, native RGBA)"
       IMAGE_MODE="$(side_mode image "$WITH_IMAGE")"
@@ -4277,12 +4353,20 @@ except Exception as e:
         echo "NOTE: the Liquid AI LFM2.5 24B-A2B lane did not install (the lines above say why); the rest goes on."
       fi
     fi
+    if [ "$WANT_LFM3" -eq 1 ]; then
+      step "Liquid AI LFM3 lane (Liquid AI's LFM3 1.7B, on vLLM's own nightly image)"
+      LFM3_MODE="$(side_mode lfm3 "$WITH_LFM3")"
+      if "$REPO_DIR/install-lfm3.sh" "$LFM3_MODE"; then LFM3_STATE=installed; [ "$LFM3_MODE" = --units-only ] && LFM3_STATE=units; else
+        LFM3_STATE=failed
+        echo "NOTE: the Liquid AI LFM3 lane did not install (the lines above say why); the rest goes on."
+      fi
+    fi
     # What to prove: what this run installed for the first time, or what was asked for
     # by name (--with-<lane>, which also proves a lane already there).
     SECOND_WITH=0
     { [ "$SECOND_LANE" = flash ] && [ "$WITH_FLASH" -eq 1 ]; } && SECOND_WITH=1
     { [ "$SECOND_LANE" = 27b ] && [ "$WITH_27B" -eq 1 ]; } && SECOND_WITH=1
-    PROVE_SECOND=0; PROVE_IMAGE=0; PROVE_VIDEO=0; PROVE_KOLIBRI=0; PROVE_NEMOTRON=0; PROVE_NEMOTRON_SUPER=0; PROVE_FLASH_LOCAL=0; PROVE_ORNITH_122B=0; PROVE_FLASH_UNSLOTH=0; PROVE_IMAGE_H3=0; PROVE_TRANSCRIBE=0; PROVE_LFM25=0
+    PROVE_SECOND=0; PROVE_IMAGE=0; PROVE_VIDEO=0; PROVE_KOLIBRI=0; PROVE_NEMOTRON=0; PROVE_NEMOTRON_SUPER=0; PROVE_FLASH_LOCAL=0; PROVE_ORNITH_122B=0; PROVE_FLASH_UNSLOTH=0; PROVE_IMAGE_H3=0; PROVE_TRANSCRIBE=0; PROVE_LFM25=0; PROVE_LFM3=0
     { [ "$SECOND_STATE" = installed ] && { [ "$SECOND_NEW" -eq 1 ] || [ "$SECOND_WITH" -eq 1 ]; }; } && PROVE_SECOND=1
     { [ "$IMAGE_STATE" = installed ] && { [ "$IMAGE_FRESH" -eq 1 ] || [ "$WITH_IMAGE" -eq 1 ]; }; } && PROVE_IMAGE=1
     { [ "$VIDEO_STATE" = installed ] && { [ "$VIDEO_FRESH" -eq 1 ] || [ "$WITH_VIDEO" -eq 1 ]; }; } && PROVE_VIDEO=1
@@ -4295,7 +4379,8 @@ except Exception as e:
     { [ "$IMAGE_H3_STATE" = installed ] && { [ "$IMAGE_H3_FRESH" -eq 1 ] || [ "$WITH_IMAGE_H3" -eq 1 ]; }; } && PROVE_IMAGE_H3=1
     { [ "$TRANSCRIBE_STATE" = installed ] && { [ "$TRANSCRIBE_FRESH" -eq 1 ] || [ "$WITH_TRANSCRIBE" -eq 1 ]; }; } && PROVE_TRANSCRIBE=1
     { [ "$LFM25_STATE" = installed ] && { [ "$LFM25_FRESH" -eq 1 ] || [ "$WITH_LFM25" -eq 1 ]; }; } && PROVE_LFM25=1
-    if [ $((PROVE_SECOND + PROVE_IMAGE + PROVE_VIDEO + PROVE_KOLIBRI + PROVE_NEMOTRON + PROVE_NEMOTRON_SUPER + PROVE_FLASH_LOCAL + PROVE_ORNITH_122B + PROVE_FLASH_UNSLOTH + PROVE_IMAGE_H3 + PROVE_TRANSCRIBE + PROVE_LFM25)) -gt 0 ]; then
+    { [ "$LFM3_STATE" = installed ] && { [ "$LFM3_FRESH" -eq 1 ] || [ "$WITH_LFM3" -eq 1 ]; }; } && PROVE_LFM3=1
+    if [ $((PROVE_SECOND + PROVE_IMAGE + PROVE_VIDEO + PROVE_KOLIBRI + PROVE_NEMOTRON + PROVE_NEMOTRON_SUPER + PROVE_FLASH_LOCAL + PROVE_ORNITH_122B + PROVE_FLASH_UNSLOTH + PROVE_IMAGE_H3 + PROVE_TRANSCRIBE + PROVE_LFM25 + PROVE_LFM3)) -gt 0 ]; then
       step "Proving the new lanes serve: the ${LANE/27b/27B} lane stops meanwhile, then comes back"
       sudo systemctl stop "$UNIT_NAME"
       if [ "$PROVE_SECOND" -eq 1 ]; then
@@ -4336,6 +4421,9 @@ except Exception as e:
       fi
       if [ "$PROVE_LFM25" -eq 1 ]; then
         if "$REPO_DIR/install-lfm25.sh"; then LFM25_STATE=proved; else LFM25_STATE=unproved; fi
+      fi
+      if [ "$PROVE_LFM3" -eq 1 ]; then
+        if "$REPO_DIR/install-lfm3.sh"; then LFM3_STATE=proved; else LFM3_STATE=unproved; fi
       fi
       step "The ${LANE/27b/27B} lane again"
       prove_text_lane "$UNIT_NAME" "$SMOKE_MODEL" \
@@ -4459,6 +4547,7 @@ except Exception as e:
     lane_line "H3-Image   " "$IMAGE_H3_STATE" image-h3 image-h3 "151 GB" /etc/systemd/system/qwen38-image-h3.service
     lane_line "Transcribe " "$TRANSCRIBE_STATE" transcribe transcribe "45 GB" "$TRANSCRIBE_UNIT_PATH"
     lane_line "LFM2.5     " "$LFM25_STATE" lfm25 lfm25 "74 GB" "$LFM25_UNIT_PATH"
+    lane_line "LFM3       " "$LFM3_STATE" lfm3 lfm3 "41 GB" "$LFM3_UNIT_PATH"
     [ "$LANE" = "27b" ] && echo "  Benchmark  : ./bench.sh"
     # A 64 GB DGX Spark serves Nemotron 3.5 Bolt (Hasan, 2026-10-24): there the 27B gets two requests
     # and a pool of 59,625 tokens (measured on a 64 GB budget, 2026-10-24, its Mamba cache taking much

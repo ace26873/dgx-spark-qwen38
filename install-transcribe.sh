@@ -235,7 +235,7 @@ step "5/5 Proving it transcribes (a spoken sentence heard back, then the box goe
 # The quality claim is not made here: it is the 2.76 % French WER of the 20-excerpt
 # set, a box measure the lane's page cites (docs/transcribe-lane.md).
 WAS=""
-for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-lfm25.service; do
+for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-lfm25.service qwen38-lfm3.service; do
   systemctl is-active --quiet "$u" 2>/dev/null && WAS="$u"
 done
 [ -z "$WAS" ] || echo "note: $WAS is serving and will be stopped for this test, then started again."

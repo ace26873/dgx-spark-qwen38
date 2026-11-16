@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Every text lane asks its engine to say what the prefix cache served (discussion #49): the 27B's units,
-run.sh and the flash launcher start SGLang with --enable-cache-report, and the five vLLM lanes pass
---enable-prompt-tokens-details (2026-10-25).
+run.sh and the flash launcher start SGLang with --enable-cache-report, and the vLLM lanes pass
+--enable-prompt-tokens-details (2026-10-25; six since the Liquid AI LFM3 lane, 2026-11-16).
 
 With it, each answer says how much of its prompt the prefix cache served:
 usage.prompt_tokens_details.cached_tokens on the OpenAI routes, cache_read_input_tokens beside
@@ -23,7 +23,7 @@ LAUNCHES = ("qwen38-sglang.service.template", "qwen38-sglang-1m.service.template
 FLAG = re.compile(r"(?<![\w-])--enable-cache-report(?![\w-])")
 VLLM_UNITS = ("qwen38-kolibri.service.template", "qwen38-nemotron.service.template",
               "qwen38-nemotron-super.service.template", "qwen38-flash-local.service.template",
-              "qwen38-ornith-122b.service.template")
+              "qwen38-ornith-122b.service.template", "qwen38-lfm3.service.template")
 VLLM_FLAG = re.compile(r"(?<![\w-])--enable-prompt-tokens-details(?![\w-])")
 
 
@@ -40,7 +40,7 @@ class TheFlagIsPassed(unittest.TestCase):
 
     def test_each_vllm_unit_passes_its_own_once(self):
         """vLLM counts the cached tokens too and says nothing of them without the flag; every vLLM lane's
-        unit is here, so a sixth one added without the flag fails the second assertion."""
+        unit is here, so a seventh one added without the flag fails the second assertion."""
         units = sorted(p.name for p in REPO.glob("qwen38-*.service.template") if "vllm serve" in code(p.name)
                        or "vllm/vllm-openai" in code(p.name) or "--enable-auto-tool-choice" in code(p.name))
         self.assertEqual(units, sorted(VLLM_UNITS))

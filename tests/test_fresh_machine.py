@@ -779,7 +779,7 @@ class TheWholeScripts(unittest.TestCase):
         self.assertIn("This box is a 64 GB DGX Spark: the lanes that fit it are the Qwen3.8 27B and Nemotron 3.5 Bolt here", out)
         self.assertIn("Left out, as they need a 128 GB one: image (Qwen-Image 2.1), video (MiniMax-H3), Qwen3.8 Flash-Next, Kolibri-1, "
                       "Nemotron 3.5 Super VL, Qwen3.8 Flash-Next FP4-Local, Ornith 1.5 122B, Qwen3.8 Flash-Next Unsloth GGUF, "
-                      "MiniMax-H3-Image, NVIDIA Nemotron Transcribe, Liquid AI LFM2.5 24B-A2B.", out)
+                      "MiniMax-H3-Image, NVIDIA Nemotron Transcribe, Liquid AI LFM2.5 24B-A2B, Liquid AI LFM3.", out)
         self.assertIn("Context mode: native (262144 tokens), the one a 64 GB DGX Spark holds.", out)
         self.assertNotIn("needs a ~121 GB", out)
 

@@ -82,7 +82,7 @@ CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kol
                "image": "qwen38-image.service",
                "image-turbo": "qwen38-image.service", "video": "qwen38-video.service",
                "image-h3": "qwen38-image-h3.service", "transcribe": "qwen38-transcribe.service",
-               "lfm25": "qwen38-lfm25.service"}
+               "lfm25": "qwen38-lfm25.service", "lfm3": "qwen38-lfm3.service"}
 
 
 # The two families one lane apart (the vLLM lanes less Kolibri are the b12x lanes) are told by the
@@ -319,8 +319,9 @@ class TheLanesAreWhatTheTemplatesSay(unittest.TestCase):
         self.assertTrue(DIFFUSION <= ENGINE)
         self.assertEqual(VLLM, {"qwen38-kolibri.service", "qwen38-nemotron.service",
                                 "qwen38-nemotron-super.service", "qwen38-flash-local.service",
-                                "qwen38-ornith-122b.service"})
-        self.assertEqual(B12X, VLLM - {"qwen38-kolibri.service"})
+                                "qwen38-ornith-122b.service", "qwen38-lfm3.service"})
+        # the Liquid AI LFM3 lane runs vLLM's own nightly, without b12x, as the Kolibri lane runs none
+        self.assertEqual(B12X, VLLM - {"qwen38-kolibri.service", "qwen38-lfm3.service"})
         # and the llama.cpp lanes, none of them a vLLM lane
         self.assertEqual(LLAMACPP, {"qwen38-flash-unsloth.service", "qwen38-transcribe.service"})
         self.assertLess(TRANSCRIBE, ENGINE)
@@ -383,7 +384,7 @@ class EveryListNamesThemAll(unittest.TestCase):
                             self.assertEqual(consts.setdefault(t.id, node.value.value), node.value.value, t.id)
         self.assertLessEqual({"IMAGE_UNIT", "VIDEO_UNIT", "KOLIBRI_UNIT", "NEMOTRON_UNIT", "NEMOTRON_SUPER_UNIT",
                               "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT", "TRANSCRIBE_UNIT",
-                              "LFM25_UNIT"},
+                              "LFM25_UNIT", "LFM3_UNIT"},
                              set(consts), consts)
 
         def unit_of(e):

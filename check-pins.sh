@@ -87,6 +87,9 @@ eval "$tline"
 # The Liquid AI LFM2.5 24B-A2B lane's: Liquid AI's FP8 and its DSpark draft (its image is the 27B lane's, checked above).
 lline="$(grep -E '^LFM25_(REPO|REV|DRAFT_REPO|DRAFT_REV)=' "$REPO_DIR/install-lfm25.sh")"
 eval "$lline"
+# The Liquid AI LFM3 lane's: Liquid AI's NVFP4 and vLLM's nightly image, pulled as published.
+l3line="$(grep -E '^LFM3_(REPO|REV|IMAGE)=' "$REPO_DIR/install-lfm3.sh")"
+eval "$l3line"
 # The speech lane's: llama.cpp's commit, each recognizer's two GGUF at its revision with the
 # sha256 the install checks, and Kokoro's two files, which nothing checked either (found in the
 # audit of 2026-10-16). Each recognizer size is a branch of install-speech.sh's case on
@@ -473,6 +476,8 @@ check_model  transcribe-mmproj "$TRANSCRIBE_REPO" "$TRANSCRIBE_REV" "${TRANSCRIB
 echo "Liquid AI LFM2.5 24B-A2B lane"
 check_model  lfm25          "$LFM25_REPO" "$LFM25_REV"
 check_model  lfm25-draft    "$LFM25_DRAFT_REPO" "$LFM25_DRAFT_REV"
+echo "Liquid AI LFM3 lane"
+check_model  lfm3           "$LFM3_REPO" "$LFM3_REV"
 echo "Speech lane"
 check_commit speech-llama-cpp ggml-org/llama.cpp "$LLAMA_CPP_PIN"
 for size in $ASR_SIZES; do
@@ -494,6 +499,7 @@ check_image kolibri-base   "$KOLIBRI_BASE_IMAGE"
 check_image nemotron-base  "$NEMOTRON_BASE_IMAGE"
 check_image flash-local    "$FLASH_LOCAL_IMAGE"
 check_image flash-unsloth  "$FLASH_UNSLOTH_IMAGE"
+check_image lfm3           "$LFM3_IMAGE"
 
 echo
 if [ "$FAIL" -eq 0 ]; then

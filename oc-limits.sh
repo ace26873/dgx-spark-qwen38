@@ -341,6 +341,16 @@ case "$CHOICE" in
     #     74,000 + 25,000 + 32,000 = 131,000  <=  131,072
     CTX=74000; OUT=32000; LABEL="local, 131K"
     ;;
+  lfm3)
+    # The Liquid AI LFM3 lane serves the model's window, 262,144 tokens (its config's max_position_embeddings, the
+    # unit's --max-model-len), and vLLM refuses any request whose prompt + max_tokens passes it. Its KV cache held
+    # 5,239,455 tokens with no memory share (measured 2026-11-16), the window twenty times over; its share of 0.75 keeps
+    # several windows' worth, so the window decides, by the flash lane's rule and numbers (the same window), which
+    # oc-fit-limits.py's margin keeps too (the worst agent step less opencode's compaction reserve, rounded up):
+    #     205,000 - 20,000 + 43,863 + 32,000 = 260,863  <=  262,144
+    #     205,000 + 25,000 + 32,000 = 262,000  <=  262,144
+    CTX=205000; OUT=32000; LABEL="local, 262K"
+    ;;
   *) printf 'oc-limits: unknown target "%s"\n' "$CHOICE" >&2; exit 2 ;;
 esac
 

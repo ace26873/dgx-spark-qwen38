@@ -51,6 +51,7 @@ VLLM_LANES = {
     "kolibri-nvfp4": ("install-kolibri.sh", "KOLIBRI_NVFP4", None),
     "nemotron": ("install-nemotron.sh", "NEMOTRON_BOLT", None),
     "nemotron-super": ("install-nemotron-super.sh", "NEMOTRON_SUPER", None),
+    "lfm3": ("install-lfm3.sh", "LFM3", None),
 }
 # How each llama.cpp target's installer serves its template: the one its GGUF carries in its first part
 # (tokenizer.chat_template), patched by patch-template.py --gguf with the installer's TEMPLATE_FIXES and handed to
@@ -346,7 +347,10 @@ def environment():
 # How each engine hands a template a message's content, read in their sources on 2026-10-24: vLLM at
 # the commits its lanes pin (8244d1c4 for Flash FP4-Local and Ornith, 77154ca6 for the two Nemotron
 # lanes, v0.29.0 for Kolibri), SGLang at v0.5.22 (the 27B) and at the flash lane's nightly 53295c6,
-# whose code for it is the same. Both read the template first. vLLM's _detect_content_format gives
+# whose code for it is the same. The Liquid AI LFM3 lane's nightly 60bd6dd, read on 2026-11-16, hands
+# text as 77154ca6 does, and its detector also follows the messages into a namespace's attribute
+# (namespace(rest=messages)), which the LFM3 template does not do: it gives that template "openai",
+# as the port below does. Both engines read the template first. vLLM's _detect_content_format gives
 # "openai" to one that loops over a message's content, and every content then reaches it as a list of
 # text parts, a string included; any other gets "string", the parts joined by a newline. SGLang's
 # detect_jinja_template_content_format reads it more simply, and leaves a string a string: a list

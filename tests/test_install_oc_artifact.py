@@ -22,7 +22,7 @@ INSTALL = REPO / "install.sh"
 def block() -> str:
     text = INSTALL.read_text()
     start = text.index("OC_27B=0; OC_FLASH=0; OC_KOLIBRI=0; OC_NEMOTRON=0; OC_NEMOTRON_SUPER=0; OC_FLASH_LOCAL=0; OC_ORNITH_122B=0; "
-                       "OC_FLASH_UNSLOTH=0; OC_LFM25=0\n")
+                       "OC_FLASH_UNSLOTH=0; OC_LFM25=0; OC_LFM3=0\n")
     end = text.index("\nPYEOF\n", start) + len("\nPYEOF\n")
     return text[start:end]
 
@@ -38,7 +38,7 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
              flocal_unit=False, flocal_boot=False, ornith_unit=False, ornith_boot=False, unsloth_unit=False,
              unsloth_boot=False, unsloth_slots="-c 524288 -np 2",
              unsloth_model="snapshots/" + "d" * 40 + "/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
-             unsloth_want=False, unsloth_handed="", lfm25_unit=False, lfm25_boot=False):
+             unsloth_want=False, unsloth_handed="", lfm25_unit=False, lfm25_boot=False, lfm3_unit=False, lfm3_boot=False):
     t = pathlib.Path(tempfile.mkdtemp(prefix="oc-art-"))
     kolibri = t / "qwen38-kolibri.service"
     if kolibri_unit:
@@ -62,6 +62,9 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
     lfm25 = t / "qwen38-lfm25.service"
     if lfm25_unit:
         lfm25.write_text("ExecStart=... --model-path LiquidAI/LFM2.5-24B-A2B-FP8 --revision f54bf395 ...\n")
+    lfm3 = t / "qwen38-lfm3.service"
+    if lfm3_unit:
+        lfm3.write_text("ExecStart=... LiquidAI/LFM3-1.7B-NVFP4 --revision cfe4b5ea ...\n")
     if flash_running:
         (t / "launch-flash.sh").write_text(
             "docker run img python3 -m sglang.launch_server --model-path RadixArk/Qwen3.8-Flash-Next-NVFP4 "
@@ -83,6 +86,7 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
               f'ORNITH_122B_UNIT_PATH="{ornith}"; ORNITH_122B_BOOT={1 if ornith_boot else 0}\n'
               f'FLASH_UNSLOTH_UNIT_PATH="{unsloth}"; FLASH_UNSLOTH_BOOT={1 if unsloth_boot else 0}\n'
               f'LFM25_UNIT_PATH="{lfm25}"; LFM25_BOOT={1 if lfm25_boot else 0}\n'
+              f'LFM3_UNIT_PATH="{lfm3}"; LFM3_BOOT={1 if lfm3_boot else 0}\n'
               # whether this run installs the Unsloth lane, and the target it hands its installer (given or moved, v1.49)
               f'WANT_FLASH_UNSLOTH={1 if unsloth_want else 0}\n'
               + (f'export FLASH_UNSLOTH_TARGET={unsloth_handed}\n' if unsloth_handed else "")
@@ -403,6 +407,39 @@ class ABoxBootingLfm25(unittest.TestCase):
         self.assertNotIn("lfm25", d["provider"])
 
 
+class ABoxBootingLfm3(unittest.TestCase):
+    """The Liquid AI LFM3 lane, its own provider (its own served model): serving at boot it is opencode's default, its
+    compaction sized from its window; installed beside another lane it is offered; with no unit, absent. Its template
+    reads enable_thinking alone: two variants, the reasoning first, then none."""
+
+    def test_the_default_the_compaction_and_the_provider_are_its(self):
+        d = generate("27b", "1m", unit_ctx=1010000, flash_unit=True, pair=("551000", "160000"),
+                     lfm3_unit=True, lfm3_boot=True, doc=True)
+        self.assertEqual(d["model"], "lfm3/lfm3-1.7b")
+        ctx, out, *_ = subprocess.run([str(REPO / "oc-limits.sh"), "lfm3"], capture_output=True,
+                                      text=True, check=True).stdout.split()
+        keep = int(subprocess.run([str(REPO / "oc-limits.sh"), "--preserve", ctx], capture_output=True,
+                                  text=True, check=True).stdout)
+        self.assertEqual(d["compaction"]["preserve_recent_tokens"], keep)
+        m = d["provider"]["lfm3"]["models"]["lfm3-1.7b"]
+        self.assertEqual(m["limit"], {"context": 205000, "input": 205000, "output": 32000})
+        self.assertEqual(m["name"], "Liquid AI LFM3 1.7B NVFP4 (local, 262K)")
+        self.assertEqual(list(m["variants"]), ["high", "none"])
+        self.assertEqual(m["variants"]["none"], {"chat_template_kwargs": {"enable_thinking": False}})
+        self.assertEqual(m["variants"]["high"], {"chat_template_kwargs": {"enable_thinking": True}})
+        self.assertNotIn("modalities", m)
+        self.assertEqual(d["provider"]["lfm3"]["name"], "Liquid AI LFM3 (DGX Spark)")
+
+    def test_installed_but_not_at_boot_it_is_offered_and_the_27b_keeps_its_own(self):
+        d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), lfm3_unit=True, doc=True)
+        self.assertEqual(d["model"], "qwen38/qwen3.8-27b")
+        self.assertIn("lfm3", d["provider"])
+
+    def test_without_its_unit_there_is_no_lfm3_provider(self):
+        d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), lfm25_unit=True, doc=True)
+        self.assertNotIn("lfm3", d["provider"])
+
+
 class ABoxBootingFlashUnsloth(unittest.TestCase):
     """The Qwen3.8 Flash-Next Unsloth GGUF lane (llama.cpp, v1.48), its own provider (its own served model): serving at
     boot it is opencode's default, its compaction sized from its window; installed beside another lane it is offered;
@@ -514,7 +551,7 @@ class ABoxBootingFlashUnsloth(unittest.TestCase):
             "qwen38": {"models": {"qwen3.8-27b": {"name": "x"}}},
             "flash-unsloth": {"models": {"qwen3.8-flash-next-unsloth": {"name": "y"}}}}}, indent=2) + "\n")
         off = " ".join(f"{lane}_BOOT=0 OC_{lane}=0" for lane in ("KOLIBRI", "NEMOTRON", "NEMOTRON_SUPER", "FLASH_LOCAL", "ORNITH_122B",
-                                                                         "LFM25"))
+                                                                         "LFM25", "LFM3"))
         script = "\n".join(["set -euo pipefail", 'die(){ echo "DIE: $*"; exit 1; }', f'REPO_DIR="{REPO}"; CONFIG_DIR="{d}"',
                              "LANE=27b MODEL_CHOICE=stock OC_WINDOW=1010000 " + off,
                              "FLASH_UNSLOTH_BOOT=1 OC_FLASH_UNSLOTH=1 OC_FLASH_UNSLOTH_TARGET=flash-unsloth-iq3 "

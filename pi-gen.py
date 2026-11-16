@@ -54,7 +54,7 @@ import shlex
 import sys
 
 OURS = ("qwen38", "flashnext", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth",
-        "lfm25")
+        "lfm25", "lfm3")
 RESIZE = {"maxWidth": 1568, "maxHeight": 1568, "maxBytes": 524288, "jpegQuality": 75}
 
 
@@ -166,7 +166,10 @@ PI_COMPAT = {"supportsDeveloperRole": False}
 EFFORT_FIELD = {"kolibri": ({"off": "none", "minimal": "low", "xhigh": "high"}, "high"),
                 "nemotron": ({"off": "none", "minimal": "low", "xhigh": "high"}, "high"),
                 "nemotron-super": ({"off": "none", "minimal": "low", "xhigh": "high"}, "high"),
-                "ornith-122b": ({"off": "none"}, "high")}
+                "ornith-122b": ({"off": "none"}, "high"),
+                # LFM3's template reads enable_thinking alone, as Ornith's: the proxy translates the field the same
+                # way (ornith_effort), none off and high on, and pi offers those two alone (HELD_LEVELS)
+                "lfm3": ({"off": "none"}, "high")}
 # The lanes whose template reasons on every request and reads no level and no switch: the one level a client may show
 # is the one the model holds, and no field is sent, since the template reads none. The Liquid AI LFM2.5 24B-A2B lane's
 # chat_template.jinja (at the pinned revision, read 2026-11-16) ends every generation prompt with "<think>", and the
@@ -177,6 +180,10 @@ EFFORT_FIELD = {"kolibri": ({"off": "none", "minimal": "low", "xhigh": "high"}, 
 # since 0.72.0), so every level but this one is mapped to null; omp gets the one effort too, as its default, though
 # omp 18.4.9 offers off and auto beside a reasoning model's efforts whatever its file says (cycleThinkingLevel).
 FIXED_LEVEL = {"lfm25": "high"}
+# The levels a lane's template holds, where pi would offer others it cannot tell apart: every other level is mapped to
+# null, which pi hides. LFM3's template (at the pinned revision, read 2026-11-16) reasons or does not, by its
+# enable_thinking: off and high, where pi offered minimal, low and medium too, three levels of one reasoning.
+HELD_LEVELS = {**{prov: (level,) for prov, level in FIXED_LEVEL.items()}, "lfm3": ("off", "high")}
 PI_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
 
@@ -219,7 +226,9 @@ def build(artifact):
         if prov in FIXED_LEVEL:
             thinking[f"{prov}/{mid}"] = FIXED_LEVEL[prov]
             meta["compat"]["supportsReasoningEffort"] = False
-            meta["thinkingLevelMap"] = {lvl: None for lvl in PI_LEVELS if lvl != FIXED_LEVEL[prov]}
+        if prov in HELD_LEVELS:
+            meta["thinkingLevelMap"] = {**meta.get("thinkingLevelMap", {}),
+                                        **{lvl: None for lvl in PI_LEVELS if lvl not in HELD_LEVELS[prov]}}
         overrides[f"{prov}/{mid}"] = {"reserveTokens": meta["maxTokens"]}
         tiers = list((models[mid] or {}).get("variants") or {})
         if tiers:

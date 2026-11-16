@@ -192,7 +192,7 @@ class TheCheckPins(PinsBase):
         rc, out = self.run_pins(None, "hf_secretvalue123")
         self.assertEqual(rc, 0, out)
         hf = [c for c in self.calls() if c["url"].startswith("https://huggingface.co/")]
-        self.assertEqual(len(hf), 41, hf)          # ten checkpoints, the diffusion lanes' three, the MiniMax-H3-Image lane's two (its checkpoint and its text encoder), the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft), the NVIDIA Nemotron Transcribe lane's two (its GGUF and its projector), and the Liquid AI LFM2.5 24B-A2B lane's two (its checkpoint and its draft)
+        self.assertEqual(len(hf), 42, hf)          # ten checkpoints, the diffusion lanes' three, the MiniMax-H3-Image lane's two (its checkpoint and its text encoder), the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft), the NVIDIA Nemotron Transcribe lane's two (its GGUF and its projector), the Liquid AI LFM2.5 24B-A2B lane's two (its checkpoint and its draft), and the Liquid AI LFM3 lane's one
         for c in hf:
             self.assertIn("Authorization: Bearer hf_secretvalue123", c["stdin"], c)
             self.assertFalse(any("hf_secretvalue123" in a for a in c["argv"]), c["argv"])
@@ -580,7 +580,7 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
         for label in self.GITHUB:
             self.assertIn("HTTP 504 from the GitHub API, so not checked", self.line(out, label), out)
             self.assertNotIn("no such", self.line(out, label), out)
-        self.assertIn("9 of 64 pins could not be asked about", out)
+        self.assertIn("9 of 66 pins could not be asked about", out)
         self.assertIn("run it again before re-pinning anything", out)
         self.assertNotIn("A removed upstream revision", out)
 
