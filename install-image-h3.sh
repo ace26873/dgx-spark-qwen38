@@ -188,7 +188,7 @@ if [ "$ACTION" = uninstall ]; then
     # When this lane was the box's lane at boot, whatever it replaced was disabled by that switch:
     # removing it left no engine at all (the image lane's trap). The text lane comes back.
     TEXT_ENABLED=0
-    for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+    for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-transcribe.service; do
       systemctl is-enabled --quiet "$u" 2>/dev/null && TEXT_ENABLED=1
     done
     if [ "$WAS_BOOT" -eq 1 ] && [ "$TEXT_ENABLED" -eq 0 ]; then
@@ -469,7 +469,7 @@ step "6/6 Proving it serves (one image, then the box goes back to the lane it wa
 # The restore mirrors this unit's Conflicts= set: starting it stops every other lane, so
 # whatever was serving has to be started back.
 WAS_OTHER=""
-for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service; do
+for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-transcribe.service; do
   systemctl is-active --quiet "$u" 2>/dev/null && WAS_OTHER="$u"
 done
 # If this lane was already serving, the test leaves it serving.

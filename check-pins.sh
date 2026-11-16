@@ -80,6 +80,10 @@ eval "$oline"
 # targets by its sha256 (PATH=SHA256:SIZE), the draft the same way in ggml-org's repository, and llama.cpp's image.
 uline="$(grep -E '^FLASH_UNSLOTH_(REPO|REV|PART[1-4]|IQ3_PART[1-4]|DRAFT_REPO|DRAFT_REV|DRAFT|IMAGE)=' "$REPO_DIR/install-flash-unsloth.sh")"
 eval "$uline"
+# The NVIDIA Nemotron Transcribe lane's: mradermacher's GGUF at its revision, its Q8_0 and its projector each by its sha256
+# (PATH=SHA256:SIZE); its image is the Unsloth GGUF lane's, by the same digest, checked below.
+tline="$(grep -E '^TRANSCRIBE_(REPO|REV|FILE|MMPROJ)=' "$REPO_DIR/install-transcribe.sh")"
+eval "$tline"
 # The speech lane's: llama.cpp's commit, each recognizer's two GGUF at its revision with the
 # sha256 the install checks, and Kokoro's two files, which nothing checked either (found in the
 # audit of 2026-10-16). Each recognizer size is a branch of install-speech.sh's case on
@@ -457,6 +461,12 @@ for part in "$FLASH_UNSLOTH_IQ3_PART1" "$FLASH_UNSLOTH_IQ3_PART2" "$FLASH_UNSLOT
 done
 sha="${FLASH_UNSLOTH_DRAFT##*=}"; sha="${sha%%:*}"
 check_model  unsloth-draft  "$FLASH_UNSLOTH_DRAFT_REPO" "$FLASH_UNSLOTH_DRAFT_REV" "${FLASH_UNSLOTH_DRAFT%=*}" "$sha"
+echo "NVIDIA Nemotron Transcribe lane"
+# its two files by the LFS pointer at the revision: the sha256 the fetch checks every byte against
+sha="${TRANSCRIBE_FILE##*=}"; sha="${sha%%:*}"
+check_model  transcribe     "$TRANSCRIBE_REPO" "$TRANSCRIBE_REV" "${TRANSCRIBE_FILE%=*}" "$sha"
+sha="${TRANSCRIBE_MMPROJ##*=}"; sha="${sha%%:*}"
+check_model  transcribe-mmproj "$TRANSCRIBE_REPO" "$TRANSCRIBE_REV" "${TRANSCRIBE_MMPROJ%=*}" "$sha"
 echo "Speech lane"
 check_commit speech-llama-cpp ggml-org/llama.cpp "$LLAMA_CPP_PIN"
 for size in $ASR_SIZES; do

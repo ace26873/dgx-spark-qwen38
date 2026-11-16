@@ -867,7 +867,7 @@ class TheRegistryIsWellFormed(unittest.TestCase):
         for lane, f in LANES.items():
             with self.subTest(lane):
                 self.assertEqual(set(f), fields)
-                self.assertIn(f["kind"], ("text", "image", "video", "speech"))
+                self.assertIn(f["kind"], ("text", "image", "video", "speech", "transcribe"))
                 self.assertIn(f["engine"], ("sglang", "vllm", "llamacpp", "diffusion", "own"))
                 self.assertTrue(set(f["heavy_64"]) <= set(f["targets"]))
                 self.assertTrue(f["fits_64"] or not f["heavy_64"], "a lane that does not fit has no heavy target")
@@ -1227,7 +1227,8 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
         p.same(f"{where} --served-model-name (the 27B in the foreground)", [m.group(1)], [LANES["27b"]["served"]])
         for lane in VLLM + LLAMACPP:
             f = LANES[lane]
-            for var, want in (("VLANE", lane), ("VLANE_SERVED", f["served"])):
+            # the name its proof asks for, a text lane's only (the NVIDIA Nemotron Transcribe lane proves its own route)
+            for var, want in (("VLANE", lane),) + ((("VLANE_SERVED", f["served"]),) if f["kind"] == "text" else ()):
                 got, line = sh_assign(text_of(f["installer"]), var, f["installer"])
                 if got != want:
                     p.append(f"{f['installer']}:{line} {var}={got}, the registry says {want}")
@@ -1265,7 +1266,7 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
                 for prov, block in out["provider"].items():
                     got[prov] = list(block["models"])
         p.table(f"{', '.join(s.name for s in scripts)}: the provider each prints, and its model", got,
-                {LANES[x]["provider"]: [LANES[x]["served"]] for x in VLLM + LLAMACPP})
+                {LANES[x]["provider"]: [LANES[x]["served"]] for x in among(VLLM + LLAMACPP, TEXT)})
         rel = "oc-point-default.py"
         got, where = py_at(rel, "LABEL")
         p.same(f"{where} LABEL", got, targets_of(TEXT))
@@ -1475,8 +1476,10 @@ class TheCockpitSaysTheSame(unittest.TestCase):
             name = node.targets[0].id if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) else ""
             if name.endswith("_CANNOT") and name[:-len("_CANNOT")] + "_UNIT" in units:
                 tables[name] = LANE_OF_UNIT.get(units[name[:-len("_CANNOT")] + "_UNIT"])
+        # the text lanes' (their flush, abort and fit act on the text engine): the NVIDIA Nemotron Transcribe lane, a
+        # llama.cpp lane on a port of its own, takes none of those actions
         p.same(f"{py} the lanes of its <LANE>_CANNOT tables", floor(list(tables.values()), f"{py} <LANE>_CANNOT"),
-               VLLM + LLAMACPP)
+               among(VLLM + LLAMACPP, TEXT))
         got, where = finds(js, text_of(js), r"^const ([A-Z0-9_]+_CANNOT) = \{")
         p.same(f"{where} its <LANE>_CANNOT tables, the server's", got, tables)
         for name, lane in tables.items():

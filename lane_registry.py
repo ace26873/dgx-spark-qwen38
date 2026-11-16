@@ -23,7 +23,8 @@ TEXT_PORT = 30000
 #   installer  the script that installs it
 #   flags      whether install.sh installs it, --with-<lane> and --no-<lane> (the speech lane is
 #              installed by its own script only: "./install.sh does not run this", install-speech.sh)
-#   kind       what it serves: text, image, video or speech
+#   kind       what it serves: text, image, video, speech or transcribe (speech heard on the GPU, on a port of
+#              its own, by no chat client: install-transcribe.sh)
 #   engine     sglang (lmsysorg/sglang images), vllm (the installers that source vllm-lane.sh),
 #              llamacpp (llama.cpp's own llama-server image, the installers that source
 #              llamacpp-lane.sh), diffusion (SGLang Diffusion's wheel in the lane's own venv), own
@@ -106,6 +107,14 @@ LANES = {
                  "targets": ("image-h3",), "heavy_64": (),
                  "served": None, "provider": None, "ports": (30026,), "fits_64": False,
                  "title": "MiniMax-H3-Image"},
+    # install-transcribe.sh: llama.cpp's official image (the Unsloth GGUF lane's), NVIDIA's Nemotron-3.5-Transcribe in
+    # mradermacher's GGUF, PORT 30036 (TRANSCRIBE_PORT): /v1/audio/transcriptions and /v1/realtime, no chat, so no served
+    # name and no opencode provider; it takes the GPU in turn like every engine lane
+    "transcribe": {"unit": "qwen38-transcribe.service", "installer": "install-transcribe.sh", "flags": True,
+                   "kind": "transcribe", "engine": "llamacpp", "b12x": False,
+                   "targets": ("transcribe",), "heavy_64": (),
+                   "served": None, "provider": None, "ports": (30036,), "fits_64": False,
+                   "title": "NVIDIA Nemotron Transcribe"},
     # install-speech.sh: on the CPU beside any lane, PORT 30024 (SPEECH_PORT) and its recognizer on the
     # next one (ASR_PORT); no switch target, no official name of its own (it is "the speech lane")
     "speech": {"unit": "qwen38-speech.service", "installer": "install-speech.sh", "flags": False, "kind": "speech",

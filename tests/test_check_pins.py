@@ -47,11 +47,15 @@ NEMOTRON = (REPO / "install-nemotron.sh").read_text()
 UNSLOTH = dict((path.rsplit("/", 1)[-1], sha) for path, sha in re.findall(
     r'^FLASH_UNSLOTH_(?:PART[1-4]|IQ3_PART[1-4]|DRAFT)="([^"=]+)=([0-9a-f]{64}):\d+"',
     (REPO / "install-flash-unsloth.sh").read_text(), re.M))
+# the NVIDIA Nemotron Transcribe lane's GGUF and its projector, pinned the same way, each by a variable of its own
+TRANSCRIBE = dict((path.rsplit("/", 1)[-1], sha) for path, sha in re.findall(
+    r'^TRANSCRIBE_(?:FILE|MMPROJ)="([^"=]+)=([0-9a-f]{64}):\d+"', (REPO / "install-transcribe.sh").read_text(), re.M))
 # the MiniMax-H3-Image lane's FlashInfer wheels, each fetched from FlashInfer's release by its name and sha256
 H3 = (REPO / "install-image-h3.sh").read_text()
 # and PyPI publishes the very wheel files the Kolibri and Nemotron builds download, by URL and sha256
 UPSTREAM = {
-    "lfs": {**dict(re.findall(r'(?:ASR|MMPROJ)_FILE="([^"]+)"; (?:ASR|MMPROJ)_SHA="([0-9a-f]{64})"', SPEECH)), **UNSLOTH},
+    "lfs": {**dict(re.findall(r'(?:ASR|MMPROJ)_FILE="([^"]+)"; (?:ASR|MMPROJ)_SHA="([0-9a-f]{64})"', SPEECH)), **UNSLOTH,
+            **TRANSCRIBE},
     "assets": {KOKORO_REPO: [{"name": f, "digest": None} for f in KOKORO_FILES],
                "flashinfer-ai/flashinfer": [{"name": pin(H3, f"FLASHINFER_{k}_FILE"), "digest": "sha256:" + pin(H3, f"FLASHINFER_{k}_SHA256")}
                                             for k in ("CUBIN", "JIT")]},
@@ -188,7 +192,7 @@ class TheCheckPins(PinsBase):
         rc, out = self.run_pins(None, "hf_secretvalue123")
         self.assertEqual(rc, 0, out)
         hf = [c for c in self.calls() if c["url"].startswith("https://huggingface.co/")]
-        self.assertEqual(len(hf), 37, hf)          # ten checkpoints, the diffusion lanes' three, the MiniMax-H3-Image lane's two (its checkpoint and its text encoder), the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft)
+        self.assertEqual(len(hf), 39, hf)          # ten checkpoints, the diffusion lanes' three, the MiniMax-H3-Image lane's two (its checkpoint and its text encoder), the video Turbo adapter, Kolibri's two, each Nemotron lane's two (the model and its drafter), the Qwen3.8 Flash-Next FP4-Local lane's one, the Ornith lane's one, the speech lane's four GGUF (two recognizers, each a model and its projector) and the Unsloth GGUF lane's nine (the four parts of each of its two targets and its draft), and the NVIDIA Nemotron Transcribe lane's two (its GGUF and its projector)
         for c in hf:
             self.assertIn("Authorization: Bearer hf_secretvalue123", c["stdin"], c)
             self.assertFalse(any("hf_secretvalue123" in a for a in c["argv"]), c["argv"])
@@ -363,6 +367,28 @@ class ThePinsOutsideThePinBlock(PinsBase):
                                                                     f"oid sha256:{'f' * 64}\nsize 1\n"}}, None, "unsloth")
         self.assertEqual(rc, 1, out)
         self.assertIn("its sha256 there is " + "f" * 64, self.line(out, "unsloth-part3"), out)
+
+    def test_the_nvidia_nemotron_transcribe_lane_is_checked_file_by_file(self):
+        # its Q8_0 and its projector, each by the LFS pointer at its revision, which names the sha256 the fetch checks every
+        # byte against (v1.51); its image is the Unsloth GGUF lane's digest, asked once under that lane's label
+        self.assertEqual(len(TRANSCRIBE), 2, TRANSCRIBE)
+        rc, out = self.run_pins(None, None, "transcribe")
+        self.assertEqual(rc, 0, out)
+        for label in ("transcribe", "transcribe-mmproj"):
+            self.assertIn("ok", self.line(out, label), out)
+        urls = [c["url"] for c in self.calls()]
+        base = ("https://huggingface.co/mradermacher/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF/raw/"
+                "76a736c119c734a6526a37bcd6fd2c4d3b252b03/")
+        self.assertIn(base + "NVIDIA-Nemotron-3.5-Transcribe-30B-A4B.Q8_0.gguf", urls)
+        self.assertIn(base + "NVIDIA-Nemotron-3.5-Transcribe-30B-A4B.mmproj-f16.gguf", urls)
+        # a file whose pointer names another sum is a pin that no longer resolves
+        rc, out = self.run_pins({"bodies": {".Q8_0.gguf": "version https://git-lfs.github.com/spec/v1\n"
+                                                          f"oid sha256:{'f' * 64}\nsize 1\n"}}, None, "transcribe")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("its sha256 there is " + "f" * 64, self.line(out, "transcribe "), out)
+        # and the image it runs is the one the Unsloth GGUF lane's check asks
+        self.assertEqual(pin((REPO / "install-transcribe.sh").read_text(), "TRANSCRIBE_IMAGE"),
+                         pin((REPO / "install-flash-unsloth.sh").read_text(), "FLASH_UNSLOTH_IMAGE"))
 
     def test_the_nemotron_lane_is_checked_too(self):
         # its model, its drafter, the vLLM nightly its build starts from and the b12x wheel
@@ -554,7 +580,7 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
         for label in self.GITHUB:
             self.assertIn("HTTP 504 from the GitHub API, so not checked", self.line(out, label), out)
             self.assertNotIn("no such", self.line(out, label), out)
-        self.assertIn("9 of 60 pins could not be asked about", out)
+        self.assertIn("9 of 62 pins could not be asked about", out)
         self.assertIn("run it again before re-pinning anything", out)
         self.assertNotIn("A removed upstream revision", out)
 

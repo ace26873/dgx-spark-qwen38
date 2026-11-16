@@ -154,14 +154,16 @@ class TheDiskNeedsAreThePreflights(unittest.TestCase):
         # a lane's size is the last number in its parenthesis, before what a ";" adds (the Flash
         # FP4-Local lane's copy of its table, on a cache on another disk)
         said = {re.sub(r"\s+", "-", name.lower()).replace("flash-fp4-local", "flash-local")
-                .replace("qwen3.8-flash-next-unsloth-gguf", "flash-unsloth").replace("minimax-h3-image", "image-h3"):
+                .replace("qwen3.8-flash-next-unsloth-gguf", "flash-unsloth").replace("minimax-h3-image", "image-h3")
+                .replace("nvidia-nemotron-transcribe", "transcribe"):
                 re.findall(r"\d+", inside.split(";")[0])[-1] for name, inside in
                 re.findall(r"the (image|video|Kolibri|Nemotron Super|Nemotron|Flash\s+FP4-Local|Ornith\s+122B"
-                           r"|Qwen3\.8\s+Flash-Next\s+Unsloth\s+GGUF|MiniMax-H3-Image) lane \(([^)]*)\)", overview)}
-        flags = dict(re.findall(r"--no-(image-h3|image|video|kolibri|nemotron-super|nemotron|flash-local|ornith-122b|flash-unsloth)"
+                           r"|Qwen3\.8\s+Flash-Next\s+Unsloth\s+GGUF|MiniMax-H3-Image"
+                           r"|NVIDIA\s+Nemotron\s+Transcribe) lane \(([^)]*)\)", overview)}
+        flags = dict(re.findall(r"--no-(image-h3|image|video|kolibri|nemotron-super|nemotron|flash-local|ornith-122b|flash-unsloth|transcribe)"
                                 r"\s+leave the .*?\((?:vLLM, |llama\.cpp, )?(\d+) GB\)", sh))
         self.assertEqual(set(said), {"image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                     "flash-unsloth", "image-h3"}, overview)
+                                     "flash-unsloth", "image-h3", "transcribe"}, overview)
         self.assertEqual(said, flags)
 
 

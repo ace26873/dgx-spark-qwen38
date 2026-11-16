@@ -22,7 +22,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 SIDE = {"install-image.sh": "image", "install-video.sh": "video", "install-kolibri.sh": "kolibri",
         "install-nemotron-super.sh": "nemotron-super", "install-flash-local.sh": "flash-local",
         "install-ornith-122b.sh": "ornith-122b", "install-flash-unsloth.sh": "flash-unsloth",
-        "install-image-h3.sh": "image-h3"}
+        "install-image-h3.sh": "image-h3", "install-transcribe.sh": "transcribe"}
 SOURCE = '. "$HERE/lanes.sh"\n'
 
 
@@ -464,7 +464,8 @@ class TheRunSaysIt(unittest.TestCase):
         # lane's own installer; a lane that fits, with its unit, goes on to it
         units = wall.units_dir({"qwen38-nemotron.service": "[Service]\n"})
         script = wall.walled("prepare-lane.sh", at=PREPARE_SIDE, units=units)
-        for lane in ("image", "video", "kolibri", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth", "image-h3"):
+        for lane in ("image", "video", "kolibri", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth", "image-h3",
+                     "transcribe"):
             with self.subTest(lane):
                 env, record = wall.fenced_env(QWEN38_MEMORY_CLASS="64")
                 r = subprocess.run(["bash", script, lane], capture_output=True, text=True, timeout=60, env=env)

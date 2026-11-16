@@ -70,8 +70,8 @@ if [ "$MODE" = stage ] && [ -z "${STAGE_OUT:-}" ]; then die "--stage takes the f
 CONFIG_DIR="$HOME/.config/qwen38"
 # shellcheck source=lanes.sh
 . "$HERE/lanes.sh"
-# A 64 GB DGX Spark has never run this lane (boxmem.py): 37 GB of weights before the engine's own
-# memory. Refused before anything is fetched; --uninstall still takes away what an older release put there.
+# A 64 GB DGX Spark cannot hold this lane (boxmem.py): 37 GB of weights before the engine's own memory, and never
+# run on one. Refused before anything is fetched; --uninstall still takes away what an older release put there.
 [ "$ACTION" = uninstall ] || [ "$(box_mem_class)" != 64 ] || lane_fits transcribe || die "The NVIDIA Nemotron Transcribe lane needs a 128 GB DGX Spark, and this box is a 64 GB one."
 # A terminal opened before the account joined the docker group: the run goes on with it (lanes.sh).
 docker_session bash "$HERE/${BASH_SOURCE[0]##*/}" "$@"
@@ -122,13 +122,10 @@ model_box(){ printf '/root/.cache/huggingface/hub/models--%s/snapshots/%s/%s\n' 
 
 if [ "$ACTION" = uninstall ]; then
   step "Removing the NVIDIA Nemotron Transcribe lane"
-  # The unit only: this lane never holds the boot (it starts at a Load, as the image lane and the video
-  # lane do), so it has no text lane to give it back, and no opencode provider to take out.
-  if [ -f "$INSTALLED" ]; then
-    systemctl is-enabled --quiet "$UNIT" 2>/dev/null && sudo systemctl disable --now "$UNIT" 2>/dev/null || true
-    sudo rm -f "$INSTALLED"; sudo systemctl daemon-reload
-    echo "unit removed"
-  fi
+  # The unit, and the boot with it: a switch to this lane makes it the one unit enabled at boot, as a switch to
+  # the image lane or the video lane does (switch-model.sh transcribe), so removing it then gives the boot back to
+  # the text lane it took it from (vllm-lane.sh). No opencode provider to take out: it serves no text.
+  vlane_uninstall_unit
   # The image is pulled, not built: its local tag goes (lanes.sh), and the GGUF files stay, said.
   llane_uninstall_runtime "$TRANSCRIBE_REPO"
   exit 0
@@ -232,13 +229,13 @@ if [ "$SMOKE" -eq 0 ]; then step "Done (proof skipped)"; exit 0; fi
 
 step "5/5 Proving it transcribes (a spoken sentence heard back, then the box goes back to the lane it was serving)"
 # The proof starts this lane, alone: every engine lane's proof does, and the one that served comes back
-# when it ends. The request is a WAV this repository carries, the one the study's audio made the same way
-# the lane speaks (tests/fixtures/transcribe-smoke.wav: "Bonjour, ceci est un essai de synthèse vocale
-# sur la DGX Spark." at 24 kHz mono, 207 KB, made on the reference box the 14/11 by the Liquid AI LFM3
-# lane's own voice). The quality claim is not made here: it is the 2.76 % French WER of the 20-excerpt
+# when it ends. The request is a WAV this repository carries (tests/fixtures/transcribe-smoke.wav:
+# "Bonjour, ceci est un essai de synthèse vocale sur la DGX Spark." at 24 kHz mono, 207 KB, spoken on the
+# reference box the 14/11 by Liquid AI's LFM3-Audio-2B, the speech model the study ran beside this one).
+# The quality claim is not made here: it is the 2.76 % French WER of the 20-excerpt
 # set, a box measure the lane's page cites (docs/transcribe-lane.md).
 WAS=""
-for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-lfm3.service; do
+for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service; do
   systemctl is-active --quiet "$u" 2>/dev/null && WAS="$u"
 done
 [ -z "$WAS" ] || echo "note: $WAS is serving and will be stopped for this test, then started again."

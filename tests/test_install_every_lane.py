@@ -320,11 +320,12 @@ def vllm_lane_disabled(case, lane, secondary, lane_boot):
     for f in ("sudo", "systemctl"):
         (d / f).chmod(0o755)
     boots = {"kolibri": 0, "nemotron": 0, "nemotron-super": 0, "flash-local": 0, "ornith-122b": 0, "flash-unsloth": 0,
-             "image-h3": 0, lane: lane_boot}
+             "image-h3": 0, "transcribe": 0, lane: lane_boot}
     r = subprocess.run(["bash", "-c", f'set -euo pipefail\nRECOMMENDED=0\nSECONDARY="{secondary}"; KOLIBRI_BOOT={boots["kolibri"]}; '
                         f'NEMOTRON_BOOT={boots["nemotron"]}; NEMOTRON_SUPER_BOOT={boots["nemotron-super"]}; '
                         f'FLASH_LOCAL_BOOT={boots["flash-local"]}; ORNITH_122B_BOOT={boots["ornith-122b"]}; '
-                        f'FLASH_UNSLOTH_BOOT={boots["flash-unsloth"]}; IMAGE_H3_BOOT={boots["image-h3"]}\n' + block],
+                        f'FLASH_UNSLOTH_BOOT={boots["flash-unsloth"]}; IMAGE_H3_BOOT={boots["image-h3"]}; '
+                        f'TRANSCRIBE_BOOT={boots["transcribe"]}\n' + block],
                        capture_output=True, text=True, timeout=30,
                        env={"PATH": f"{d}:/usr/bin:/bin"})
     case.assertEqual(r.returncode, 0, r.stderr)
@@ -519,6 +520,17 @@ class ABoxBootingMiniMaxH3Image(unittest.TestCase):
         self.assertEqual(vllm_lane_disabled(self, "image-h3", "", 0), ["sudo systemctl disable qwen38-image-h3.service"])
         self.assertEqual(vllm_lane_disabled(self, "image-h3", "", 1), [], "the run that keeps it at boot")
         self.assertEqual(vllm_lane_disabled(self, "image-h3", "flash", 0), [], "the run for the other text lane")
+
+
+class ABoxBootingNvidiaNemotronTranscribe(unittest.TestCase):
+    """The NVIDIA Nemotron Transcribe lane (v1.51), an engine of its own on its own port: a run that makes a text lane the
+    boot lane takes it off the boot as it does every other lane, and the run that keeps it at boot or installs the other
+    text lane does not."""
+
+    def test_the_run_that_takes_the_boot_back_disables_it(self):
+        self.assertEqual(vllm_lane_disabled(self, "transcribe", "", 0), ["sudo systemctl disable qwen38-transcribe.service"])
+        self.assertEqual(vllm_lane_disabled(self, "transcribe", "", 1), [], "the run that keeps it at boot")
+        self.assertEqual(vllm_lane_disabled(self, "transcribe", "flash", 0), [], "the run for the other text lane")
 
 
 class ItLeavesWhatIsSharedToItsParent(unittest.TestCase):
@@ -863,7 +875,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
             want_kolibri=1, with_kolibri=0, kolibri_rc=0, prepared=(), all_weights=0, begun=(), second_new=None,
             want_nemotron=1, with_nemotron=0, nemotron_rc=0, want_super=1, with_super=0, super_rc=0,
             nemotron_image=None, want_flocal=0, with_flocal=0, flocal_rc=0, want_ornith=0, with_ornith=0, ornith_rc=0,
-            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0, pending_put=0, waits=()):
+            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0, pending_put=0, waits=(), want_tr=0, with_tr=0, tr_rc=0):
         t = tmp("lane-end-")
         unit_dir = t / "units"
         unit_dir.mkdir()
@@ -889,11 +901,19 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                     f"{draft}/d.gguf /x/chat-template-flash-unsloth.jinja || exit $$?; \\\n"
                     f"  exec /usr/bin/docker run -v {hf}:/root/.cache/huggingface:ro ghcr.io/ggml-org/llama.cpp@sha256:{'d' * 64} \\\n"
                     f"    -m /root/.cache/huggingface/hub/models--org--flash-unsloth/snapshots/{'a' * 40}/Q/m-00001-of-00002.gguf'\n")
+            elif vllm == "transcribe":
+                # llama.cpp's image by digest, and its GGUF and its projector by their snapshot's path (its unit's shape)
+                snap = f"{hf}/hub/models--org--transcribe/snapshots/{'a' * 40}"
+                (unit_dir / u).write_text(
+                    f"[Unit]\nExecStart=/bin/bash -c 'check=/x/llamacpp-files.sh; \\\n"
+                    f"  bash \"$$check\" {u} transcribe {snap}/m.Q8_0.gguf {snap}/m.mmproj-f16.gguf || exit $$?; \\\n"
+                    f"  exec /usr/bin/docker run -v {hf}:/root/.cache/huggingface:ro ghcr.io/ggml-org/llama.cpp@sha256:{'d' * 64} \\\n"
+                    f"    -m /root/.cache/huggingface/hub/models--org--transcribe/snapshots/{'a' * 40}/m.Q8_0.gguf'\n")
             else:
                 (unit_dir / u).write_text(f"[Unit]\nExecStart=/usr/bin/docker run qwen38-{vllm}:test\n"
                                           if vllm == "kolibri" else "[Unit]\n")
         # a Nemotron lane's own first Load fetched its checkpoint into that cache
-        for lane in set(prepared) & {"nemotron", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth"}:
+        for lane in set(prepared) & {"nemotron", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth", "transcribe"}:
             (hf / "hub" / f"models--org--{lane}").mkdir(parents=True)
         # a prepared lane: its runtime is on the box (the venv and its wheel's note; a vLLM lane's image)
         for lane in prepared:
@@ -918,7 +938,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                          ("install-kolibri.sh", kolibri_rc), ("install-nemotron.sh", nemotron_rc),
                          ("install-nemotron-super.sh", super_rc), ("install-flash-local.sh", flocal_rc),
                          ("install-ornith-122b.sh", ornith_rc), ("install-flash-unsloth.sh", unsloth_rc),
-                         ("install-image-h3.sh", h3_rc)):
+                         ("install-image-h3.sh", h3_rc), ("install-transcribe.sh", tr_rc)):
             # a lane in waits: its --units-only leaves its new unit waiting for its Load (lanes.sh's unit_put)
             lane = name[len("install-"):-len(".sh")]
             wait = (f'case "$*" in *--units-only*) mkdir -p "{t}/pending"; echo new > "{t}/pending/qwen38-{lane}.service"; '
@@ -937,7 +957,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         stub(bin_ / "docker", 'case "$*" in ' + "".join(f"*qwen38-{v}:*) exit {0 if have[v] else 1} ;; "
                                                         for v in ("kolibri", "nemotron"))
              + f"*org/b12x@sha256:*) exit {0 if {'flash-local', 'ornith-122b'} & set(prepared) else 1} ;; "
-             + f"*llama.cpp@sha256:*) exit {0 if 'flash-unsloth' in prepared else 1} ;; " + "esac\nexit 1")
+             + f"*llama.cpp@sha256:*) exit {0 if {'flash-unsloth', 'transcribe'} & set(prepared) else 1} ;; " + "esac\nexit 1")
         block = self.BLOCK.replace("/etc/systemd/system/", f"{unit_dir}/")
         # lanes.sh first, as install.sh sources it (side_nemotron_begun reads a unit's cache through it),
         # then this test's own stale_since
@@ -956,6 +976,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                   f'FLASH_LOCAL_UNIT_PATH="{unit_dir}/qwen38-flash-local.service"\n'
                   f'ORNITH_122B_UNIT_PATH="{unit_dir}/qwen38-ornith-122b.service"\n'
                   f'FLASH_UNSLOTH_UNIT_PATH="{unit_dir}/qwen38-flash-unsloth.service"\n'
+                  f'TRANSCRIBE_UNIT_PATH="{unit_dir}/qwen38-transcribe.service"\n'
                   'KEEPALIVE_UNIT=qwen38-keepalive.service; PORT=30000; PROXY_PORT=30001; CONTEXT_MODE=1m; OPENCODE=1; KA_CHANGED=0\n'
                   f"WANT_IMAGE={want_image}; WANT_VIDEO={want_video}; WITH_IMAGE={with_image}; WITH_VIDEO={with_video}\n"
                   f"WITH_FLASH={with_flash}; WITH_27B=0; WANT_KOLIBRI={want_kolibri}; WITH_KOLIBRI={with_kolibri}\n"
@@ -965,10 +986,11 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                   f"WANT_ORNITH_122B={want_ornith}; WITH_ORNITH_122B={with_ornith}\n"
                   f"WANT_FLASH_UNSLOTH={want_unsloth}; WITH_FLASH_UNSLOTH={with_unsloth}\n"
                   f"WANT_IMAGE_H3={want_h3}; WITH_IMAGE_H3={with_h3}\n"
+                  f"WANT_TRANSCRIBE={want_tr}; WITH_TRANSCRIBE={with_tr}\n"
                   f"SECOND_LANE=flash; SECOND_UNIT=qwen38-flash.service; SECOND_STATE={second_state}; SECOND_FRESH={second_fresh}; SECOND_NEW={second_fresh if second_new is None else second_new}\n"
                   + block + '\necho "STATES second=$SECOND_STATE image=$IMAGE_STATE video=$VIDEO_STATE kolibri=$KOLIBRI_STATE'
                   ' nemotron=$NEMOTRON_STATE super=$NEMOTRON_SUPER_STATE flocal=$FLASH_LOCAL_STATE ornith=$ORNITH_122B_STATE'
-                  ' unsloth=$FLASH_UNSLOTH_STATE h3=$IMAGE_H3_STATE"\n')
+                  ' unsloth=$FLASH_UNSLOTH_STATE h3=$IMAGE_H3_STATE tr=$TRANSCRIBE_STATE"\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
                            env={"PATH": f"{bin_}:/usr/bin:/bin"})
         return r.returncode, r.stdout + r.stderr, log.read_text().splitlines()
@@ -1197,6 +1219,43 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         self.assertIn("NOTE: the MiniMax-H3-Image lane did not install", out)
         self.assertNotIn("install-image-h3.sh ", calls)              # nothing to prove
         self.assertIn("h3=failed", out)
+
+    def test_the_nvidia_nemotron_transcribe_lane_comes_as_its_units_on_a_new_box_and_whole_with_all_weights(self):
+        # the lane on demand (v1.51), as every side lane: its unit on a new box, its first Load pulls its image and
+        # fetches its files
+        rc, out, calls = self.end(want_h3=1, want_tr=1)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls[5:7], ["install-image-h3.sh --units-only", "install-transcribe.sh --units-only"])
+        self.assertIn("tr=units", out)
+        rc, out, calls = self.end(want_h3=1, want_tr=1, all_weights=1)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("install-transcribe.sh --no-smoke", calls)
+        self.assertLess(calls.index("install-image-h3.sh "), calls.index("install-transcribe.sh "))   # its proof, last
+        self.assertLess(calls.index("install-transcribe.sh "), calls.index("prove qwen38-sglang.service qwen3.8-27b"))
+        self.assertIn("tr=proved", out)
+        # left out (--no-transcribe): nothing of it runs
+        rc, out, calls = self.end(want_tr=0, all_weights=1)
+        self.assertFalse([c for c in calls if c.startswith("install-transcribe.sh")], calls)
+
+    def test_the_nvidia_nemotron_transcribe_lane_is_begun_by_its_image_and_its_gguf_repository(self):
+        # its first Load pulled llama.cpp's image and fetched its files: an update installs it whole
+        units = ("qwen38-transcribe.service",)
+        only = dict(second_fresh=0, want_image=0, want_video=0, want_kolibri=0, want_nemotron=0, want_super=0, want_tr=1)
+        rc, out, calls = self.end(units=units, prepared=("transcribe",), **only)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-transcribe.sh --no-smoke"])
+        self.assertIn("tr=installed", out)
+        # its unit alone, never loaded: its units only, as on a new box
+        rc, out, calls = self.end(units=units, **only)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-transcribe.sh --units-only"])
+
+    def test_a_failed_nvidia_nemotron_transcribe_install_is_said_and_the_rest_goes_on(self):
+        rc, out, calls = self.end(want_tr=1, tr_rc=1, all_weights=1)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("NOTE: the NVIDIA Nemotron Transcribe lane did not install", out)
+        self.assertNotIn("install-transcribe.sh ", calls)              # nothing to prove
+        self.assertIn("tr=failed", out)
 
     def test_a_failed_ornith_install_is_said_and_the_rest_goes_on(self):
         rc, out, calls = self.end(want_ornith=1, ornith_rc=1, all_weights=1)

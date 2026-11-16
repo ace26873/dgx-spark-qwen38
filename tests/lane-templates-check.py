@@ -62,7 +62,7 @@ GGUF_LANES = {
     "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_IQ3_PART1", {"LEAN_DEFAULT": "1"}),
 }
 # switch-model.sh's targets that serve no chat template
-NOT_TEXT = {"image", "image-turbo", "video", "image-h3"}
+NOT_TEXT = {"image", "image-turbo", "video", "image-h3", "transcribe"}
 
 
 def pin(text, prefix):
@@ -130,7 +130,10 @@ def lane_specs(repo_dir=REPO):
         if not calls or any("--patches" in c or not c.startswith(call) for c in calls):
             raise SystemExit(f"{script} runs patch-template.py otherwise than with its five fixes: {calls}")
     specs = [(t, *pin(install, p), {}) for t, p in targets]
-    installers = sorted(f.name for f in repo_dir.glob("install-*.sh") if "vlane_put_unit" in f.read_text())
+    # the installers that put a text lane's unit, by their call of vlane_put_unit: a comment that names it is no call (the
+    # NVIDIA Nemotron Transcribe lane's installer, which puts its unit with unit_put, says why it does not call it)
+    installers = sorted(f.name for f in repo_dir.glob("install-*.sh")
+                        if re.search(r"^[^#\n]*\bvlane_put_unit\b", f.read_text(), re.M))
     known = sorted({f for f, _, _ in VLLM_LANES.values()} | {f for f, _, _, _ in GGUF_LANES.values()})
     if installers != known:
         raise SystemExit(f"the vLLM and llama.cpp lanes are {installers}, this check knows {known}: add the new lane to "

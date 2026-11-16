@@ -31,6 +31,9 @@ BARE = re.compile(r"\bqwen38-[a-z0-9-]+(?![a-z0-9.:/-])")
 NOT_LANES = re.compile(r"^\s*LOCAL_IMAGE_REPOS=")
 # the lanes that serve images and video rather than text
 DIFFUSION = {"qwen38-image.service", "qwen38-video.service", "qwen38-image-h3.service"}
+# the lane that hears speech on the GPU (NVIDIA Nemotron Transcribe, llama.cpp on a port of its own): an engine in
+# Conflicts= with the others, and no text lane
+TRANSCRIBE = {"qwen38-transcribe.service"}
 
 
 def engine_lanes() -> set:
@@ -44,7 +47,7 @@ def engine_lanes() -> set:
 
 
 ENGINE = engine_lanes()
-TEXT = ENGINE - DIFFUSION
+TEXT = ENGINE - DIFFUSION - TRANSCRIBE
 # the lanes whose installer stands on vllm-lane.sh
 VLLM = {f"qwen38-{p.name[len('install-'):-len('.sh')]}.service" for p in REPO.glob("install-*.sh")
         if re.search(r"^\s*(\.|source)\s+\S*vllm-lane\.sh", p.read_text(), re.M)}
@@ -75,7 +78,7 @@ CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kol
                "flash-unsloth": "qwen38-flash-unsloth.service", "flash-unsloth-iq3": "qwen38-flash-unsloth.service",
                "image": "qwen38-image.service",
                "image-turbo": "qwen38-image.service", "video": "qwen38-video.service",
-               "image-h3": "qwen38-image-h3.service"}
+               "image-h3": "qwen38-image-h3.service", "transcribe": "qwen38-transcribe.service"}
 
 
 # The two families one lane apart (the vLLM lanes less Kolibri are the b12x lanes) are told by the
@@ -315,7 +318,8 @@ class TheLanesAreWhatTheTemplatesSay(unittest.TestCase):
                                 "qwen38-ornith-122b.service"})
         self.assertEqual(B12X, VLLM - {"qwen38-kolibri.service"})
         # and the llama.cpp lanes, none of them a vLLM lane
-        self.assertEqual(LLAMACPP, {"qwen38-flash-unsloth.service"})
+        self.assertEqual(LLAMACPP, {"qwen38-flash-unsloth.service", "qwen38-transcribe.service"})
+        self.assertLess(TRANSCRIBE, ENGINE)
         self.assertFalse(LLAMACPP & VLLM)
 
     def test_each_lane_conflicts_with_every_other_and_starts_after_them(self):
@@ -374,7 +378,8 @@ class EveryListNamesThemAll(unittest.TestCase):
                         if isinstance(t, ast.Name):
                             self.assertEqual(consts.setdefault(t.id, node.value.value), node.value.value, t.id)
         self.assertLessEqual({"IMAGE_UNIT", "VIDEO_UNIT", "KOLIBRI_UNIT", "NEMOTRON_UNIT", "NEMOTRON_SUPER_UNIT",
-                              "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT"}, set(consts), consts)
+                              "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT", "TRANSCRIBE_UNIT"},
+                             set(consts), consts)
 
         def unit_of(e):
             if isinstance(e, ast.Constant):

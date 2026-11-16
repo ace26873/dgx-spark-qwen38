@@ -64,6 +64,16 @@ class TheLanesItKnows(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "add the new lane to VLLM_LANES"):
             ltc.lane_specs(d)
 
+    def test_an_installer_that_names_vlane_put_unit_in_a_comment_only_is_no_text_lane(self):
+        # the NVIDIA Nemotron Transcribe lane's installer does (v1.51): a lane of no chat template, which the check
+        # took for a llama.cpp text lane it did not know; one that calls it is still one
+        d = self.copy()
+        (d / "install-newlane.sh").write_text("# its unit goes in with unit_put, not vlane_put_unit\n")
+        self.assertEqual(sorted(n for n, _, _, _ in ltc.lane_specs(d)), sorted(n for n, _, _, _ in ltc.lane_specs()))
+        (d / "install-newlane.sh").write_text('# its unit\n  vlane_put_unit "$RENDER"   # vlane_put_unit\n')
+        with self.assertRaisesRegex(SystemExit, "add the new lane to VLLM_LANES"):
+            ltc.lane_specs(d)
+
     def test_an_installer_that_serves_its_template_otherwise_stops_it(self):
         d = self.copy()
         f = d / "install-ornith-122b.sh"

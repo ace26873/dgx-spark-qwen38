@@ -489,14 +489,14 @@ jobs:
           # FP4-Local lane's (--with-flash-local), `ornith-122b`, the Ornith lane's
           # (--with-ornith-122b), and `flash-unsloth` and `flash-unsloth-iq3`, the Qwen3.8
           # Flash-Next Unsloth GGUF lane's two quantizations (--with-flash-unsloth), and the MiniMax-H3-Image
-          # lane's `image-h3` (--with-image-h3), each switched to like any other, and none a
-          # MODEL_CHOICE (none has a recipe; Kolibri, the Nemotron lanes, Flash FP4-Local and
-          # Ornith serve text from vLLM, the Unsloth GGUF lane from llama.cpp, under their own
-          # installers). Both sets are asserted, so a
+          # lane's `image-h3` (--with-image-h3) and the NVIDIA Nemotron Transcribe lane's `transcribe`
+          # (--with-transcribe), each switched to like any other, and none a MODEL_CHOICE (none has a
+          # recipe; Kolibri, the Nemotron lanes, Flash FP4-Local and Ornith serve text from vLLM, the
+          # Unsloth GGUF lane from llama.cpp, under their own installers). Both sets are asserted, so a
           # target added to the switcher and forgotten in the cockpit's enum is
           # still caught.
           FLAG_LANES = ["image", "image-turbo", "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-local",
-                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3"]
+                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe"]
           ref = choices
           switch_ref = sorted(ref + FLAG_LANES)
           text_lists = {"install.sh MODEL_CHOICE": choices, "recipes BUILTIN_IDS": sorted(builtins)}
@@ -1013,11 +1013,11 @@ jobs:
           script = pathlib.Path("switch-model.sh").read_text()
           alw = pathlib.Path("dashboard/sudoers-cockpit.template").read_text()
           allowed = {m.strip() for m in re.findall(r"NOPASSWD:\s*(.+)$", alw, re.M)}
-          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
+          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE|TRANSCRIBE_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
           units = {"qwen38-sglang.service", "qwen38-flash.service"}
           engines = units | {"qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                              "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                             "qwen38-flash-unsloth.service", "qwen38-image-h3.service"}
+                             "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service"}
           values = {
               "TEXT_UNIT_NAME": engines, "TARGET_UNIT_NAME": units, "OTHER_UNIT_NAME": engines,
               "IMAGE_UNIT_NAME": {"qwen38-image.service"},
@@ -1029,6 +1029,7 @@ jobs:
               "ORNITH_122B_UNIT_NAME": {"qwen38-ornith-122b.service"},
               "FLASH_UNSLOTH_UNIT_NAME": {"qwen38-flash-unsloth.service"},
               "IMAGE_H3_UNIT_NAME": {"qwen38-image-h3.service"},
+              "TRANSCRIBE_UNIT_NAME": {"qwen38-transcribe.service"},
               "TARGET_UNIT": {re.search(r'^SGL_UNIT="([^"]+)"', script, re.M).group(1)},
               "IMAGE_UNIT": {re.search(r'^IMAGE_UNIT="([^"]+)"', script, re.M).group(1)},
               "VIDEO_UNIT": {re.search(r'^VIDEO_UNIT="([^"]+)"', script, re.M).group(1)},
@@ -1039,6 +1040,7 @@ jobs:
               "FLASH_LOCAL_UNIT": {re.search(r'^FLASH_LOCAL_UNIT="([^"]+)"', script, re.M).group(1)},
               "ORNITH_122B_UNIT": {re.search(r'^ORNITH_122B_UNIT="([^"]+)"', script, re.M).group(1)},
               "FLASH_UNSLOTH_UNIT": {re.search(r'^FLASH_UNSLOTH_UNIT="([^"]+)"', script, re.M).group(1)},
+              "TRANSCRIBE_UNIT": {re.search(r'^TRANSCRIBE_UNIT="([^"]+)"', script, re.M).group(1)},
               "STAGE_UNIT": {"__HOME__/.config/qwen38/" + stage["STAGE_UNIT"]},
               "STAGE_CEIL": {"__HOME__/.config/qwen38/" + stage["STAGE_CEIL"]},
               "IMG_STAGE": {"__HOME__/.config/qwen38/" + stage["IMG_STAGE"]},
@@ -1050,6 +1052,7 @@ jobs:
               "FLU_STAGE": {"__HOME__/.config/qwen38/" + stage["FLU_STAGE"]},
               "VID_STAGE": {"__HOME__/.config/qwen38/" + stage["VID_STAGE"]},
               "H3_STAGE": {"__HOME__/.config/qwen38/" + stage["H3_STAGE"]},
+              "TRANSCRIBE_STAGE": {"__HOME__/.config/qwen38/" + stage["TRANSCRIBE_STAGE"]},
           }
           seen, bad = 0, []
           for raw in script.splitlines():
@@ -1192,6 +1195,10 @@ jobs:
           m = re.search(r'^IMAGE_H3_MODEL_PIN="([^"]+)"', pathlib.Path("install-image-h3.sh").read_text(), re.M)
           if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
               bad.append("install-image-h3.sh IMAGE_H3_MODEL_PIN")
+          # and the NVIDIA Nemotron Transcribe lane's GGUF repository
+          m = re.search(r'^TRANSCRIBE_REPO="([^"]+)"', pathlib.Path("install-transcribe.sh").read_text(), re.M)
+          if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
+              bad.append("install-transcribe.sh TRANSCRIBE_REPO")
           if bad:
               print("install.sh pins missing from uninstall.sh inventory:")
               print("\n".join("  " + b for b in bad)); sys.exit(1)
@@ -1348,7 +1355,7 @@ jobs:
           probe="$(mktemp -d)"
           # tests/run_suite.py loads the same hook into every python it starts (its sitecustomize.py),
           # beside the one that compares each file's environment at its start and at its exit.
-          export QWEN38_CONTACT_LOG="$probe/contacts" QWEN38_SERVING_PORTS=30000,30001,30002,30020,30022,30024,30025,30026,30090,30091,4096
+          export QWEN38_CONTACT_LOG="$probe/contacts" QWEN38_SERVING_PORTS=30000,30001,30002,30020,30022,30024,30025,30026,30036,30090,30091,4096
           before="$(find "$witness" -type f -exec sha256sum {} + | sort)"
           ports_before="$(ss -Htln 2>/dev/null | awk '{print $4}' | sort || true)"
           # The suite runs under tests/suite_reaper.py, a child subreaper: every process it

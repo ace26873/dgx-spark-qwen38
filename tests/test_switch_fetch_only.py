@@ -45,7 +45,7 @@ class Box:
         text = SWITCH
         for unit in ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-nemotron.service",
                      "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                     "qwen38-flash-unsloth.service"):
+                     "qwen38-flash-unsloth.service", "qwen38-transcribe.service"):
             old = f'"/etc/systemd/system/{unit}"'
             assert old in text, f"switch-model.sh no longer names {unit} that way"
             text = text.replace(old, f'"{units}/{unit}"')
@@ -54,7 +54,7 @@ class Box:
         # and the Unsloth GGUF lane's installer, whose --fetch the switch runs, with what it sources and its fetcher
         for f in ("lanes.sh", "ckpt-fetch.py", "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh",
                   "install-ornith-122b.sh", "vllm-lane.sh", "ple-table.py", "install-flash-unsloth.sh", "llamacpp-lane.sh",
-                  "gguf-fetch.py"):
+                  "gguf-fetch.py", "install-transcribe.sh"):
             (repo / f).write_text((REPO / f).read_text())
         # the Nemotron lane's unit, as install-nemotron.sh writes it: its image, its cache, the
         # checkpoint and the memory share on lines of their own
@@ -114,6 +114,18 @@ class Box:
             f"  {self.unsloth_pins['FLASH_UNSLOTH_IMAGE']} \\\n"
             "    -m /root/.cache/huggingface/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/"
             f"{self.unsloth_pins['FLASH_UNSLOTH_REV']}/x.gguf -c 262144 --port 30000'\n")
+        # the NVIDIA Nemotron Transcribe lane's unit: llama.cpp's image by digest, its cache read-only, its GGUF by its
+        # snapshot, on a port of its own (v1.51)
+        tpins = dict(line.split("=", 1) for line in (REPO / "install-transcribe.sh").read_text().splitlines()
+                     if line.startswith("TRANSCRIBE_") and "=" in line)
+        self.transcribe_pins = {k: v.strip('"') for k, v in tpins.items()}
+        self.transcribe_unit = units / "qwen38-transcribe.service"
+        self.transcribe_unit.write_text(
+            "[Service]\nExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --name qwen38-transcribe \\\n"
+            f"  -v {self.home}/.cache/huggingface:/root/.cache/huggingface:ro \\\n"
+            f"  {self.transcribe_pins['TRANSCRIBE_IMAGE']} \\\n"
+            "    -m /root/.cache/huggingface/hub/models--mradermacher--NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF/snapshots/"
+            f"{self.transcribe_pins['TRANSCRIBE_REV']}/x.gguf -c 65536 --port 30036'\n")
         (repo / "switch-model.sh").chmod(0o755)
         self.bin = self.t / "bin"
         self.bin.mkdir()
@@ -257,6 +269,25 @@ class FetchOnly(unittest.TestCase):
         self.assertTrue(fetches[1].endswith(f" {pins['FLASH_UNSLOTH_DRAFT']}"), fetches[1])
         self.assertEqual((runs, box.unsloth_unit.read_bytes()), ([], unit_before))
         self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
+
+    def test_the_nvidia_nemotron_transcribe_lane_fetches_through_its_installer_and_stops(self):
+        # its GGUF and its projector on the host, by gguf-fetch.py, in one call, into the cache its unit mounts; no
+        # container, no unit rewritten, no boot moved, no record (v1.51)
+        box = Box()
+        unit_before = box.transcribe_unit.read_bytes()
+        rc, out, runs, calls = box.run("transcribe", "--fetch")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("is in the cache; nothing else was changed", out)
+        pins = box.transcribe_pins
+        fetches = box.gguf_log.read_text().splitlines()
+        self.assertEqual(len(fetches), 1, fetches)
+        self.assertTrue(fetches[0].endswith(f"gguf-fetch.py {box.home}/.cache/huggingface {pins['TRANSCRIBE_REPO']} "
+                                            f"{pins['TRANSCRIBE_REV']} {pins['TRANSCRIBE_FILE']} {pins['TRANSCRIBE_MMPROJ']}"),
+                        fetches[0])
+        self.assertEqual(runs, [], "no container")
+        self.assertEqual(box.transcribe_unit.read_bytes(), unit_before)
+        self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
+        self.assertFalse((box.home / ".config/qwen38/text-lane").exists(), "--fetch wrote the text-lane record")
 
     def test_without_it_the_switch_goes_on_past_the_download(self):
         rc, out, runs, _ = Box().run("stock")
