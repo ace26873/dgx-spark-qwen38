@@ -10,6 +10,7 @@ territories (decision 1375 of Hasan, 2026-11-14: said plainly wherever the licen
 import pathlib
 import re
 import subprocess
+import sys
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -226,6 +227,50 @@ class TheEncoderRuleIsReadOnce(unittest.TestCase):
         self.assertEqual(ask(), "rc=0", "a partition folder holds the same blobs")
         (snap / "FL2VA" / "text_encoder" / "e2.safetensors").unlink()
         self.assertEqual(ask(), "rc=1", "a missing shard is not the encoder")
+
+
+class TheSourcesDependencies(unittest.TestCase):
+    """SGLang's main at the pin is laid over the released wheel with no dependency resolution: a package it
+    added (blake3, 2026-11-16) was missing, and the runtime failed at the model's first import with a
+    message that named a wrong pin (found by the lane's first proof on the reference box). The installer
+    pins what main adds, and refuses, naming it, any dependency of the pinned source the venv lacks."""
+
+    GUARD_HEAD = '"$VENV/bin/python" - "$SRC/python/pyproject.toml" <<\'PY\''
+
+    def guard(self):
+        text = (REPO / "install-image-h3.sh").read_text()
+        start = text.index(self.GUARD_HEAD)
+        body = text[text.index("\n", start) + 1:]
+        return body[:body.index("\nPY\n")]
+
+    def run_guard(self, deps, diffusion=()):
+        import subprocess
+        import tempfile
+        d = pathlib.Path(tempfile.mkdtemp(prefix="h3-deps-"))
+        quote = lambda xs: "[" + ", ".join(f"'{x}'" for x in xs) + "]"   # TOML literal strings: a marker holds quotes
+        (d / "pyproject.toml").write_text(f"[project]\nname = \"sglang\"\ndependencies = {quote(deps)}\n\n"
+                                          f"[project.optional-dependencies]\ndiffusion = {quote(diffusion)}\n")
+        return subprocess.run([sys.executable, "-", str(d / "pyproject.toml")], input=self.guard(),
+                              capture_output=True, text=True)
+
+    def test_what_the_venv_holds_passes(self):
+        r = self.run_guard(["packaging>=20"], diffusion=["sglang[diffusion]"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_package_the_venv_lacks_is_named(self):
+        r = self.run_guard(["packaging"], diffusion=["no-such-package-for-alzeo>=1.0"])
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no-such-package-for-alzeo>=1.0", r.stderr)
+
+    def test_a_dependency_of_another_platform_is_left_out(self):
+        r = self.run_guard(['no-such-package-for-alzeo; sys_platform == "win32"'])
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_main_s_own_additions_are_pinned_and_installed(self):
+        text = (REPO / "install-image-h3.sh").read_text()
+        self.assertIn('MAIN_DEPS=("blake3==1.0.11")', text)
+        self.assertLess(text.index('for _d in "${MAIN_DEPS[@]}"'), text.index(self.GUARD_HEAD),
+                        "the pinned additions go in before the guard reads the venv")
 
 
 if __name__ == "__main__":

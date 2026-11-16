@@ -132,6 +132,10 @@ WHEEL="${IMAGE_H3_SGLANG_WHEEL:-0.5.23}"
 # recipe leaves out). Each wheel of FlashInfer's release is fetched by its URL and checked by its
 # sha256, which GitHub publishes for the release's assets.
 FA4_VERSION="4.0.0b38"
+# What SGLang's main at PIN imports beyond the released wheel's dependencies, pinned: blake3 (its
+# pyproject asks blake3>=1.0.0; srt/multimodal/cache/digest.py imports it on the diffusion server's
+# path). Found on the reference box on 2026-11-16: without it the runtime could not load the model.
+MAIN_DEPS=("blake3==1.0.11")
 FLASHINFER_RELEASE="https://github.com/flashinfer-ai/flashinfer/releases/download/v0.7.2"
 FLASHINFER_CUBIN_FILE="flashinfer_cubin-0.7.2-py3-none-any.whl"
 FLASHINFER_CUBIN_SHA256="31704fa5b2562d459d34c67cee9e80e0abb96c82f89943d542276d5a92c88079"
@@ -346,6 +350,38 @@ if ! "$VENV/bin/python" -c 'import sglang, pathlib, sys; sys.exit(0 if str(pathl
     || die "the editable overlay failed. The venv still holds the released wheel; re-run to retry."
   touch "$RUNTIME_NOTE"
 fi
+# The dependencies main at PIN adds to the wheel's, each only when the venv holds another version.
+for _d in "${MAIN_DEPS[@]}"; do
+  if [ "$("$VENV/bin/python" -c 'import importlib.metadata as m, sys
+try: print(m.version(sys.argv[1]))
+except m.PackageNotFoundError: print("")' "${_d%%==*}" 2>/dev/null || true)" != "${_d##*==}" ]; then
+    echo "installing $_d (asked by SGLang's main at ${PIN:0:12}, not by the wheel)"
+    "$VENV/bin/pip" install --quiet --no-deps "$_d" || die "$_d would not install (no internet, or PyPI dropped it). Re-run to retry."
+    touch "$RUNTIME_NOTE"
+  fi
+done
+# Every dependency the pinned source declares (its pyproject.toml: dependencies and the diffusion
+# extra) is in the venv, at some version: the overlay above resolves none, and a pin moved to a commit
+# that needs one more package would otherwise fail at the model's first import with a message that
+# names neither. The versions are not compared: the recipe's kernels are older than main's on purpose.
+"$VENV/bin/python" - "$SRC/python/pyproject.toml" <<'PY' || die "SGLang's main at ${PIN:0:12} needs a package the venv does not hold (above). Add it, pinned, to MAIN_DEPS."
+import importlib.metadata as md, sys, tomllib
+from packaging.markers import default_environment
+from packaging.requirements import Requirement
+project = tomllib.load(open(sys.argv[1], "rb"))["project"]
+env = {**default_environment(), "extra": "diffusion"}
+missing = []
+for line in project.get("dependencies", []) + project.get("optional-dependencies", {}).get("diffusion", []):
+    req = Requirement(line)
+    if req.name == "sglang" or (req.marker and not req.marker.evaluate(env)):
+        continue
+    try:
+        md.version(req.name)
+    except md.PackageNotFoundError:
+        missing.append(str(req))
+if missing:
+    raise SystemExit("not in the venv: " + ", ".join(missing))
+PY
 # The recipe's kernel packages, each only when the venv holds another version.
 kernel_version(){ "$VENV/bin/python" -c 'import importlib.metadata as m, sys
 try: print(m.version(sys.argv[1]))
@@ -375,7 +411,8 @@ fi
 # Asked of the registry itself, as the image lane asks it of Qwen-Image 2.1: the exact id maps to
 # MiniMax-H3-Image's own config (registered under it at this commit, ahead of MiniMax-H3's), and
 # the pipeline its model_index.json names resolves to MiniMax-H3's image pipeline.
-"$VENV/bin/python" - <<'PY' || die "the runtime does not know MiniMax-H3-Image. The pin may be wrong for this checkout."
+# Its error, if any, is said as it is, on the line above the die: a missing package, or a pin that does not register it.
+"$VENV/bin/python" - <<'PY' || die "the runtime does not load MiniMax-H3-Image (its error is just above: a missing package, or a pin that does not register the model)."
 import pathlib, sglang
 from sglang.multimodal_gen import registry
 from sglang.multimodal_gen.configs.pipeline_configs.minimax_h3_image import MiniMaxH3ImagePipelineConfig
