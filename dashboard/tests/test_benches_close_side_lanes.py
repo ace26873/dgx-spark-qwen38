@@ -6,7 +6,8 @@ like), else from the lane's unit on this box. A bench closes those addresses so 
 collectors probe nothing real; one that closes some leaves the others to the box's units. The
 benches closed COCKPIT_IMAGE and not COCKPIT_IMAGE_H3, which nothing saw until the reference box
 had the MiniMax-H3-Image unit: then the offline suite probed the real 127.0.0.1:30026 and the CI
-failed (2026-11-16). The serving-port gate of tests/run_suite.py sees a contact only on a box
+failed (2026-11-16). The
+Node benches missed it too, which the review of v1.50 found. The serving-port gate of tests/run_suite.py sees a contact only on a box
 whose unit is there; this reads the source, and sees it on any box.
 """
 import re
@@ -24,13 +25,14 @@ def side_lane_vars() -> set:
 
 
 def benches() -> dict:
-    """Each test file that sets one of them: its name and the ones it sets."""
+    """Each bench that sets one of them, the Python ones (NAME=value) and the Node ones that start a cockpit of their
+    own (NAME: value): its name and the ones it sets."""
     names = side_lane_vars()
     out = {}
-    for path in sorted(TESTS.glob("test_*.py")):
+    for path in sorted([*TESTS.glob("test_*.py"), *TESTS.glob("*.mjs")]):
         if path.name == Path(__file__).name:
             continue
-        found = {n for n in names if re.search(rf"\b{n}=", path.read_text())}
+        found = {n for n in names if re.search(rf"\b{n}\s*[=:]", path.read_text())}
         if found:
             out[path.name] = found
     return out
