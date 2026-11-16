@@ -145,7 +145,7 @@ yet ([docs/lfm3-lane.md](lfm3-lane.md#claude-code-and-the-prefix-cache) says how
 in the 27B lane's image, [docs/lfm25-lane.md](lfm25-lane.md)) reasons before every answer: its template opens the
 thought itself and reads no switch and no level, so neither `enable_thinking` nor a `reasoning_effort` changes what
 it does. SGLang's `deepseek-r1` parser takes its reasoning apart from the answer and its `lfm2` parser turns its tool
-calls, which it writes in LFM2's own form, into OpenAI `tool_calls`; both were chosen by reading the parsers' source
+calls, which it writes in LFM2's own form, into OpenAI `tool_calls`. Both were chosen by reading the parsers' source
 in the image, and neither has been measured with a client yet. Its window is 131,072 tokens.
 
 The Nemotron lanes (vLLM, [docs/nemotron-lane.md](nemotron-lane.md) and
