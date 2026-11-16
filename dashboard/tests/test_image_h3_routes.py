@@ -20,6 +20,7 @@ class TheLaneTheViewAddresses(Base):
     def setUp(self):
         super().setUp()
         self.t = Path(tempfile.mkdtemp(prefix="image-h3-units-"))
+        self.addCleanup(__import__("shutil").rmtree, self.t, True)
         self.kept = (self.ck.IMAGE_UNIT_PATH, self.ck.IMAGE_H3_UNIT_PATH, dict(self.ck.LIFE.get("states", {})))
         self.ck.IMAGE_UNIT_PATH, self.ck.IMAGE_H3_UNIT_PATH = self.t / QWEN, self.t / H3
 
@@ -58,6 +59,23 @@ class TheLaneTheViewAddresses(Base):
         self.assertEqual(self.ck.image_status()["model"], "MiniMaxAI/MiniMax-H3-Image")
         self.assertEqual(self.ck.unit_target(H3)["model"], "MiniMaxAI/MiniMax-H3-Image")
         self.assertEqual(self.ck.hf_repo_of("Qwen/Qwen-Image-2.1"), "Qwen/Qwen-Image-2.1", "a name stays as it is")
+
+    def test_a_unit_that_names_its_snapshots_path_starts_on_that_revision(self):
+        # its Start checks the snapshot the unit's path names, not the one refs/main names (review of v1.50)
+        hub = self.t / "hf" / "hub" / "models--MiniMaxAI--MiniMax-H3-Image"
+        a, b = "5" * 40, "6" * 40
+        (hub / "snapshots" / a / "transformer").mkdir(parents=True)
+        (hub / "snapshots" / a / "transformer" / "model.safetensors").write_bytes(b"x")
+        (hub / "refs").mkdir()
+        kept = self.ck.lane_prepared
+        self.ck.lane_prepared = lambda lane: True
+        self.addCleanup(setattr, self.ck, "lane_prepared", kept)
+        for named, main, want in ((a, b, True), (b, a, False)):
+            with self.subTest(unit_names=named[:1], refs_main=main[:1]):
+                (hub / "refs" / "main").write_text(main)
+                (self.t / H3).write_text(f"[Service]\nEnvironment=HF_HOME={self.t / 'hf'}\nExecStart=/x/sglang serve "
+                                         f"--model-path {hub}/snapshots/{named} --host 127.0.0.1 --port 30026\n")
+                self.assertIs(self.ck.lane_startable("image-h3"), want)
 
     def test_in_a_switch_the_lane_coming_up_before_the_one_stopping(self):
         self.box([QWEN, H3], {QWEN: "stopping", H3: "starting"})

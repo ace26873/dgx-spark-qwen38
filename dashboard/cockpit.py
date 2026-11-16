@@ -3425,7 +3425,10 @@ def lane_startable(lane: str):
         except OSError:
             switch_text = ""
         allow = rg.video_allow(switch_text, video_variant() or "fl2va")
-    state, snap = served_snapshot(text, model, allow)
+    # a unit that names its checkpoint by its snapshot's path (MiniMax-H3-Image since v1.50.0) serves that revision, which
+    # refs/main need not name (review of v1.50)
+    at = re.search(r"--model-path\s+\S*/snapshots/([0-9a-f]{40})/?(?=\s|$)", text)
+    state, snap = served_snapshot(text, model, allow, rev=at.group(1) if at else None)
     if state != "complete":
         return False
     # MiniMax-H3-Image loads its text encoder from the folder its unit names (MiniMax-H3's, at the revision

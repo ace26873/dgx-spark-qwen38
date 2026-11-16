@@ -1205,7 +1205,7 @@ if [ "$CHOICE" = "image-h3" ]; then
   # The unit names the checkpoint by its snapshot's path (v1.50.0: by name, an offline start refused the snapshot this
   # lane fetches only in part): the repository and the revision are that path's. A unit of before names the repository,
   # and its revision is then refs/main's, which the offline unit resolved, else the installer's pin.
-  if [[ "$H3_MODEL" =~ /models--([^/]+)--([^/]+)/snapshots/([0-9a-f]{40})$ ]]; then
+  if [[ "$H3_MODEL" =~ /models--([^/]+)--([^/]+)/snapshots/([0-9a-f]{40})/?$ ]]; then
     H3_MODEL="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"; H3_REV="${BASH_REMATCH[3]}"
   fi
   H3_MODEL="${H3_MODEL:-$IMAGE_H3_MODEL_PIN}"

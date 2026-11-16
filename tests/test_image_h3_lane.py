@@ -56,8 +56,10 @@ class TheUnit(unittest.TestCase):
         end = sw.index("\n", sw.index('    if [ "$H3_MODEL" = "$IMAGE_H3_MODEL_PIN" ]; then H3_REV='))
         block = sw[start:end] + "\n  fi\n"
         d = pathlib.Path(tempfile.mkdtemp(prefix="h3-switch-"))
+        self.addCleanup(__import__("shutil").rmtree, d, True)
         rev, pin = "a" * 40, "b" * 40
         cases = {"path": (f"--model-path /c/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/{rev} \\", rev),
+                 "slash": (f"--model-path /c/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/{rev}/ \\", rev),
                  "name": ("--model-path MiniMaxAI/MiniMax-H3-Image \\", pin)}
         for how, (line, want) in cases.items():
             with self.subTest(how):
@@ -274,6 +276,7 @@ class TheSourcesDependencies(unittest.TestCase):
         import subprocess
         import tempfile
         d = pathlib.Path(tempfile.mkdtemp(prefix="h3-deps-"))
+        self.addCleanup(__import__("shutil").rmtree, d, True)
         quote = lambda xs: "[" + ", ".join(f"'{x}'" for x in xs) + "]"   # TOML literal strings: a marker holds quotes
         (d / "pyproject.toml").write_text(f"[project]\nname = \"sglang\"\ndependencies = {quote(deps)}\n\n"
                                           f"[project.optional-dependencies]\ndiffusion = {quote(diffusion)}\n")
