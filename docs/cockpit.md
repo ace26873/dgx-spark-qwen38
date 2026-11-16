@@ -100,7 +100,10 @@ themes.
 - **Lane state that is not a lie.** A wedged SGLang still answers `/health`, so
   the cockpit runs a real generation canary and reports `ready`, `loading`,
   `wedged` or `stopped` from that, with the served checkpoint named from the
-  unit rather than guessed.
+  unit rather than guessed. On a vLLM lane vLLM's own `/health` decides instead,
+  and each step of its boot is read from its log under its
+  own name (the Liquid AI LFM3 lane's: the checkpoint, the compile and the tuning of
+  its NVFP4 kernels, the CUDA graphs, then its KV cache sized to its share).
 - **Where a client sends its requests.** The Now view's "Connect a client" panel gives
   the OpenAI address (`http://<the address you opened the cockpit by>:30001/v1`) and the
   Anthropic one, the model that serves and where the key is, never the key itself, each
@@ -157,7 +160,7 @@ themes.
   is no panel for the API key, which is what you log in with; the diagnostics
   bundle masks it.
 - **Checkpoints.** Library lists every lane's checkpoints, the text lanes', the image
-  and video lanes', Kolibri's, the two Nemotron lanes' (their drafters too), Qwen3.8 Flash-Next FP4-Local's and Ornith's, in the caches the lanes read (each lane's unit says
+  and video lanes', Kolibri's, the two Nemotron lanes' (their drafters too), Qwen3.8 Flash-Next FP4-Local's, Ornith's and the two Liquid AI lanes' (LFM2.5's draft too), in the caches the lanes read (each lane's unit says
   which), each revision pinned or stray, with what it holds on disk. A stray revision
   is one no pin, no installed unit and no ref names: the line says what deleting it
   frees, or why it stays (a ref names it, and a load by name reads it), and one button
