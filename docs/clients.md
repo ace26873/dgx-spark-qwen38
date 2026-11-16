@@ -102,7 +102,8 @@ Served model names: `qwen3.8-27b` (27B lane, both context modes),
 `qwen3.8-flash-next` (flash lane), `qwen3.8-flash-next-fp4` (Qwen3.8 Flash-Next FP4-Local lane),
 `qwen3.8-flash-next-unsloth` (Qwen3.8 Flash-Next Unsloth GGUF lane),
 `kolibri-1` (Kolibri lane), `nemotron-3.5-bolt` (Nemotron lane), `nemotron-3.5-super-vl`
-(Nemotron Super lane) and `ornith-1.5-122b` (Ornith lane). Send the name, not the checkpoint path. A client set up for one lane
+(Nemotron Super lane), `ornith-1.5-122b` (Ornith lane), `lfm2.5-24b-a2b` (Liquid AI LFM2.5 24B-A2B lane) and
+`lfm3-1.7b` (Liquid AI LFM3 lane). Send the name, not the checkpoint path. A client set up for one lane
 keeps working on another: SGLang answers any name, and on the vLLM lanes, whose vLLM
 refuses a model it does not serve, the proxy gives such a request the served name
 (proxy v6.37).
@@ -128,6 +129,24 @@ flash model with its GGUF's template and the Qwen lanes' fixes: the same levels,
 reasoning off, and its reasoning in `reasoning_content`. It takes text only. Its window is 262,144 tokens for each of
 four requests at once on UD-IQ3_XXS, its default, and two on UD-Q4_K_XL (1,048,576 for one request at a time with
 `FLASH_UNSLOTH_CONTEXT=1m`). `/v1/systemone` is not served on it.
+
+The two Liquid AI lanes take text only, and `/v1/systemone` is served on neither. The Liquid AI LFM3 lane (vLLM's
+own nightly, [docs/lfm3-lane.md](lfm3-lane.md)) reasons by default, and `{"enable_thinking": false}` in
+`chat_template_kwargs` turns that off: its template reads no level, so a `reasoning_effort`, top-level or in
+`chat_template_kwargs`, is said in that switch's words by the proxy (v6.61), `none` and `minimal` turning the
+reasoning off and every other level keeping it. Its reasoning comes apart from the answer (vLLM's `qwen3` parser),
+its tool calls, which it writes in Qwen3-Coder's form, come back as OpenAI `tool_calls` (vLLM's `qwen3_coder`
+parser), both measured on the engine alone on 2026-11-16 and not yet through the proxy, and its window is 262,144
+tokens. On this lane vLLM warns at its start that the checkpoint's template wants the system prompt first, so that the
+system messages a `/v1/messages` conversation carries after its start (Claude Code's reminders, as vLLM names them)
+are merged into the leading system prompt, and that each new one changes the head of the prompt, which the prefix
+cache then misses past it. This is vLLM's warning, not a measurement: no Claude Code session has run on the lane
+yet ([docs/lfm3-lane.md](lfm3-lane.md#claude-code-and-the-prefix-cache) says how it will be measured). The Liquid AI LFM2.5 24B-A2B lane (SGLang,
+in the 27B lane's image, [docs/lfm25-lane.md](lfm25-lane.md)) reasons before every answer: its template opens the
+thought itself and reads no switch and no level, so neither `enable_thinking` nor a `reasoning_effort` changes what
+it does. SGLang's `deepseek-r1` parser takes its reasoning apart from the answer and its `lfm2` parser turns its tool
+calls, which it writes in LFM2's own form, into OpenAI `tool_calls`; both were chosen by reading the parsers' source
+in the image, and neither has been measured with a client yet. Its window is 131,072 tokens.
 
 The Nemotron lanes (vLLM, [docs/nemotron-lane.md](nemotron-lane.md) and
 [docs/nemotron-super-lane.md](nemotron-super-lane.md)) also say their
@@ -162,7 +181,7 @@ ceiling (`FLASH_PROMPT_CEILING_TOKENS`, 250,000 by default), which keeps a long
 flash prefill off the memory edge. The engine itself refuses a request whose
 prompt plus `max_tokens` passes its window (262,144 tokens on most lanes;
 1,010,000 on the 27B in 1M mode; 1,048,576 on Super VL, Ornith, and FP4-Local
-with its 1M option). A 413 means a body over `MAX_BODY_BYTES` (256 MiB), refused before a
+with its 1M option; 131,072 on the Liquid AI LFM2.5 24B-A2B lane). A 413 means a body over `MAX_BODY_BYTES` (256 MiB), refused before a
 byte of it is read.
 
 The network's share of the port is bounded (proxy v6.41). Another machine holds
