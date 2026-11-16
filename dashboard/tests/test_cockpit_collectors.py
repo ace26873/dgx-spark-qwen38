@@ -95,7 +95,7 @@ class Base(unittest.TestCase):
         os.environ.update(COCKPIT_DRY_RUN="1", COCKPIT_CONFIG_DIR=str(cls.tmp),
                           COCKPIT_REPO_DIR=str(REPO), COCKPIT_PORT="0",
                           COCKPIT_AGENT_PORT="0", COCKPIT_AUTOHEAL="0",
-                          COCKPIT_ENGINE=CLOSED, COCKPIT_PROXY=CLOSED, COCKPIT_IMAGE=CLOSED,
+                          COCKPIT_ENGINE=CLOSED, COCKPIT_PROXY=CLOSED, COCKPIT_IMAGE=CLOSED, COCKPIT_IMAGE_H3=CLOSED,
                           COCKPIT_VIDEO=CLOSED)
         sys.path.insert(0, str(DASH))
         spec = importlib.util.spec_from_file_location("cockpit_coll_under_test",
