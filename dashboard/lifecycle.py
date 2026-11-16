@@ -558,12 +558,13 @@ TRANSITIONAL = BUSY_STATES - {"ready", "degraded", "orphan", "wedged"}
 # box, 2026-11-12; 100,881 MiB in its 1M mode), its n-gram table read from the disk. And the MiniMax-H3-Image lane,
 # a second image lane: 92.3 GB at its peak on the reference box, its recipe asking 106 GiB free at its start. And the
 # NVIDIA Nemotron Transcribe lane, llama.cpp's, 36.5 GB of weights, which left 76 GiB available at its lowest with nothing
-# else serving (2026-11-14).
+# else serving (2026-11-14). And the Liquid AI LFM2.5 24B-A2B lane, SGLang's, a static share of 0.7 of the memory
+# SGLang sees, which left 24 GiB available at its lowest (2026-11-14).
 ENGINE_UNITS = ("qwen38-sglang.service", "qwen38-flash.service",
                 "qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service",
                 "qwen38-nemotron.service", "qwen38-nemotron-super.service", "qwen38-flash-local.service",
                 "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service", "qwen38-image-h3.service",
-                "qwen38-transcribe.service")
+                "qwen38-transcribe.service", "qwen38-lfm25.service")
 IMAGE_UNIT = "qwen38-image.service"
 IMAGE_H3_UNIT = "qwen38-image-h3.service"
 VIDEO_UNIT = "qwen38-video.service"
@@ -574,9 +575,9 @@ FLASH_LOCAL_UNIT = "qwen38-flash-local.service"
 ORNITH_UNIT = "qwen38-ornith-122b.service"
 FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
 TRANSCRIBE_UNIT = "qwen38-transcribe.service"
-# The SGLang engines that serve text on ENGINE_BASE. Every probe, guard and belt that talks
-# to that port (the generation canary, the pool guard, the wedge autoheal) is about these
-# and only these: with a diffusion lane serving, :30000 is closed, and asking "is an
+# The SGLang engines that serve text on ENGINE_BASE: the 27B's, the flash's, and the Liquid AI LFM2.5 24B-A2B lane's,
+# on the 27B's image. Every probe, guard and belt that talks to that port (the generation canary, the pool guard, the
+# wedge autoheal) is about these and only these: with a diffusion lane serving, :30000 is closed, and asking "is an
 # engine ready" instead sent the canary a chat completion to a dead port every 90 s. The
 # Kolibri lane serves text on that port too, from vLLM, which none of those belts know
 # (its routes, its log and its model names are not SGLang's): the cockpit follows it on
@@ -1352,7 +1353,7 @@ LANE_PROVIDER = {"qwen38-sglang.service": "qwen38", "qwen38-flash.service": "fla
                  "qwen38-kolibri.service": "kolibri", "qwen38-nemotron.service": "nemotron",
                  "qwen38-nemotron-super.service": "nemotron-super",
                  "qwen38-flash-local.service": "flash-local", "qwen38-ornith-122b.service": "ornith-122b",
-                 "qwen38-flash-unsloth.service": "flash-unsloth"}
+                 "qwen38-flash-unsloth.service": "flash-unsloth", "qwen38-lfm25.service": "lfm25"}
 
 
 def opencode_default_follows(default_model, states: dict) -> tuple:

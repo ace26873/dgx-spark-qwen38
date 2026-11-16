@@ -11,9 +11,12 @@ the same set's colour NVIDIA icon (`icons/nvidia-color.svg`), the same three att
 removed. `unsloth.svg` is the same set's colour Unsloth icon (`icons/unsloth-color.svg` of
 1.102.0, sha256 068c4d17e21e2008a8660637177c061f6dddf36c1bac590d46617f01e48b0ef3 as published), the
 same three attributes removed: the Qwen3.8 Flash-Next Unsloth GGUF lane serves Unsloth's GGUF
-quantization of Qwen's model. The marks themselves belong to their owners (Qwen to Alibaba Cloud,
-MiniMax to MiniMax, Aleph Alpha to Aleph Alpha, NVIDIA to NVIDIA, Unsloth to Unsloth AI); the
-cockpit shows them only to say which model a lane runs.
+quantization of Qwen's model. `liquid.svg` is the same set's Liquid AI icon (`icons/liquid.svg` of
+1.102.0, which the set ships in one colour only, sha256
+4727b1cbd33bd256aca5be79a7d91a4f2753b2feb0dcfbb7b9fb3f23928c2467 as published), the same three
+attributes removed. The marks themselves belong to their owners (Qwen to Alibaba Cloud, MiniMax to
+MiniMax, Aleph Alpha to Aleph Alpha, NVIDIA to NVIDIA, Unsloth to Unsloth AI, Liquid AI to Liquid
+AI); the cockpit shows them only to say which model a lane runs.
 
 `ornith.svg` is Ornith AI's round avatar, cropped from the logo its authors publish in their
 model's repository (`assets/ornith_logo.png` of https://github.com/ornith-ai/Ornith-1 at commit

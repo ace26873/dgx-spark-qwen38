@@ -23,11 +23,11 @@ PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC
         "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
         "image": ("install-image.sh", "IMAGE_MODEL_PIN"), "image-turbo": ("install-image.sh", "IMAGE_TURBO_PIN"),
         "video": ("install-video.sh", "VIDEO_MODEL_PIN"), "image-h3": ("install-image-h3.sh", "IMAGE_H3_MODEL_PIN"),
-        "transcribe": ("install-transcribe.sh", "TRANSCRIBE_REPO")}
+        "transcribe": ("install-transcribe.sh", "TRANSCRIBE_REPO"), "lfm25": ("install-lfm25.sh", "LFM25_REPO")}
 # a repository's owner on Hugging Face, written as its own pages write its name
 PUBLISHER = {"RadixArk": "RadixArk", "edp1096": "edp1096", "Qwen": "Qwen", "nvidia": "NVIDIA", "dealignai": "dealignai",
              "Aleph-Alpha": "Aleph Alpha", "Quantinine": "Quantinine", "ornith-ai": "Ornith AI", "MiniMaxAI": "MiniMax",
-             "unsloth": "Unsloth", "atakans": "atakans", "mradermacher": "mradermacher"}
+             "unsloth": "Unsloth", "atakans": "atakans", "mradermacher": "mradermacher", "LiquidAI": "Liquid AI"}
 # a precision the repository's name does not say: Aleph Alpha's own release of Kolibri-1 is its FP8 build, and
 # Unsloth's GGUF repository holds every quantization of the model, the lane serving its UD-Q4_K_XL folder or its
 # UD-IQ3_XXS one, each read off the folder of the part its installer pins first (PRECISION below); mradermacher's GGUF

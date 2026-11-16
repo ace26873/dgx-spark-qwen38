@@ -666,7 +666,8 @@ function defaultLogSource(){
   if (isImageLane(u) || u === VIDEO_UNIT || u === PROXY_UNIT || e.state === 'failed' || e.restarting) return u;
   return u === UFLASH ? 'qwen38-flash' : u === KOLIBRI_UNIT ? 'qwen38-kolibri' : u === NEMOTRON_UNIT ? 'qwen38-nemotron'
     : u === NEMOTRON_SUPER_UNIT ? 'qwen38-nemotron-super' : u === FLASH_LOCAL_UNIT ? 'qwen38-flash-local'
-    : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth' : 'qwen38-sglang';
+    : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth'
+    : u === LFM25_UNIT ? 'qwen38-lfm25' : 'qwen38-sglang';
 }
 onShow('logs', () => {
   if (LOGS_WANT.src || !logTouched){ $('log-src').value = defaultLogSource(); LOGS_WANT.src = null; }

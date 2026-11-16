@@ -194,12 +194,13 @@ UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service"
          "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
          "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
          "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
-         "qwen38-keepalive.service")
+         "qwen38-lfm25.service", "qwen38-keepalive.service")
 JOURNAL_UNITS = UNITS + (AGENT_UNIT,)   # what the Logs tab may read (UNITS carries the image, video, Kolibri and Nemotron lanes)
 # The SGLang text engines' containers: what their scheduler lines and their abort contract
-# are read from. The Kolibri and Nemotron lanes' vLLM writes neither, so they are only in
-# CONTAINERS, the list the Logs tab, the diagnostics bundle and the container stats read.
-SGL_CONTAINERS = ("qwen38-sglang", "qwen38-flash")
+# are read from (the Liquid AI LFM2.5 24B-A2B lane's too, SGLang on the 27B's image). The Kolibri and Nemotron
+# lanes' vLLM writes neither, so they are only in CONTAINERS, the list the Logs tab, the diagnostics bundle and the
+# container stats read.
+SGL_CONTAINERS = ("qwen38-sglang", "qwen38-flash", "qwen38-lfm25")
 CONTAINERS = SGL_CONTAINERS + ("qwen38-kolibri", "qwen38-nemotron", "qwen38-nemotron-super", "qwen38-flash-local",
                                "qwen38-ornith-122b", "qwen38-flash-unsloth", "qwen38-transcribe")
 
@@ -210,7 +211,8 @@ UNIT2CONT = {"qwen38-sglang.service": "qwen38-sglang",
              "qwen38-nemotron-super.service": "qwen38-nemotron-super",
              "qwen38-flash-local.service": "qwen38-flash-local",
              "qwen38-ornith-122b.service": "qwen38-ornith-122b",
-             "qwen38-flash-unsloth.service": "qwen38-flash-unsloth"}
+             "qwen38-flash-unsloth.service": "qwen38-flash-unsloth",
+             "qwen38-lfm25.service": "qwen38-lfm25"}
 HISTORY_FILE_NAME = "cockpit-history.json"
 
 EVENTS: deque = deque(maxlen=200)
@@ -1270,6 +1272,10 @@ def llamacpp_engine_state(unit: str, *, active: str, sub: str, prev_state: str |
 TRANSCRIBE_UNIT = "qwen38-transcribe.service"
 TRANSCRIBE_UNIT_PATH = Path("/etc/systemd/system/qwen38-transcribe.service")
 TRANSCRIBE_CONTAINER = "qwen38-transcribe"
+# The Liquid AI LFM2.5 24B-A2B lane: SGLang on the 27B lane's image, on the text port behind the proxy, so a text unit
+# of lc.TEXT_UNITS with every SGLang belt (the canary, the pool guard, the autoheal), its facts read as the 27B's are.
+LFM25_UNIT = "qwen38-lfm25.service"
+LFM25_UNIT_PATH = Path("/etc/systemd/system/qwen38-lfm25.service")
 
 
 def transcribe_flag(flag: str, fallback: str) -> str:
@@ -2217,7 +2223,7 @@ def collect_opencode():
         if key == "real":
             for prov, pv in (cfg.get("provider") or {}).items():
                 if prov not in ("qwen38", "flashnext", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                "flash-unsloth"):
+                                "flash-unsloth", "lfm25"):
                     continue
                 for mid, mv in (pv.get("models") or {}).items():
                     lim = mv.get("limit") or {}
@@ -2239,7 +2245,7 @@ def collect_opencode():
         prov = {"qwen3.8-27b": "qwen38", "qwen3.8-flash-next": "flashnext", "kolibri-1": "kolibri",
                 "nemotron-3.5-bolt": "nemotron", "nemotron-3.5-super-vl": "nemotron-super",
                 "qwen3.8-flash-next-fp4": "flash-local", "ornith-1.5-122b": "ornith-122b",
-                "qwen3.8-flash-next-unsloth": "flash-unsloth"}.get(served)
+                "qwen3.8-flash-next-unsloth": "flash-unsloth", "lfm2.5-24b-a2b": "lfm25"}.get(served)
         lim = (out["real"]["limits"] or {}).get(f"{prov}/{served}") if prov else None
         if lim and lim.get("context"):
             ctx, outp = int(lim["context"]), int(lim.get("output") or 0)
@@ -2652,9 +2658,10 @@ def _guard_failed(err: str):
 
 VAR2TARGET = {"STOCK_REV": "stock", "UNC_REV": "uncensored", "FP8_REV": "fp8",
               "UNCFP8_REV": "uncensored-fp8", "ARETE_REV": "arete", "FLASH_REV": "flash",
-              "FLASH_NVDA_REV": "flash-nvda", "FLASH_UNC_REV": "flash-uncensored"}
+              "FLASH_NVDA_REV": "flash-nvda", "FLASH_UNC_REV": "flash-uncensored", "LFM25_REV": "lfm25"}
 UNIT_PATHS = {"qwen38-sglang.service": Path("/etc/systemd/system/qwen38-sglang.service"),
-              "qwen38-flash.service": CONFIG_DIR / "launch-flash.sh"}
+              "qwen38-flash.service": CONFIG_DIR / "launch-flash.sh",
+              "qwen38-lfm25.service": LFM25_UNIT_PATH}
 UNIT_TARGET_CACHE: dict = {}
 
 
@@ -2754,7 +2761,9 @@ def monotonic_now() -> float:
 # The boot a text lane is expected to take when this box has recorded none of its own
 # (the reference box's medians, as the page's READY_DEFAULT), and the grace after it
 # during which "fired up but not answering" still reads as the warm-up it usually is.
-TEXT_BOOT_DEFAULT_S = {"qwen38-sglang.service": 540.0, "qwen38-flash.service": 780.0}
+# The Liquid AI LFM2.5 24B-A2B lane's, its one boot measured (286 s on 2026-11-14), until the box records its own.
+TEXT_BOOT_DEFAULT_S = {"qwen38-sglang.service": 540.0, "qwen38-flash.service": 780.0,
+                       "qwen38-lfm25.service": 290.0}
 WARMUP_GRACE_S = 300.0
 # How long the other sampler tiers wait for the first health sample (start_samplers): the
 # engine is asked /v1/loads then, when idle, /health, 3 s and 4 s at most.
@@ -3378,7 +3387,7 @@ def lane_prepared(lane: str):
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
-            "transcribe": TRANSCRIBE_UNIT_PATH,
+            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH,
             "flash": UNIT_PATHS["qwen38-flash.service"], "27b": UNIT_PATHS["qwen38-sglang.service"]}[lane]
     try:
         text = unit.read_text(errors="replace")
@@ -3398,9 +3407,10 @@ def lane_prepared(lane: str):
             return Path(waits.group(1)).stat().st_size > 0     # [ -s ]: an empty one is skipped
         except OSError:
             return False
-    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe"):
+    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe", "lfm25"):
         # its image is pulled as published, by digest: the one digest its unit names (FP4-Local's and Ornith's one,
-        # llama.cpp's for the Unsloth GGUF and NVIDIA Nemotron Transcribe lanes)
+        # llama.cpp's for the Unsloth GGUF and NVIDIA Nemotron Transcribe lanes, the 27B's for the LFM2.5 lane, whose
+        # checkpoints come with its switch, as Ornith's do)
         m = re.search(r"\S+@sha256:[0-9a-f]{64}", text)
         return bool(m) and run(["docker", "image", "inspect", "--format", "{{.Id}}", m.group(0)],
                                timeout=10).strip().startswith("sha256:")
@@ -3569,13 +3579,13 @@ def collect_lanes_ready():
     """30 s tier: which side lanes are prepared, for the Load journey (it builds a lane's
     runtime first when it is not)."""
     return {lane: lane_prepared(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                   "flash-unsloth", "image-h3", "transcribe", "flash", "27b")}
+                                                   "flash-unsloth", "image-h3", "transcribe", "lfm25", "flash", "27b")}
 
 
 UNIT_OF_LANE = {"image": "qwen38-image.service", "video": "qwen38-video.service", "kolibri": KOLIBRI_UNIT,
                 "nemotron": NEMOTRON_UNIT, "nemotron-super": NEMOTRON_SUPER_UNIT, "flash-local": FLASH_LOCAL_UNIT,
                 "ornith-122b": ORNITH_UNIT, "flash-unsloth": FLASH_UNSLOTH_UNIT, "image-h3": "qwen38-image-h3.service",
-                "transcribe": TRANSCRIBE_UNIT,
+                "transcribe": TRANSCRIBE_UNIT, "lfm25": LFM25_UNIT,
                 "flash": "qwen38-flash.service", "27b": "qwen38-sglang.service"}
 
 
@@ -3625,7 +3635,7 @@ def lane_startable(lane: str):
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
-            "transcribe": TRANSCRIBE_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
+            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
     try:
         text = path.read_text(errors="replace")
     except OSError:
@@ -3708,6 +3718,13 @@ def lane_startable(lane: str):
     if draft and drev and not draft.group(1).startswith(("/", ".")):
         if served_snapshot(text, draft.group(1), rev=drev.group(1))[0] != "complete":
             return False
+    # and an SGLang lane its draft, named the way SGLang takes it: the Liquid AI LFM2.5 24B-A2B lane's DSpark draft,
+    # which its switch fetches with its checkpoint (the 27B's DFlash2 draft is its preparation's, lane_prepared)
+    draft = re.search(r"--speculative-draft-model-path\s+(\S+)", text)
+    drev = re.search(r"--speculative-draft-model-revision\s+([0-9a-f]{40})\b", text)
+    if lane == "lfm25" and draft and drev:
+        if served_snapshot(text, draft.group(1), rev=drev.group(1))[0] != "complete":
+            return False
     if lane == "27b":
         try:
             cfg = json.loads((snap / "config.json").read_text())
@@ -3723,7 +3740,7 @@ def lane_startable(lane: str):
 def collect_lanes_startable():
     """30 s tier: which side lanes can start as installed (their Start), lane_startable."""
     return {lane: lane_startable(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                    "flash-unsloth", "image-h3", "transcribe", "flash", "27b")}
+                                                    "flash-unsloth", "image-h3", "transcribe", "lfm25", "flash", "27b")}
 
 
 def engine_table() -> dict:
@@ -3888,7 +3905,8 @@ SERVING_UNITS = {"qwen38-sglang.service", "qwen38-flash.service",
                  "qwen38-keepalive.service", "qwen38-image.service",
                  "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                  "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                 "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service", AGENT_UNIT}
+                 "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
+                 "qwen38-lfm25.service", AGENT_UNIT}
 UNIT_VERBS = {"start", "stop", "restart"}
 
 def _lane_unit_texts() -> list[str]:
@@ -3898,7 +3916,7 @@ def _lane_unit_texts() -> list[str]:
     for path in (UNIT_PATHS["qwen38-sglang.service"], UNIT_PATHS["qwen38-flash.service"],
                  KOLIBRI_UNIT_PATH, NEMOTRON_UNIT_PATH, NEMOTRON_SUPER_UNIT_PATH, FLASH_LOCAL_UNIT_PATH,
                  ORNITH_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH,
-                 TRANSCRIBE_UNIT_PATH):
+                 TRANSCRIBE_UNIT_PATH, LFM25_UNIT_PATH):
         try:
             texts.append(path.read_text(errors="replace"))
         except OSError:
@@ -3921,7 +3939,7 @@ ACTIONS = {
         "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8", "arete",
                               "flash", "flash-nvda", "flash-uncensored", "flash-local", "image", "image-turbo",
                               "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "ornith-122b",
-                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe"]},
+                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25"]},
         "argv": lambda p: ["bash", str(REPO_DIR / "switch-model.sh"), p["target"]],
         # A switch can download a whole checkpoint: 124 GB for flash take about 23 min at
         # the 89 MB/s the reference box gets, so 30 min failed it on any slower link, and
@@ -4021,6 +4039,8 @@ def target_lane(target: str) -> str:
         return "image-h3"
     if target == "transcribe":
         return "transcribe"
+    if target == "lfm25":
+        return "lfm25"
     if target == "video":
         return "video"
     if target.startswith("kolibri"):
@@ -4064,7 +4084,7 @@ TARGET_PIN = {"stock": "STOCK_REV", "uncensored": "UNC_REV", "fp8": "FP8_REV", "
               "flash-local": "FLASH_LOCAL_REV", "ornith-122b": "ORNITH_122B_REV", "flash-unsloth": "FLASH_UNSLOTH_REV",
               # the Unsloth GGUF lane's two targets, two folders of one repository at one revision
               "flash-unsloth-iq3": "FLASH_UNSLOTH_REV",
-              "image-h3": "IMAGE_H3_MODEL_PIN_REV", "transcribe": "TRANSCRIBE_REV"}
+              "image-h3": "IMAGE_H3_MODEL_PIN_REV", "transcribe": "TRANSCRIBE_REV", "lfm25": "LFM25_REV"}
 # The Nemotron lanes load a drafter with the checkpoint, and their Download (the switch's --fetch)
 # fetches both: Library's state of such a target counts its drafter too. Bolt's read whole with its
 # drafter missing, which its Load then fetched (found on the reference box, 2026-10-15). The 27B's
@@ -4073,7 +4093,9 @@ TARGET_DRAFT_PIN = {"nemotron": "NEMOTRON_BOLT_DRAFT_REV", "nemotron-super": "NE
                     # the Unsloth GGUF lane's DFlash2 draft, which its Download fetches with its parts
                     "flash-unsloth": "FLASH_UNSLOTH_DRAFT_REV", "flash-unsloth-iq3": "FLASH_UNSLOTH_DRAFT_REV",
                     # MiniMax-H3-Image's text encoder, MiniMax-H3's text_encoder/ folder, which its Download fetches with it
-                    "image-h3": "IMAGE_H3_ENCODER_PIN_REV"}
+                    "image-h3": "IMAGE_H3_ENCODER_PIN_REV",
+                    # the Liquid AI LFM2.5 24B-A2B lane's DSpark draft, which its Download fetches with its checkpoint
+                    "lfm25": "LFM25_DRAFT_REV"}
 # What of a drafter's repository a target loads, when not all of it: the text encoder's folder of MiniMax-H3,
 # whose snapshot holds the video lane's partitions too
 TARGET_DRAFT_ALLOW = {"image-h3": ["text_encoder/*"]}
@@ -4190,6 +4212,8 @@ def target_unit(target: str) -> Path:
         return FLASH_UNSLOTH_UNIT_PATH
     if target == "transcribe":
         return TRANSCRIBE_UNIT_PATH
+    if target == "lfm25":
+        return LFM25_UNIT_PATH
     if target.startswith("flash"):
         return UNIT_PATHS["qwen38-flash.service"]
     return UNIT_PATHS["qwen38-sglang.service"]
@@ -4428,6 +4452,8 @@ def served_model_name() -> str:
     for unit, (_, _, served, _) in NEMOTRON_LANES.items():
         if states.get(unit) not in (None, "stopped", "failed"):
             return served
+    if states.get(LFM25_UNIT) not in (None, "stopped", "failed"):
+        return "lfm2.5-24b-a2b"
     return "qwen3.8-27b"
 
 
@@ -4481,6 +4507,13 @@ def systemone_available(max_age: float = 60.0) -> dict:
         return {"available": False, "lane": "", "status": None,
                 "reason": f"the Qwen3.8 Flash-Next Unsloth GGUF lane is serving: System One is answered by {who}, "
                           f"on SGLang, so load {one}"}
+    if text and text[0] == LFM25_UNIT:
+        # the proxy refuses it there (v6.60): its template begins every answer with its reasoning, so the token System
+        # One reads is never an option's label. An SGLang text lane, and the proxy's schema refuses the probe below
+        # before it reads the lane: the probe would have said it serves.
+        return {"available": False, "lane": "", "status": None,
+                "reason": f"the Liquid AI LFM2.5 24B-A2B lane is serving: System One is answered by {who} "
+                          f"(its chat template begins every answer with its reasoning), so load {one}"}
     b12x = next((u for u in NEMOTRON_LANES if states.get(u) in lc.BUSY_STATES), None)
     if text is None and b12x:
         return {"available": False, "lane": "", "status": None,
@@ -6151,6 +6184,7 @@ def job_diag_bundle(job: Job):
         (tdp / "journal-ornith-122b.txt").write_text(run(["journalctl", "-u", ORNITH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-flash-unsloth.txt").write_text(run(["journalctl", "-u", FLASH_UNSLOTH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-transcribe.txt").write_text(run(["journalctl", "-u", TRANSCRIBE_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
+        (tdp / "journal-lfm25.txt").write_text(run(["journalctl", "-u", LFM25_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-opencode-web.txt").write_text(run(["journalctl", "-u", AGENT_UNIT, "-n", "200", "--no-pager", "-o", "short-iso"], timeout=15))
         for cont in CONTAINERS:
             (tdp / f"docker-{cont}.txt").write_text(run(["docker", "logs", "--tail", "600", cont], timeout=15, merge_err=True))
@@ -7114,8 +7148,12 @@ def upstream_snapshot(max_age: float = 3600.0) -> dict:
 RECIPES_CACHE: dict = {"ts": 0.0, "data": None}
 RECIPES_LOCK = threading.Lock()
 def pinned_pool(unit: str) -> int | None:
-    """The --max-total-tokens the installed launcher or unit asks for, if any."""
-    lane = "flash" if unit == "qwen38-flash.service" else "27b"
+    """The --max-total-tokens the installed launcher or unit asks for, if any: the 27B's and the flash's, the two whose
+    invocation the recipes write. Any other unit read the 27B's, and a boot of the Liquid AI LFM2.5 24B-A2B lane was
+    measured against the 27B's pin."""
+    lane = {"qwen38-flash.service": "flash", "qwen38-sglang.service": "27b"}.get(unit)
+    if lane is None:
+        return None
     try:
         prof = rp.profile_from_text(INSTALLED_INVOCATION[lane].read_text())
     except (OSError, KeyError):

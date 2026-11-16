@@ -77,7 +77,7 @@ class Prepare(unittest.TestCase):
         self.assertEqual(self.cp.collect_lanes_ready(), {"image": True, "video": False, "kolibri": None, "nemotron": None,
                                                           "nemotron-super": None, "flash-local": None, "ornith-122b": None,
                                                           "flash-unsloth": None, "image-h3": None, "transcribe": None,
-                                                          "flash": None, "27b": None})
+                                                          "lfm25": None, "flash": None, "27b": None})
         (self.units / "qwen38-kolibri.service").write_text("ExecStart=/usr/bin/docker run qwen38-kolibri:1.0\n")
         self.assertIs(self.cp.collect_lanes_ready()["kolibri"], False)
         self.images.add("qwen38-kolibri:1.0")

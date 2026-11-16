@@ -63,6 +63,11 @@ ENGINES = {
     "qwen38-transcribe.service": {
         "engine": "llama.cpp", "version": "b12316", "reports": "b12316-5d4c8eeb2",
         "pin": "ghcr.io/ggml-org/llama.cpp@sha256:a5600a59c704208491adbb96505454a8d3d4cd3a9db48b03cf2760b660b7fd16"},
+    # install-lfm25.sh LFM25_IMAGE: the 27B lane's image, by the same digest, so the same SGLang
+    "qwen38-lfm25.service": {
+        "engine": "SGLang", "version": "0.5.22", "reports": "0.5.22",
+        "pin": "lmsysorg/sglang@sha256:e3a4f06001a29542fc4a8638536d9ffc5eb9c9942b08603c09b19a56eae4a1ae",
+        "tag": "lmsysorg/sglang:v0.5.22"},
     # install-image.sh and install-video.sh WHEEL: SGLang's diffusion runtime in the lane's own venv
     "qwen38-image.service": {"engine": "SGLang Diffusion", "version": "0.5.21", "reports": None,
                              "pin": "sglang[diffusion]==0.5.21"},

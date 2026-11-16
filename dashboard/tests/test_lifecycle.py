@@ -659,7 +659,8 @@ class KolibriLane(unittest.TestCase):
         self.assertIn(self.K, lc.ENGINE_UNITS)
         self.assertNotIn(self.K, lc.TEXT_UNITS)
         self.assertEqual(lc.KOLIBRI_UNIT, self.K)
-        self.assertEqual(set(lc.TEXT_UNITS), {"qwen38-sglang.service", "qwen38-flash.service"})
+        # SGLang's text lanes alone: install.sh's two, and the Liquid AI LFM2.5 24B-A2B lane on the 27B's image
+        self.assertEqual(set(lc.TEXT_UNITS), {"qwen38-sglang.service", "qwen38-flash.service", "qwen38-lfm25.service"})
 
     def test_it_waits_for_every_other_engine_and_they_for_it(self):
         for other in ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service", "qwen38-video.service"):
