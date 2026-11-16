@@ -1,0 +1,77 @@
+[Unit]
+Description=Liquid AI LFM2.5 24B-A2B FP8 + DSpark (SGLang, capped docker), OpenAI+Anthropic API :__PORT__
+Wants=network-online.target
+Requires=docker.service
+# One engine at a time on this box, said to systemd: starting this lane stops the others
+# and starting another stops this one, the stop finishing before the start in both
+# directions (Conflicts= alone orders nothing, hence After= on the same units).
+Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service
+After=network-online.target docker.service qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+ExecStartPre=-/usr/bin/docker rm -f qwen38-lfm25
+# The memory the last engine held has to be back before this one starts (see engine-preflight.sh).
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-lfm25.service
+# The key goes to the server in a file SGLang merges in memory (see engine-secrets.sh),
+# written again before every start, so it is on no command line.
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-secrets.sh
+# Liquid AI's official FP8 of LFM2.5 24B-A2B (compressed-tensors) and its official DSpark draft, served by the 27B
+# lane's own SGLang image (v0.5.22, the same digest) with the command the draft's card gives, as the reference box
+# measured it on 2026-11-14 (ready in 286 s, GSM8K 250 at 0.912, a KV cache of 1,667,049 tokens, MemAvailable 24
+# GiB at its lowest; ~/qa-tools/etudes/nouvelles-lanes/essai-20261114-1436):
+#   --context-length 131072 and --mem-fraction-static 0.7: the run's two numbers. --max-running-requests 48: the
+#     number SGLang set itself with a speculative draft at that run ("Max running requests is reset to 48 for
+#     speculative decoding"), said here so that no later default moves it.
+#   --speculative-algorithm DSPARK with the draft at its pinned revision, --speculative-dspark-block-size 9 and
+#     --speculative-num-draft-tokens 10: the card's (accept length 5.28 at the median under GSM8K).
+#   --tool-call-parser lfm2: the model writes its calls as LFM2 does, Python between <|tool_call_start|> and
+#     <|tool_call_end|>, and this parser renders them as OpenAI tool_calls (read in the image, 2026-11-15).
+#   --reasoning-parser __REASONING_PARSER__: the checkpoint's template opens <think> at every answer, so the model
+#     writes "... </think>" with no opening tag. deepseek-r1's parser takes every answer as begun in a thought,
+#     whatever the request's enable_thinking says (DeepSeekR1Detector, force_reasoning=True, read in this image's
+#     source, 2026-11-16), as this template does (install-lfm25.sh, LFM25_REASONING_PARSER). Without one the
+#     reasoning came back in content.
+#   No --chat-template: the checkpoint's own chat_template.jinja; its sampling defaults (temperature 0.1, top_k 50,
+#     repetition_penalty 1.05) are its generation_config.json, which SGLang applies to a request that sets none.
+# What every SGLang lane of this box passes besides (qwen38-sglang.service.template says why each): the health
+# route that generates nothing, the rendezvous through a file, gloo and NCCL on lo, the request header overrides
+# the proxy's request ids need, the offline cache, the scheduler parked when idle (--sleep-on-idle), the metrics
+# and the cache report, the key by --config, and the bind of the other text lanes.
+# Of the config directory, the one file the engine reads, read-only: the key's yaml. --mount, not -v: a source that
+# is not there fails the start, where -v made a directory in its place, owned by root. Its own compile cache.
+# --memory 110g: the cap the measured run held (110g, 2026-11-14).
+ExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --name qwen38-lfm25 --gpus all \
+  --memory 110g --memory-swap 110g --shm-size 16g --network host --ipc=host \
+  -e TORCHINDUCTOR_CACHE_DIR=/cache/inductor \
+  -e SGLANG_ENABLE_REQUEST_HEADER_OVERRIDES=1 \
+  -e SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION=0 \
+  -e SGLANG_DISTRIBUTED_INIT_METHOD_OVERRIDE=file:///tmp/sglang-rdv \
+  -e GLOO_SOCKET_IFNAME=lo -e NCCL_SOCKET_IFNAME=lo \
+  -e HF_HUB_OFFLINE=1 \
+  -v __HOME__/.config/qwen38/lfm25-cache:/cache \
+  -v __HF_CACHE__:/root/.cache/huggingface \
+  --mount type=bind,source=__HOME__/.config/qwen38/engine-secrets.yaml,target=/out/engine-secrets.yaml,readonly \
+  __IMAGE__ \
+  python3 -m sglang.launch_server \
+    --model-path __MODEL__ --revision __REV__ --tp-size 1 \
+    --served-model-name lfm2.5-24b-a2b \
+    --context-length 131072 --mem-fraction-static 0.7 --max-running-requests 48 \
+    --speculative-algorithm DSPARK --speculative-draft-model-path __DRAFT__ \
+    --speculative-draft-model-revision __DRAFT_REV__ \
+    --speculative-dspark-block-size 9 --speculative-num-draft-tokens 10 \
+    --sleep-on-idle --enable-metrics --enable-cache-report \
+    --reasoning-parser __REASONING_PARSER__ --tool-call-parser lfm2 \
+    --config /out/engine-secrets.yaml \
+    --host __ENGINE_BIND__ --port __PORT__'
+ExecStop=-/usr/bin/docker stop -t 20 qwen38-lfm25
+Restart=always
+# docker kills SGLang with SIGKILL (137) or SIGTERM (143) on a plain stop; that is
+# a clean stop, not a failure
+SuccessExitStatus=137 143
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

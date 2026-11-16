@@ -25,7 +25,8 @@ TEXT_PORT = 30000
 #              installed by its own script only: "./install.sh does not run this", install-speech.sh)
 #   kind       what it serves: text, image, video, speech or transcribe (speech heard on the GPU, on a port of
 #              its own, by no chat client: install-transcribe.sh)
-#   engine     sglang (lmsysorg/sglang images), vllm (the installers that source vllm-lane.sh),
+#   engine     sglang (lmsysorg/sglang images: install.sh's two lanes, and install-lfm25.sh's on the 27B's
+#              image), vllm (the installers that source vllm-lane.sh),
 #              llamacpp (llama.cpp's own llama-server image, the installers that source
 #              llamacpp-lane.sh), diffusion (SGLang Diffusion's wheel in the lane's own venv), own
 #              (this repo's speech-server.py, in front of llama.cpp's llama-server and Kokoro)
@@ -115,6 +116,13 @@ LANES = {
                    "targets": ("transcribe",), "heavy_64": (),
                    "served": None, "provider": None, "ports": (30036,), "fits_64": False,
                    "title": "NVIDIA Nemotron Transcribe"},
+    # install-lfm25.sh: the 27B lane's SGLang image (v0.5.22, the same digest), Liquid AI's official FP8 of LFM2.5
+    # 24B-A2B with its DSpark draft, on the text lanes' port behind the proxy; LFM25_SERVED lfm2.5-24b-a2b
+    "lfm25": {"unit": "qwen38-lfm25.service", "installer": "install-lfm25.sh", "flags": True, "kind": "text",
+              "engine": "sglang", "b12x": False,
+              "targets": ("lfm25",), "heavy_64": (),
+              "served": "lfm2.5-24b-a2b", "provider": "lfm25", "ports": (TEXT_PORT,), "fits_64": False,
+              "title": "Liquid AI LFM2.5 24B-A2B"},
     # install-speech.sh: on the CPU beside any lane, PORT 30024 (SPEECH_PORT) and its recognizer on the
     # next one (ASR_PORT); no switch target, no official name of its own (it is "the speech lane")
     "speech": {"unit": "qwen38-speech.service", "installer": "install-speech.sh", "flags": False, "kind": "speech",

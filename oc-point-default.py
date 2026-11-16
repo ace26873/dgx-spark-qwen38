@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Point an opencode.json at the served lane: default model + picker name.
 
-Usage: oc-point-default.py <config.json> <lane: 27b|flash|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth> <choice> <window>
+Usage: oc-point-default.py <config.json> <lane: 27b|flash|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|lfm25> <choice> <window>
 <window> is the served context window in tokens (1010000 or 262144, empty if
 unknown): it sets the "(local, 1M|262K)" suffix on the served entry's name.
 
@@ -72,7 +72,9 @@ LABEL = {"stock": "Qwen3.8-27B NVFP4 + DFlash2",
          # Unsloth's GGUF of the flash model, a lane of its own on llama.cpp, with ggml-org's DFlash2 draft: its two
          # quantizations share its one served-model-name, qwen3.8-flash-next-unsloth.
          "flash-unsloth": "Qwen3.8-Flash-Next Unsloth UD-Q4_K_XL + DFlash2",
-         "flash-unsloth-iq3": "Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2"}
+         "flash-unsloth-iq3": "Qwen3.8-Flash-Next Unsloth UD-IQ3_XXS + DFlash2",
+         # Liquid AI's official FP8 of LFM2.5 24B-A2B, a lane of its own on SGLang, with its official DSpark draft.
+         "lfm25": "Liquid AI LFM2.5 24B-A2B FP8 + DSpark"}
 
 
 def label_for(choice: str, window: str) -> str | None:
@@ -106,7 +108,8 @@ def main() -> None:
             "nemotron-super": "nemotron-super/nemotron-3.5-super-vl",
             "flash-local": "flash-local/qwen3.8-flash-next-fp4",
             "ornith-122b": "ornith-122b/ornith-1.5-122b",
-            "flash-unsloth": "flash-unsloth/qwen3.8-flash-next-unsloth"}.get(lane, "qwen38/qwen3.8-27b")
+            "flash-unsloth": "flash-unsloth/qwen3.8-flash-next-unsloth",
+            "lfm25": "lfm25/lfm2.5-24b-a2b"}.get(lane, "qwen38/qwen3.8-27b")
     prov, mid = want.split("/")
     try:
         text = ocm.read(path)

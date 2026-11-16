@@ -1260,7 +1260,8 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
         for rel in ("pi-gen.py", "oc-merge-limits.py"):
             got, where = py_at(rel, "OURS")
             p.same(f"{where} OURS", got, providers)
-        # each vLLM lane's provider block, as its oc-<lane>.py prints it for install.sh and the switch
+        # each provider block of a text lane with an installer of its own (vLLM, llama.cpp, or SGLang for the Liquid AI
+        # LFM2.5 24B-A2B lane), as its oc-<lane>.py prints it for install.sh and the switch
         got, scripts = {}, floor([s for s in sorted(REPO.glob("oc-*.py")) if "\ndef provider(" in s.read_text()], "oc-<lane>.py")
         for script in scripts:
             lanes = py_at(script.name, "LANES")[0] if re.search(r"^LANES = ", script.read_text(), re.M) else [None]
@@ -1269,7 +1270,7 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
                 for prov, block in out["provider"].items():
                     got[prov] = list(block["models"])
         p.table(f"{', '.join(s.name for s in scripts)}: the provider each prints, and its model", got,
-                {LANES[x]["provider"]: [LANES[x]["served"]] for x in among(VLLM + LLAMACPP, TEXT)})
+                {LANES[x]["provider"]: [LANES[x]["served"]] for x in among(SIDE, TEXT)})
         rel = "oc-point-default.py"
         got, where = py_at(rel, "LABEL")
         p.same(f"{where} LABEL", got, targets_of(TEXT))
@@ -1282,13 +1283,14 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
                 {x: f"{LANES[x]['provider']}/{LANES[x]['served']}" for x in TEXT})
         m = re.search(r"<lane: ([a-z0-9|-]+)>", ast.get_docstring(tree_of(rel)) or "")
         p.same(f"{rel}:3 its usage's lanes", m.group(1).split("|") if m else [], TEXT)
-        # the pool fit and the recipes are SGLang's: the two text lanes install.sh serves
+        # the pool fit is SGLang's, every SGLang text lane's; the recipes are install.sh's two lanes' (its MODEL_CHOICE),
+        # which the Liquid AI LFM2.5 24B-A2B lane, on SGLang under an installer of its own, is not
         got, where = py_at("oc-fit-limits.py", "LANE_MODEL")
         p.table(f"{where} LANE_MODEL (served: provider), the SGLang lanes", got, {LANES[x]["served"]: LANES[x]["provider"] for x in SGLANG})
         got, where = py_at("dashboard/recipes.py", "LANES")
-        p.same(f"{where} LANES, recipes are SGLang's", got, SGLANG)
+        p.same(f"{where} LANES, recipes are install.sh's SGLang lanes'", got, among(SGLANG, INSTALL_SH))
         got, where = py_at("dashboard/recipes.py", "BUILTIN_IDS")
-        p.same(f"{where} BUILTIN_IDS", got, targets_of(SGLANG))
+        p.same(f"{where} BUILTIN_IDS", got, targets_of(among(SGLANG, INSTALL_SH)))
         # oc-limits.sh's pair per target: every text target, and custom (the 27B's kept model)
         arms, line = sh_case_with(text_of("oc-limits.sh"), '"$CHOICE"', r"unknown target", "oc-limits.sh")
         p.same(f"oc-limits.sh:{line} its case of targets", [t for t in patterns(arms) if t != "custom"], targets_of(TEXT))
@@ -1378,8 +1380,10 @@ class TheCockpitSaysTheSame(unittest.TestCase):
         got, where = py_at(rel, "TARGET_PIN")
         p.same(f"{where} TARGET_PIN", got, TARGET_LANE)
         # the pins of the targets install.sh serves itself, which the cockpit reads from its unit
+        # unit_target()'s path for an SGLang unit, which names its model by --model-path: install.sh's two lanes, and the
+        # Liquid AI LFM2.5 24B-A2B lane's
         got, where = py_at(rel, "VAR2TARGET")
-        p.same(f"{where} VAR2TARGET (its targets)", got.values(), targets_of(INSTALL_SH))
+        p.same(f"{where} VAR2TARGET (its targets)", got.values(), targets_of(SGLANG))
         target_lane = py_run(rel, "target_lane", {})
         p.table(f"{rel}:{py_function(rel, 'target_lane').lineno} target_lane()", {t: target_lane(t) for t in TARGET_LANE}, TARGET_LANE)
         # target_unit() run on the unit each of its names holds: X_UNIT_PATH = Path("/etc/systemd/system/<unit>"),

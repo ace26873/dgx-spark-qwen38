@@ -68,7 +68,9 @@ WORST_STEP = int(os.environ.get("OC_WORST_STEP") or "43_863")
 _MARGIN_FLOOR = max(0, WORST_STEP - COMPACTION_RESERVE)
 CEILING_MARGIN = int(os.environ.get("OC_CEILING_MARGIN") or
                      -(-_MARGIN_FLOOR // 5000) * 5000)
-LANE_MODEL = {"qwen3.8-27b": "qwen38", "qwen3.8-flash-next": "flashnext"}
+# The SGLang lanes, by the name each serves under: the two install.sh serves, and the Liquid AI LFM2.5 24B-A2B lane
+# (install-lfm25.sh), whose engine says its pool the same way.
+LANE_MODEL = {"qwen3.8-27b": "qwen38", "qwen3.8-flash-next": "flashnext", "lfm2.5-24b-a2b": "lfm25"}
 AGENT_UNIT = "opencode-web.service"
 # The engine's window is the third bound, and it holds the prompt PLUS the answer:
 # SGLang refuses any request where input + max_new_tokens exceeds its context_length
@@ -84,6 +86,7 @@ AGENT_UNIT = "opencode-web.service"
 # reads as an overflow and compacts on (found in review, 2026-09-24).
 NATIVE_WINDOW = 262_144
 SGL_UNIT = Path(os.environ.get("OC_SGL_UNIT", "/etc/systemd/system/qwen38-sglang.service"))
+LFM25_UNIT = Path(os.environ.get("OC_LFM25_UNIT", "/etc/systemd/system/qwen38-lfm25.service"))
 
 
 def step_margin(output: int) -> int:
@@ -99,10 +102,11 @@ def lane_cap(served: str) -> tuple[int, int] | None:
     """The static pair oc-limits.sh gives the lane that serves, read from its installed
     invocation (the flash tier from the launcher, the 27B mode from the unit). A lane on
     a native window keeps that pair as a ceiling: its answer budget is chosen per lane
-    (32,000 on flash, 64,000 on the 27B), and a pool bigger than the window is no reason
-    to grow it."""
+    (32,000 on flash and on the Liquid AI LFM2.5 24B-A2B lane, 64,000 on the 27B), and a
+    pool bigger than the window is no reason to grow it."""
     choice, invocation = {"qwen3.8-27b": ("stock", SGL_UNIT),
-                          "qwen3.8-flash-next": ("flash", CONFIG_DIR / "launch-flash.sh")}.get(served, (None, None))
+                          "qwen3.8-flash-next": ("flash", CONFIG_DIR / "launch-flash.sh"),
+                          "lfm2.5-24b-a2b": ("lfm25", LFM25_UNIT)}.get(served, (None, None))
     if not choice:
         return None
     r = subprocess.run(["bash", str(REPO_DIR / "oc-limits.sh"), choice, "--from", str(invocation)],

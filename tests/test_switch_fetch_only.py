@@ -45,7 +45,7 @@ class Box:
         text = SWITCH
         for unit in ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-nemotron.service",
                      "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                     "qwen38-flash-unsloth.service", "qwen38-transcribe.service"):
+                     "qwen38-flash-unsloth.service", "qwen38-transcribe.service", "qwen38-lfm25.service"):
             old = f'"/etc/systemd/system/{unit}"'
             assert old in text, f"switch-model.sh no longer names {unit} that way"
             text = text.replace(old, f'"{units}/{unit}"')
@@ -54,7 +54,7 @@ class Box:
         # and the Unsloth GGUF lane's installer, whose --fetch the switch runs, with what it sources and its fetcher
         for f in ("lanes.sh", "ckpt-fetch.py", "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh",
                   "install-ornith-122b.sh", "vllm-lane.sh", "ple-table.py", "install-flash-unsloth.sh", "llamacpp-lane.sh",
-                  "gguf-fetch.py", "install-transcribe.sh"):
+                  "gguf-fetch.py", "install-transcribe.sh", "install-lfm25.sh", "sglang-lane.sh"):
             (repo / f).write_text((REPO / f).read_text())
         # the Nemotron lane's unit, as install-nemotron.sh writes it: its image, its cache, the
         # checkpoint and the memory share on lines of their own
@@ -126,6 +126,20 @@ class Box:
             f"  {self.transcribe_pins['TRANSCRIBE_IMAGE']} \\\n"
             "    -m /root/.cache/huggingface/hub/models--mradermacher--NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF/snapshots/"
             f"{self.transcribe_pins['TRANSCRIBE_REV']}/x.gguf -c 65536 --port 30036'\n")
+        # the Liquid AI LFM2.5 24B-A2B lane's unit: the 27B lane's SGLang image by digest, its cache, its checkpoint
+        # and its draft, each at its revision
+        lpins = dict(line.split("=", 1) for line in (REPO / "install-lfm25.sh").read_text().splitlines()
+                     if line.startswith("LFM25_") and "=" in line)
+        self.lfm25_pins = {k: v.strip('"') for k, v in lpins.items()}
+        self.lfm25_unit = units / "qwen38-lfm25.service"
+        self.lfm25_unit.write_text(
+            "[Service]\nExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --name qwen38-lfm25 \\\n"
+            f"  -v {self.home}/.cache/huggingface:/root/.cache/huggingface \\\n"
+            f"  {self.lfm25_pins['LFM25_IMAGE']} \\\n"
+            f"  python3 -m sglang.launch_server --model-path {self.lfm25_pins['LFM25_REPO']} "
+            f"--revision {self.lfm25_pins['LFM25_REV']} \\\n"
+            f"    --speculative-draft-model-path {self.lfm25_pins['LFM25_DRAFT_REPO']} "
+            f"--speculative-draft-model-revision {self.lfm25_pins['LFM25_DRAFT_REV']} --port 30000'\n")
         (repo / "switch-model.sh").chmod(0o755)
         self.bin = self.t / "bin"
         self.bin.mkdir()
@@ -289,6 +303,25 @@ class FetchOnly(unittest.TestCase):
         self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
         self.assertFalse((box.home / ".config/qwen38/text-lane").exists(), "--fetch wrote the text-lane record")
 
+    def test_the_lfm25_lane_fetches_its_checkpoint_and_its_draft_in_the_27b_image_and_stops(self):
+        box = Box()
+        unit_before = box.lfm25_unit.read_bytes()
+        rc, out, runs, calls = box.run("lfm25", "--fetch")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("and its draft is in the cache; nothing else was changed", out)
+        pins = box.lfm25_pins
+        self.assertEqual(len(runs), 2, runs)
+        self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['LFM25_REPO']} {pins['LFM25_REV']} ", runs[0])
+        self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['LFM25_DRAFT_REPO']} {pins['LFM25_DRAFT_REV']} ", runs[1])
+        self.assertIn(f"--need-gb {pins['LFM25_GB']} ", runs[0])
+        self.assertIn("--need-gb 1 ", runs[1])
+        image = re.search(r'^IMAGE="\$\{IMAGE:-([^}]+)\}"', (REPO / "install.sh").read_text(), re.M).group(1)
+        for run in runs:
+            self.assertIn(f" {image} ", run, "in the 27B lane's image, by digest")
+        self.assertEqual(box.lfm25_unit.read_bytes(), unit_before)
+        self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
+        self.assertFalse((box.home / ".config/qwen38/text-lane").exists(), "--fetch wrote the text-lane record")
+
     def test_without_it_the_switch_goes_on_past_the_download(self):
         rc, out, runs, _ = Box().run("stock")
         self.assertEqual(len(runs), 1, out)
@@ -301,12 +334,13 @@ class FetchOnly(unittest.TestCase):
         self.assertEqual((runs, calls), ([], []))
 
     def test_every_lane_stops_right_after_its_own_download(self):
-        # the nine fetch calls of the switch: the seven branches that fetch (Kolibri, Nemotron, Flash FP4-Local, Ornith,
-        # image, video, the text lanes) and MiniMax-H3-Image's two (its checkpoint, then its text encoder), that pair
-        # ending with ONE stop (v1.50); each call is followed at once by the --fetch stop, before anything it writes;
-        # the Nemotron lane's loop over its model and its drafter ends first, with nothing else in it
+        # the ten fetch calls of the switch: the eight branches that fetch (Kolibri, Nemotron, Flash FP4-Local, Ornith,
+        # image, video, the text lanes, the Liquid AI LFM2.5 24B-A2B lane) and MiniMax-H3-Image's two (its checkpoint,
+        # then its text encoder), that pair ending with ONE stop (v1.50); each call is followed at once by the --fetch
+        # stop, before anything it writes; the Nemotron lane's loop over its model and its drafter ends first, with
+        # nothing else in it, and so does the LFM2.5 lane's over its checkpoint and its draft
         calls = [m.start() for m in re.finditer(r"ckpt-fetch\.py\"? \"\$", SWITCH)]
-        self.assertEqual(len(calls), 9)
+        self.assertEqual(len(calls), 10)
         for at in calls:
             rest = SWITCH[at:]
             die = rest.index("|| die ")

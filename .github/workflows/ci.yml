@@ -489,14 +489,15 @@ jobs:
           # FP4-Local lane's (--with-flash-local), `ornith-122b`, the Ornith lane's
           # (--with-ornith-122b), and `flash-unsloth` and `flash-unsloth-iq3`, the Qwen3.8
           # Flash-Next Unsloth GGUF lane's two quantizations (--with-flash-unsloth), and the MiniMax-H3-Image
-          # lane's `image-h3` (--with-image-h3) and the NVIDIA Nemotron Transcribe lane's `transcribe`
-          # (--with-transcribe), each switched to like any other, and none a MODEL_CHOICE (none has a
-          # recipe; Kolibri, the Nemotron lanes, Flash FP4-Local and Ornith serve text from vLLM, the
-          # Unsloth GGUF lane from llama.cpp, under their own installers). Both sets are asserted, so a
+          # lane's `image-h3` (--with-image-h3), the NVIDIA Nemotron Transcribe lane's `transcribe`
+          # (--with-transcribe) and the Liquid AI LFM2.5 24B-A2B lane's `lfm25` (--with-lfm25), each
+          # switched to like any other, and none a MODEL_CHOICE (none has a recipe; Kolibri, the Nemotron
+          # lanes, Flash FP4-Local and Ornith serve text from vLLM, the Unsloth GGUF lane from llama.cpp,
+          # and the LFM2.5 lane from SGLang, under their own installers). Both sets are asserted, so a
           # target added to the switcher and forgotten in the cockpit's enum is
           # still caught.
           FLAG_LANES = ["image", "image-turbo", "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-local",
-                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe"]
+                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25"]
           ref = choices
           switch_ref = sorted(ref + FLAG_LANES)
           text_lists = {"install.sh MODEL_CHOICE": choices, "recipes BUILTIN_IDS": sorted(builtins)}
@@ -580,6 +581,12 @@ jobs:
           # its second target, UD-IQ3_XXS (v1.49): more requests at once, the same window for each, the same pairs
           [ "$(l flash-unsloth-iq3)" = "$(l flash-unsloth)" ] || { echo "flash-unsloth-iq3's default drifted"; exit 1; }
           [ "$(l flash-unsloth-iq3 1m)" = "$(l flash-unsloth 1m)" ] || { echo "flash-unsloth-iq3 1m drifted"; exit 1; }
+          # The Liquid AI LFM2.5 24B-A2B lane, at its one window (131,072 tokens), by the same rule, and the pair
+          # oc-fit-limits.py reaches from a pool far past it (its worst step rounded to 25,000)
+          [ "$(l lfm25)" = "74000 32000 local, 131K" ] || { echo "lfm25 drifted"; exit 1; }
+          read -r C O _ <<<"$(l lfm25)"
+          [ $(( C - 20000 + 43863 + O )) -le 131072 ] || { echo "lfm25: past its 131,072 window"; exit 1; }
+          [ $(( C + 25000 + O )) -le 131072 ] || { echo "lfm25: past its window by oc-fit-limits.py's rule"; exit 1; }
           # Nonsense is refused rather than defaulted, or a typo silently serves
           # the wrong budget.
           ! l banana native 2>/dev/null || { echo "an unknown target must be refused"; exit 1; }
@@ -851,7 +858,8 @@ jobs:
           # 2026-09-10. This lane grew from an experiment into the one in production,
           # so the flag is a gate now, not a habit.
           for f in qwen38-sglang.service.template qwen38-sglang-1m.service.template \
-                   qwen38-flash-launch.sh.template run.sh qwen38-image-h3.service.template; do
+                   qwen38-flash-launch.sh.template run.sh qwen38-image-h3.service.template \
+                   qwen38-lfm25.service.template; do
             grep -q -- '--sleep-on-idle' "$f" || { echo "$f does not park its scheduler when idle"; exit 1; }
           done
           # The image and video lanes' runtime (v0.5.21) has no such flag: their scheduler-idle-poll
@@ -867,7 +875,7 @@ jobs:
           # unnoticed, and its exposure is stated (unauthenticated on a port whose
           # whole surface already assumes a trusted network: SECURITY.md).
           for f in qwen38-sglang.service.template qwen38-sglang-1m.service.template \
-                   qwen38-flash-launch.sh.template run.sh; do
+                   qwen38-flash-launch.sh.template run.sh qwen38-lfm25.service.template; do
             grep -q -- '--enable-metrics' "$f" || { echo "$f exports no metrics"; exit 1; }
           done
 
@@ -1013,11 +1021,12 @@ jobs:
           script = pathlib.Path("switch-model.sh").read_text()
           alw = pathlib.Path("dashboard/sudoers-cockpit.template").read_text()
           allowed = {m.strip() for m in re.findall(r"NOPASSWD:\s*(.+)$", alw, re.M)}
-          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE|TRANSCRIBE_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
+          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE|TRANSCRIBE_STAGE|LFM25_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
           units = {"qwen38-sglang.service", "qwen38-flash.service"}
           engines = units | {"qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                              "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                             "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service"}
+                             "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
+                             "qwen38-lfm25.service"}
           values = {
               "TEXT_UNIT_NAME": engines, "TARGET_UNIT_NAME": units, "OTHER_UNIT_NAME": engines,
               "IMAGE_UNIT_NAME": {"qwen38-image.service"},
@@ -1030,6 +1039,7 @@ jobs:
               "FLASH_UNSLOTH_UNIT_NAME": {"qwen38-flash-unsloth.service"},
               "IMAGE_H3_UNIT_NAME": {"qwen38-image-h3.service"},
               "TRANSCRIBE_UNIT_NAME": {"qwen38-transcribe.service"},
+              "LFM25_UNIT_NAME": {"qwen38-lfm25.service"},
               "TARGET_UNIT": {re.search(r'^SGL_UNIT="([^"]+)"', script, re.M).group(1)},
               "IMAGE_UNIT": {re.search(r'^IMAGE_UNIT="([^"]+)"', script, re.M).group(1)},
               "VIDEO_UNIT": {re.search(r'^VIDEO_UNIT="([^"]+)"', script, re.M).group(1)},
@@ -1041,6 +1051,7 @@ jobs:
               "ORNITH_122B_UNIT": {re.search(r'^ORNITH_122B_UNIT="([^"]+)"', script, re.M).group(1)},
               "FLASH_UNSLOTH_UNIT": {re.search(r'^FLASH_UNSLOTH_UNIT="([^"]+)"', script, re.M).group(1)},
               "TRANSCRIBE_UNIT": {re.search(r'^TRANSCRIBE_UNIT="([^"]+)"', script, re.M).group(1)},
+              "LFM25_UNIT": {re.search(r'^LFM25_UNIT="([^"]+)"', script, re.M).group(1)},
               "STAGE_UNIT": {"__HOME__/.config/qwen38/" + stage["STAGE_UNIT"]},
               "STAGE_CEIL": {"__HOME__/.config/qwen38/" + stage["STAGE_CEIL"]},
               "IMG_STAGE": {"__HOME__/.config/qwen38/" + stage["IMG_STAGE"]},
@@ -1053,6 +1064,7 @@ jobs:
               "VID_STAGE": {"__HOME__/.config/qwen38/" + stage["VID_STAGE"]},
               "H3_STAGE": {"__HOME__/.config/qwen38/" + stage["H3_STAGE"]},
               "TRANSCRIBE_STAGE": {"__HOME__/.config/qwen38/" + stage["TRANSCRIBE_STAGE"]},
+              "LFM25_STAGE": {"__HOME__/.config/qwen38/" + stage["LFM25_STAGE"]},
           }
           seen, bad = 0, []
           for raw in script.splitlines():
@@ -1195,6 +1207,11 @@ jobs:
           m = re.search(r'^IMAGE_H3_MODEL_PIN="([^"]+)"', pathlib.Path("install-image-h3.sh").read_text(), re.M)
           if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
               bad.append("install-image-h3.sh IMAGE_H3_MODEL_PIN")
+          # and the Liquid AI LFM2.5 24B-A2B lane's checkpoint and draft
+          for var in ("LFM25_REPO", "LFM25_DRAFT_REPO"):
+              m = re.search(rf'^{var}="([^"]+)"', pathlib.Path("install-lfm25.sh").read_text(), re.M)
+              if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
+                  bad.append(f"install-lfm25.sh {var}")
           # and the NVIDIA Nemotron Transcribe lane's GGUF repository
           m = re.search(r'^TRANSCRIBE_REPO="([^"]+)"', pathlib.Path("install-transcribe.sh").read_text(), re.M)
           if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():

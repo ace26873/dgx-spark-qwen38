@@ -330,6 +330,17 @@ case "$CHOICE" in
       *) printf 'oc-limits: unknown context mode "%s"\n' "$MODE" >&2; exit 2 ;;
     esac
     ;;
+  lfm25)
+    # The Liquid AI LFM2.5 24B-A2B lane serves the model's window, 131,072 tokens (its config's
+    # max_position_embeddings, the unit's --context-length), and SGLang refuses any request whose prompt +
+    # max_tokens passes it. Its KV cache holds 1,667,049 tokens (measured 2026-11-14), the window 12.7 times over,
+    # so the window decides, by the flash lane's rule with the answer the flash lane keeps (32,000), and by
+    # oc-fit-limits.py's, whose margin is the worst agent step less opencode's compaction reserve (43,863 - 20,000),
+    # rounded up to 25,000, so that the two land on one pair:
+    #     74,000 - 20,000 + 43,863 + 32,000 = 129,863  <=  131,072
+    #     74,000 + 25,000 + 32,000 = 131,000  <=  131,072
+    CTX=74000; OUT=32000; LABEL="local, 131K"
+    ;;
   *) printf 'oc-limits: unknown target "%s"\n' "$CHOICE" >&2; exit 2 ;;
 esac
 

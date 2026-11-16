@@ -6,10 +6,10 @@ removes them carries its own list of them: some thirty lists in a dozen files, s
 page's JavaScript. A lane added and forgotten in one of them was a box left with no engine: the image
 and video installers' lists did not name the eighth lane (found in review, 2026-10-20). The lanes are
 the unit templates that name the others in Conflicts=, and every list must name, exactly, all of
-them, all but its own lane, the text lanes, the vLLM lanes, or one of five narrower families, each
+them, all but its own lane, the text lanes, the vLLM lanes, or one of six narrower families, each
 read from what it is about: the lanes that keep a lane-before link, the units conformity.py reads,
-the lanes whose unit mounts the Hugging Face cache, the lanes that are not SGLang's text lanes, and
-the vLLM lanes that run b12x. A list names a lane by its unit, with or without ".service", or by the constant that holds it
+the lanes whose unit mounts the Hugging Face cache, the lanes that are not SGLang's text lanes and
+those that are, and the vLLM lanes that run b12x. A list names a lane by its unit, with or without ".service", or by the constant that holds it
 (FLASH_LOCAL_UNIT, lc.KOLIBRI_UNIT): read by units alone, the lists made of names were never checked
 (found in review, 2026-10-20). A tenth lane added to the templates and missed in one list fails here,
 with the file and the line, and so does a list that lost a lane, unless what it kept is itself a
@@ -64,6 +64,9 @@ NOT_SGLANG = DIFFUSION | VLLM | LLAMACPP
 # to name every text lane, in a list named for them (OTHER_TEXT_UNITS), held to this family by its name, since without
 # the name a copy that lost the llama.cpp lane would read as the vLLM lanes
 OTHER_TEXT = TEXT & NOT_SGLANG
+# SGLang's text lanes, the cockpit's lc.TEXT_UNITS: install.sh's two, and the Liquid AI LFM2.5 24B-A2B lane on the 27B's
+# image, whose unit the cockpit reads the way it reads theirs (UNIT_PATHS, TEXT_BOOT_DEFAULT_S)
+SGLANG_TEXT = TEXT - NOT_SGLANG
 # the vLLM lanes whose engine runs b12x, as their installers say: the cockpit's table of that family
 B12X = {u for u in VLLM if "b12x" in (REPO / f"install-{u[len('qwen38-'):-len('.service')]}.sh").read_text()}
 # the lanes whose unit mounts the Hugging Face cache (the flash lane's launcher mounts it for its unit)
@@ -78,7 +81,8 @@ CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kol
                "flash-unsloth": "qwen38-flash-unsloth.service", "flash-unsloth-iq3": "qwen38-flash-unsloth.service",
                "image": "qwen38-image.service",
                "image-turbo": "qwen38-image.service", "video": "qwen38-video.service",
-               "image-h3": "qwen38-image-h3.service", "transcribe": "qwen38-transcribe.service"}
+               "image-h3": "qwen38-image-h3.service", "transcribe": "qwen38-transcribe.service",
+               "lfm25": "qwen38-lfm25.service"}
 
 
 # The two families one lane apart (the vLLM lanes less Kolibri are the b12x lanes) are told by the
@@ -109,7 +113,7 @@ def whole(named: set, own: set, name=None) -> bool:
     fam = family_of(name)
     if fam is not None:
         return named == fam
-    if named in (ENGINE, TEXT, VLLM, NOT_SGLANG, LANE_BEFORE, CONFORMITY, HF_UNITS):
+    if named in (ENGINE, TEXT, VLLM, NOT_SGLANG, SGLANG_TEXT, LANE_BEFORE, CONFORMITY, HF_UNITS):
         return True
     return any(named == ENGINE - {o} or named == TEXT - {o} for o in own)
 
@@ -122,7 +126,7 @@ def missing(named: set, name=None, own=frozenset()) -> list:
     named = named & ENGINE
     fam = family_of(name)
     if fam is None:
-        fams = [ENGINE, TEXT, VLLM, NOT_SGLANG, LANE_BEFORE, CONFORMITY, HF_UNITS]
+        fams = [ENGINE, TEXT, VLLM, NOT_SGLANG, SGLANG_TEXT, LANE_BEFORE, CONFORMITY, HF_UNITS]
         fams += [ENGINE - {o} for o in own] + [TEXT - {o} for o in own]
         fam = min((f for f in fams if named <= f), key=len, default=ENGINE)
     return sorted(u[7:-8] for u in fam - named) or [f"no {sorted(u[7:-8] for u in named - fam)}"]
@@ -378,7 +382,8 @@ class EveryListNamesThemAll(unittest.TestCase):
                         if isinstance(t, ast.Name):
                             self.assertEqual(consts.setdefault(t.id, node.value.value), node.value.value, t.id)
         self.assertLessEqual({"IMAGE_UNIT", "VIDEO_UNIT", "KOLIBRI_UNIT", "NEMOTRON_UNIT", "NEMOTRON_SUPER_UNIT",
-                              "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT", "TRANSCRIBE_UNIT"},
+                              "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT", "TRANSCRIBE_UNIT",
+                              "LFM25_UNIT"},
                              set(consts), consts)
 
         def unit_of(e):

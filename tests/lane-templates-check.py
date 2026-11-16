@@ -61,6 +61,12 @@ GGUF_LANES = {
     "flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_PART1", {"LEAN_DEFAULT": "1"}),
     "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_IQ3_PART1", {"LEAN_DEFAULT": "1"}),
 }
+# How each SGLang target of an installer of its own serves its template (install.sh's 27B and flash targets are read
+# from install.sh below): the Liquid AI LFM2.5 24B-A2B lane serves its checkpoint's own, as published. (installer, pin
+# prefix, the fixes as in VLLM_LANES.)
+SGLANG_LANES = {
+    "lfm25": ("install-lfm25.sh", "LFM25", None),
+}
 # switch-model.sh's targets that serve no chat template
 NOT_TEXT = {"image", "image-turbo", "video", "image-h3", "transcribe"}
 
@@ -134,14 +140,16 @@ def lane_specs(repo_dir=REPO):
     # NVIDIA Nemotron Transcribe lane's installer, which puts its unit with unit_put, says why it does not call it)
     installers = sorted(f.name for f in repo_dir.glob("install-*.sh")
                         if re.search(r"^[^#\n]*\bvlane_put_unit\b", f.read_text(), re.M))
-    known = sorted({f for f, _, _ in VLLM_LANES.values()} | {f for f, _, _, _ in GGUF_LANES.values()})
+    known = sorted({f for f, _, _ in VLLM_LANES.values()} | {f for f, _, _, _ in GGUF_LANES.values()}
+                   | {f for f, _, _ in SGLANG_LANES.values()})
     if installers != known:
-        raise SystemExit(f"the vLLM and llama.cpp lanes are {installers}, this check knows {known}: add the new lane to "
-                         "VLLM_LANES or GGUF_LANES")
-    for name, (installer, prefix, env) in VLLM_LANES.items():
+        raise SystemExit(f"the lanes with an installer of their own are {installers}, this check knows {known}: add the new "
+                         "lane to VLLM_LANES, GGUF_LANES or SGLANG_LANES")
+    for name, (installer, prefix, env) in {**VLLM_LANES, **SGLANG_LANES}.items():
         text = (repo_dir / installer).read_text()
         if fixes_of(text, installer) != env:
-            raise SystemExit(f"{installer} serves its template otherwise than VLLM_LANES says for {name}")
+            raise SystemExit(f"{installer} serves its template otherwise than {'VLLM_LANES' if name in VLLM_LANES else 'SGLANG_LANES'}"
+                             f" says for {name}")
         specs.append((name, *pin(text, prefix), env))
     for name, (installer, prefix, part_var, env) in GGUF_LANES.items():
         text = (repo_dir / installer).read_text()

@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # vllm-lane.sh: what the five vLLM lanes' installers share (install-kolibri.sh, install-nemotron.sh,
-# install-nemotron-super.sh, install-flash-local.sh, install-ornith-122b.sh). Sourced after lanes.sh, never run. Each
-# installer keeps what is its own (its pins, its image, its unit's placeholders, its words) and names itself first:
+# install-nemotron-super.sh, install-flash-local.sh, install-ornith-122b.sh), and through llamacpp-lane.sh and
+# sglang-lane.sh what is no vLLM's here, the llama.cpp lanes' and install-lfm25.sh's. Sourced after lanes.sh, never
+# run. Each installer keeps what is its own (its pins, its image, its unit's placeholders, its words) and names
+# itself first:
 #
 #   VLANE        the lane (kolibri, nemotron, nemotron-super, flash-local, ornith-122b): its opencode provider, the
 #                record of the text lane it took the boot from (lanes.sh), its --no-<lane>, its cache folder
@@ -324,7 +326,9 @@ vlane_fetch(){  # $1 the repo, $2 the revision
 # lane's journal lines. Reads VLANE_SERVED (the model name it serves), VLANE_KWARGS (the
 # chat_template_kwargs that turn its reasoning off), VLANE_PARSERS (what to suspect when no tool call
 # comes back: "the qwen3_coder parser is"), VLANE_BOOT (its boot on the reference box, said while it
-# loads), VLANE_WAIT_MIN (how long it is given, in minutes).
+# loads), VLANE_WAIT_MIN (how long it is given, in minutes), and VLANE_REPLY_TOKENS when the first reply needs more
+# than 64 tokens (a lane whose template reasons before every answer and has no switch to turn it off: the Liquid AI
+# LFM2.5 24B-A2B lane's).
 vlane_prove(){
   local u r0 ready=0 i code journal_copy
   # The proof restarts a lane serving older files than the service step put in place (LANE_FILES):
@@ -333,7 +337,7 @@ vlane_prove(){
   { [ -n "${LANE_FILES+x}" ] && [ "${#LANE_FILES[@]}" -gt 0 ]; } \
     || die "the proof runs before the service step (repo bug: please open an issue)"
   VLANE_WAS=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service qwen38-lfm25.service; do
     [ "$u" = "$UNIT" ] && continue
     systemctl is-active --quiet "$u" 2>/dev/null && VLANE_WAS="$u"
   done
@@ -371,7 +375,7 @@ vlane_prove(){
   [ "$ready" -eq 1 ] || { { sudo journalctl -u "$UNIT" --since "$SINCE" --no-pager || true; } | tail -40; die "the lane did not answer /health within $VLANE_WAIT_MIN min. The journal above says why."; }
   echo "up after ~$(( (i - 1) * 8 )) s"
   OUT="$(mktemp)"
-  code="$(vlane_ask '{"model":"'"$VLANE_SERVED"'","messages":[{"role":"user","content":"Reply with exactly: READY"}],"max_tokens":64,"chat_template_kwargs":'"$VLANE_KWARGS"'}')"
+  code="$(vlane_ask '{"model":"'"$VLANE_SERVED"'","messages":[{"role":"user","content":"Reply with exactly: READY"}],"max_tokens":'"${VLANE_REPLY_TOKENS:-64}"',"chat_template_kwargs":'"$VLANE_KWARGS"'}')"
   [ "$code" = 200 ] || { echo "HTTP ${code:-000}: $(head -c 300 "$OUT")"; die "the lane came up and its first generation failed (HTTP ${code:-000})."; }
   python3 - "$OUT" <<'PY' || die "the lane answered 200 without the expected reply."
 import json, sys

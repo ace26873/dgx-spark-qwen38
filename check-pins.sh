@@ -84,6 +84,9 @@ eval "$uline"
 # (PATH=SHA256:SIZE); its image is the Unsloth GGUF lane's, by the same digest, checked below.
 tline="$(grep -E '^TRANSCRIBE_(REPO|REV|FILE|MMPROJ)=' "$REPO_DIR/install-transcribe.sh")"
 eval "$tline"
+# The Liquid AI LFM2.5 24B-A2B lane's: Liquid AI's FP8 and its DSpark draft (its image is the 27B lane's, checked above).
+lline="$(grep -E '^LFM25_(REPO|REV|DRAFT_REPO|DRAFT_REV)=' "$REPO_DIR/install-lfm25.sh")"
+eval "$lline"
 # The speech lane's: llama.cpp's commit, each recognizer's two GGUF at its revision with the
 # sha256 the install checks, and Kokoro's two files, which nothing checked either (found in the
 # audit of 2026-10-16). Each recognizer size is a branch of install-speech.sh's case on
@@ -467,6 +470,9 @@ sha="${TRANSCRIBE_FILE##*=}"; sha="${sha%%:*}"
 check_model  transcribe     "$TRANSCRIBE_REPO" "$TRANSCRIBE_REV" "${TRANSCRIBE_FILE%=*}" "$sha"
 sha="${TRANSCRIBE_MMPROJ##*=}"; sha="${sha%%:*}"
 check_model  transcribe-mmproj "$TRANSCRIBE_REPO" "$TRANSCRIBE_REV" "${TRANSCRIBE_MMPROJ%=*}" "$sha"
+echo "Liquid AI LFM2.5 24B-A2B lane"
+check_model  lfm25          "$LFM25_REPO" "$LFM25_REV"
+check_model  lfm25-draft    "$LFM25_DRAFT_REPO" "$LFM25_DRAFT_REV"
 echo "Speech lane"
 check_commit speech-llama-cpp ggml-org/llama.cpp "$LLAMA_CPP_PIN"
 for size in $ASR_SIZES; do

@@ -83,9 +83,9 @@ class EveryLaneFetchesThroughIt(unittest.TestCase):
             with self.subTest(what):
                 self.assertEqual(text(script).count(call), 1, f"{script} no longer runs it this way")
         self.assertEqual(text("switch-model.sh").count("ckpt-fetch.py\" \"$") + text("switch-model.sh").count(
-            "/opt/qwen38/ckpt-fetch.py \"$"), 9,
-            "switch-model.sh fetches for eight lanes, each through it (the MiniMax-H3-Image lane twice: its checkpoint "
-            "and its text encoder)")
+            "/opt/qwen38/ckpt-fetch.py \"$"), 10,
+            "switch-model.sh fetches for nine lanes, each through it (the MiniMax-H3-Image lane twice: its checkpoint "
+            "and its text encoder; the Liquid AI LFM2.5 24B-A2B lane's checkpoint and draft in one loop)")
 
     def test_no_script_keeps_a_fetch_of_its_own(self):
         for script in SCRIPTS:
