@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.59). No content logging, and the only
+"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.60). No content logging, and the only
 rewriting is the tool-schema guard (role 4); two routes, POST /v1/systemone (role 5) and the
 operator's POST /proxy/stop (role 7), are answered here instead of relayed.
 
@@ -59,6 +59,11 @@ Ten roles, nothing else:
    lists every box's models (see "Two boxes behind one endpoint" below). A model both boxes serve is
    shared: a conversation stays on the box that holds its prefix, a new one goes to the box with the
    fewest requests in flight (v6.52, docs/pair.md).
+
+v6.60: the Liquid AI LFM2.5 24B-A2B lane, on SGLang under the name lfm2.5-24b-a2b, is a lane of the pair's
+routes, and POST /v1/systemone is refused while it serves (400, the lanes it serves on named): its chat template opens a
+thought at every answer and reads no switch (enable_thinking, reasoning_effort), so the first token, the one System One
+reads its options' labels off, is its thought's, and those labels were measured on the Qwen tokenizer alone.
 
 v6.59: a client is told the box transcribes speech while the NVIDIA Nemotron Transcribe lane serves (v1.51): llama.cpp's
 server on a port of its own, which holds the GPU instead of a text engine the way the image and video lanes do, and a
@@ -2651,7 +2656,8 @@ def served_vocab():
 # probe above worked; an id at or past the vocabulary is refused only once it is known.
 TOKEN_ID_FIELDS = ("stop_token_ids", "input_ids")
 # The smallest vocabulary of a lane this proxy fronts: Kolibri's 128,000 (the Qwen lanes have
-# 248,320, the Nemotron ones 131,072; config.json of each checkpoint, 2026-10-16). An id under
+# 248,320, the Nemotron ones 131,072; config.json of each checkpoint, 2026-10-16), LFM2.5 24B-A2B's
+# 128,000 too (its config.json at the pinned revision, 2026-11-16). An id under
 # it is in every one of them. Until the served vocabulary is learned (served_vocab, which a busy,
 # paused or restarting engine leaves at 0), an id at or past it waits for a retry (503) instead
 # of being relayed on trust: the guard stood down there, and one such id takes the scheduler
@@ -3665,7 +3671,8 @@ def route_model_name(body, path):
 # key it once carried as a second lock is also the cockpit's login, which is root on a box, SECURITY.md):
 # the pair port takes the pair's routes only, and this box's own key admits them to its engine.
 LANE_NAMES = frozenset({"qwen3.8-27b", "qwen3.8-flash-next", "qwen3.8-flash-next-fp4", "ornith-1.5-122b",
-                        "nemotron-3.5-bolt", "nemotron-3.5-super-vl", "kolibri-1", "qwen3.8-flash-next-unsloth"})
+                        "nemotron-3.5-bolt", "nemotron-3.5-super-vl", "kolibri-1", "qwen3.8-flash-next-unsloth",
+                        "lfm2.5-24b-a2b"})
 PAIR_FILE = os.path.expanduser(os.environ.get("QWEN38_PAIR_FILE") or "~/.config/qwen38/pair.json")
 PAIR_DIR = os.path.join(os.path.dirname(PAIR_FILE), "pair")
 # made by pair.py, a directory renamed into place whole: a certificate never meets another key
@@ -4457,6 +4464,12 @@ def pair_spread_of(peer):
 
 
 SYSTEMONE_ALIASES = ("jev-latest", "jev-preview", "jev-1.13.0")
+# v6.60: the SGLang lanes System One does not serve on, by the name each serves under: the Liquid AI LFM2.5 24B-A2B
+# lane, whose chat template ends every generation prompt with "<think>" and reads neither enable_thinking nor a
+# reasoning effort (its chat_template.jinja at the pinned revision, read 2026-11-16). The one token System One reads
+# is then the first of a thought, never an option's label, whatever it asks: the answers would be noise said as a
+# decision.
+SYSTEMONE_REFUSED_NAMES = frozenset({"lfm2.5-24b-a2b"})
 
 
 def systemone_model(requested):
@@ -4487,6 +4500,10 @@ def systemone_model(requested):
         # the lanes it does serve on, not "a Qwen lane", which the Flash FP4-Local lane is.
         raise SystemOneUsage(f"System One serves on the 27B and the flash lanes (SGLang): this box serves "
                              f"{names[0]} on vLLM now. Load one of those lanes from the cockpit.", plain=False)
+    if set(names) & SYSTEMONE_REFUSED_NAMES:
+        raise SystemOneUsage(f"System One serves on the 27B and the flash lanes (SGLang): this box serves "
+                             f"{names[0]} now, whose chat template begins every answer with its reasoning, so its first "
+                             f"token is never an option's label. Load one of those lanes from the cockpit.", plain=False)
     if requested in SYSTEMONE_ALIASES or requested in names:
         return names[0] if requested in SYSTEMONE_ALIASES else requested
     raise SystemOneUsage(f"Unknown model: {requested}", plain=False)
@@ -9350,7 +9367,7 @@ if __name__ == "__main__":
     holds = (f"holds requests up to {HOLD_MAX_S:.0f}s while {' or '.join(HOLD_UNITS)} comes back"
              if HOLD_UNITS and HOLD_MAX_S > 0 else "holds nothing")
     # one f-string: the cockpit's tests render this line from the source
-    log(f"v6.59 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
+    log(f"v6.60 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
     # v6.47: what the memory floor's refusal reads, read once here, so the journal shows it works where
     # the unit runs this proxy (its sandbox leaves /proc/meminfo readable)
     avail = mem_available_gib()
