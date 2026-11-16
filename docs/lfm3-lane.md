@@ -18,8 +18,9 @@ place a measurement still to run will fill says `MESURE-A-VENIR`.
 ## Why vLLM's nightly, and which build
 
 LFM3 came to vLLM on 2026-11-06 ([vllm#65826](https://github.com/vllm-project/vllm/pull/65826), commit
-c96e5f60bb), and no vLLM release carries it yet. SGLang's support is in review
-([sgl-project/sglang#46858](https://github.com/sgl-project/sglang/pull/46858)). So `install-lfm3.sh` pulls vLLM's
+c96e5f60bb), and no vLLM release carries it yet. SGLang's came on 2026-11-16
+([sgl-project/sglang#46858](https://github.com/sgl-project/sglang/pull/46858), commit 47361c57be9f), after this lane
+was measured, and no SGLang release carries it yet either. So `install-lfm3.sh` pulls vLLM's
 own nightly image of commit 60bd6dd (`vllm/vllm-openai`, vLLM 0.34.0rc1.dev571+g60bd6dd2e, CUDA 13.2.1, arm64),
 pinned by its digest, as published: nothing is built on the box. It started on the box's driver (580.178.04, CUDA
 13.0) and read the NVFP4 weights with FlashInfer, whose NVFP4 GEMM it tunes at the first boot.
