@@ -1246,6 +1246,9 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
         p.same(f"{where} IMAGE_UNITS", got, units_of(family(kind="image")))
         got, where = py_at(proxy, "VIDEO_UNIT")
         p.same(f"{where} VIDEO_UNIT", [got], units_of(family(kind="video")))
+        # and the speech recognizer's, which holds the GPU the same way (v6.59)
+        got, where = py_at(proxy, "TRANSCRIBE_UNIT")
+        p.same(f"{where} TRANSCRIBE_UNIT", [got], units_of(family(kind="transcribe")))
         # "The Qwen lanes vLLM serves (v6.43)", named one by one
         got, where = py_at(proxy, "QWEN_VLLM_NAMES")
         p.same(f"{where} QWEN_VLLM_NAMES", got, [LANES[x]["served"] for x in VLLM if LANES[x]["title"].startswith("Qwen")])

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.58). No content logging, and the only
+"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.59). No content logging, and the only
 rewriting is the tool-schema guard (role 4); two routes, POST /v1/systemone (role 5) and the
 operator's POST /proxy/stop (role 7), are answered here instead of relayed.
 
@@ -59,6 +59,11 @@ Ten roles, nothing else:
    lists every box's models (see "Two boxes behind one endpoint" below). A model both boxes serve is
    shared: a conversation stays on the box that holds its prefix, a new one goes to the box with the
    fewest requests in flight (v6.52, docs/pair.md).
+
+v6.59: a client is told the box transcribes speech while the NVIDIA Nemotron Transcribe lane serves (v1.51): llama.cpp's
+server on a port of its own, which holds the GPU instead of a text engine the way the image and video lanes do, and a
+text request then read "It is stopped, restarting or still loading (about 9 minutes)" of an engine that comes back only
+by a switch. Nothing reaches that lane through this proxy: it answers its own audio routes on its own port.
 
 v6.58: a client is told the box serves images while either image lane serves: the MiniMax-H3-Image lane, a second
 one beside Qwen-Image 2.1, holds the GPU instead of a text engine the same way, and a text request then read "It is
@@ -553,6 +558,9 @@ IMAGE_UNITS = ("qwen38-image.service", "qwen38-image-h3.service")
 _IMAGE_SEEN = {u: {"ts": -1e9, "active": False} for u in IMAGE_UNITS}
 VIDEO_UNIT = "qwen38-video.service"
 _VIDEO_SEEN = {"ts": -1e9, "active": False}
+# and the NVIDIA Nemotron Transcribe lane (v6.59), a speech recognizer on a port of its own
+TRANSCRIBE_UNIT = "qwen38-transcribe.service"
+_TRANSCRIBE_SEEN = {"ts": -1e9, "active": False}
 
 
 def _lane_active(unit: str, seen: dict) -> bool:
@@ -574,6 +582,10 @@ def image_lane_serving():
 
 def video_lane_serving():
     return _lane_active(VIDEO_UNIT, _VIDEO_SEEN)
+
+
+def transcribe_lane_serving():
+    return _lane_active(TRANSCRIBE_UNIT, _TRANSCRIBE_SEEN)
 
 
 # ── Holding a request while its engine comes back (v6.28, role 6) ──────────
@@ -774,6 +786,10 @@ def engine_gone_reason():
                 "switcher, or run ./switch-model.sh with a text target")
     if video_lane_serving():
         return ("This box is serving video right now (qwen38-video.service), and a text engine "
+                "does not come back by itself: switch back to a text lane from the cockpit's "
+                "switcher, or run ./switch-model.sh with a text target")
+    if transcribe_lane_serving():
+        return ("This box is transcribing speech right now (qwen38-transcribe.service), and a text engine "
                 "does not come back by itself: switch back to a text lane from the cockpit's "
                 "switcher, or run ./switch-model.sh with a text target")
     return "It is stopped, restarting or still loading (a restart takes minutes, about 9 on a DGX Spark)"
@@ -9334,7 +9350,7 @@ if __name__ == "__main__":
     holds = (f"holds requests up to {HOLD_MAX_S:.0f}s while {' or '.join(HOLD_UNITS)} comes back"
              if HOLD_UNITS and HOLD_MAX_S > 0 else "holds nothing")
     # one f-string: the cockpit's tests render this line from the source
-    log(f"v6.58 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
+    log(f"v6.59 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
     # v6.47: what the memory floor's refusal reads, read once here, so the journal shows it works where
     # the unit runs this proxy (its sandbox leaves /proc/meminfo readable)
     avail = mem_available_gib()
