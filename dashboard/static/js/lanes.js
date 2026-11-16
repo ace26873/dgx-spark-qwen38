@@ -253,7 +253,7 @@ on('containers', d => {
 on('canary', d => {
   setText('px-probe', F.canaryTxt || '…');
   setText('px-last', d.skipped && (servingEngine() || [])[0] === KOLIBRI_UNIT ? 'none on the Kolibri-1 lane'
-    : d.skipped && isB12x((servingEngine() || [])[0]) ? `none on ${b12xName((servingEngine() || [])[0])}`
+    : d.skipped && isVllmTable((servingEngine() || [])[0]) ? `none on ${b12xName((servingEngine() || [])[0])}`
     : d.skipped && isLlamacpp((servingEngine() || [])[0]) ? `none on ${llamacppName((servingEngine() || [])[0])}`
     : d.last_ok ? clockTime(d.last_ok) : 'never in this cockpit’s life');
 });

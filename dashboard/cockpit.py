@@ -194,7 +194,7 @@ UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service"
          "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
          "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
          "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
-         "qwen38-lfm25.service", "qwen38-keepalive.service")
+         "qwen38-lfm25.service", "qwen38-lfm3.service", "qwen38-keepalive.service")
 JOURNAL_UNITS = UNITS + (AGENT_UNIT,)   # what the Logs tab may read (UNITS carries the image, video, Kolibri and Nemotron lanes)
 # The SGLang text engines' containers: what their scheduler lines and their abort contract
 # are read from (the Liquid AI LFM2.5 24B-A2B lane's too, SGLang on the 27B's image). The Kolibri and Nemotron
@@ -202,7 +202,7 @@ JOURNAL_UNITS = UNITS + (AGENT_UNIT,)   # what the Logs tab may read (UNITS carr
 # container stats read.
 SGL_CONTAINERS = ("qwen38-sglang", "qwen38-flash", "qwen38-lfm25")
 CONTAINERS = SGL_CONTAINERS + ("qwen38-kolibri", "qwen38-nemotron", "qwen38-nemotron-super", "qwen38-flash-local",
-                               "qwen38-ornith-122b", "qwen38-flash-unsloth", "qwen38-transcribe")
+                               "qwen38-ornith-122b", "qwen38-flash-unsloth", "qwen38-transcribe", "qwen38-lfm3")
 
 UNIT2CONT = {"qwen38-sglang.service": "qwen38-sglang",
              "qwen38-flash.service": "qwen38-flash",
@@ -212,7 +212,8 @@ UNIT2CONT = {"qwen38-sglang.service": "qwen38-sglang",
              "qwen38-flash-local.service": "qwen38-flash-local",
              "qwen38-ornith-122b.service": "qwen38-ornith-122b",
              "qwen38-flash-unsloth.service": "qwen38-flash-unsloth",
-             "qwen38-lfm25.service": "qwen38-lfm25"}
+             "qwen38-lfm25.service": "qwen38-lfm25",
+             "qwen38-lfm3.service": "qwen38-lfm3"}
 HISTORY_FILE_NAME = "cockpit-history.json"
 
 EVENTS: deque = deque(maxlen=200)
@@ -875,6 +876,11 @@ FLASH_LOCAL_UNIT_PATH = Path("/etc/systemd/system/qwen38-flash-local.service")
 # loader's lines, measured on the reference box, 2026-10-21), its name in a sentence its own.
 ORNITH_UNIT = "qwen38-ornith-122b.service"
 ORNITH_UNIT_PATH = Path("/etc/systemd/system/qwen38-ornith-122b.service")
+# The Liquid AI LFM3 lane runs vLLM's own nightly image, without b12x: read as the family's lanes are (the same routes,
+# the same /metrics, the same engine panel, its boot read from vLLM's own lines), from a table beside theirs
+# (TABLE_LANES below), its name in a sentence and its refusals its own.
+LFM3_UNIT = "qwen38-lfm3.service"
+LFM3_UNIT_PATH = Path("/etc/systemd/system/qwen38-lfm3.service")
 # each lane's container, lane, served model and precision, by unit: the one table of the family
 # (Bolt's experts in IQ2_XXS, its Mamba layers NVFP4, the rest Q8_0; Super VL in NVFP4; FP4-Local's
 # experts and n-gram table in NVFP4, its other layers in MXFP8; Ornith's experts in NVFP4, its
@@ -888,6 +894,10 @@ B12X_LANE_NAME = {NEMOTRON_UNIT: "the Nemotron 3.5 Bolt lane", NEMOTRON_SUPER_UN
                   FLASH_LOCAL_UNIT: "the Qwen3.8 Flash-Next FP4-Local lane", ORNITH_UNIT: "the Ornith 1.5 122B lane"}
 B12X_SPEC = {NEMOTRON_UNIT: "LiLiCorr (DFlash)", NEMOTRON_SUPER_UNIT: "LiLiCorr (DFlash)", FLASH_LOCAL_UNIT: "MTP",
              ORNITH_UNIT: "MTP"}
+# The vLLM lanes read from a table, the family's and the Liquid AI LFM3 lane's (no drafter), and the name of each in a
+# sentence: what the functions below (nemotron_*, b12x_*) read, whichever of them serves.
+TABLE_LANES = {**NEMOTRON_LANES, LFM3_UNIT: ("qwen38-lfm3", "lfm3", "lfm3-1.7b", "nvfp4")}
+TABLE_LANE_NAME = {**B12X_LANE_NAME, LFM3_UNIT: "the Liquid AI LFM3 lane"}
 NEMOTRON_READY_ENTER: dict = {}
 
 
@@ -897,19 +907,22 @@ def nemotron_unit_path(unit: str) -> Path:
         return FLASH_LOCAL_UNIT_PATH
     if unit == ORNITH_UNIT:
         return ORNITH_UNIT_PATH
+    if unit == LFM3_UNIT:
+        return LFM3_UNIT_PATH
     return NEMOTRON_SUPER_UNIT_PATH if unit == NEMOTRON_SUPER_UNIT else NEMOTRON_UNIT_PATH
 
 
 def b12x_serving_unit() -> str | None:
-    """The unit of the family that holds the text port now (from its boot to its stop), or None."""
+    """The unit of the family, or the Liquid AI LFM3 lane's (TABLE_LANES), that holds the text port now (from its boot
+    to its stop), or None."""
     with LIFE_LOCK:
         states = LIFE.get("states") or {}
-        return next((u for u in NEMOTRON_LANES if states.get(u) in lc.BUSY_STATES), None)
+        return next((u for u in TABLE_LANES if states.get(u) in lc.BUSY_STATES), None)
 
 
 def b12x_lane_name() -> str:
-    """The family's lane that serves, in a sentence ("the lane" when none serves any more)."""
-    return B12X_LANE_NAME.get(b12x_serving_unit(), "the lane")
+    """The lane of the table that serves, in a sentence ("the lane" when none serves any more)."""
+    return TABLE_LANE_NAME.get(b12x_serving_unit(), "the lane")
 
 
 NEMOTRON_CANNOT = {
@@ -935,6 +948,12 @@ ORNITH_CANNOT = {
     "abort_all": "The Ornith 1.5 122B lane has no route that aborts its generations: stopping the lane stops them.",
     "fit_opencode": "The Ornith 1.5 122B lane's opencode limits are its own, set when it is loaded: its window decides them, not its pool.",
 }
+# and on the Liquid AI LFM3 lane, in its own name
+LFM3_CANNOT = {
+    "flush_cache": "The Liquid AI LFM3 lane has no cache flush route: vLLM evicts its prefix cache by itself.",
+    "abort_all": "The Liquid AI LFM3 lane has no route that aborts its generations: stopping the lane stops them.",
+    "fit_opencode": "The Liquid AI LFM3 lane's opencode limits are its own, set when it is loaded: its window decides them, not its pool.",
+}
 
 
 # the three of each lane of the family, by its unit
@@ -943,8 +962,8 @@ B12X_CANNOT = {NEMOTRON_UNIT: NEMOTRON_CANNOT, NEMOTRON_SUPER_UNIT: NEMOTRON_SUP
 
 
 def b12x_cannot(name: str) -> str | None:
-    """Why an action is refused while a lane of the family serves, in that lane's name, or None."""
-    return B12X_CANNOT.get(b12x_serving_unit(), {}).get(name)
+    """Why an action is refused while a lane of the table serves, in that lane's name, or None."""
+    return {**B12X_CANNOT, LFM3_UNIT: LFM3_CANNOT}.get(b12x_serving_unit(), {}).get(name)
 # (time, accepted draft tokens, drafts) of the last minute's reads: the acceptance over a window
 # long enough to hold a few hundred drafts, and idle when no draft came in it
 _SPEC_READS: deque = deque(maxlen=240)
@@ -952,11 +971,11 @@ SPEC_WINDOW_S = 20.0
 
 
 def nemotron_serving() -> bool:
-    """True while a Nemotron lane holds the text port (from its boot to its stop). Which one, the
+    """True while a lane of the table (TABLE_LANES) holds the text port (from its boot to its stop). Which one, the
     engine says (nemotron_engine_info)."""
     with LIFE_LOCK:
         states = LIFE.get("states") or {}
-        return any(states.get(u) in lc.BUSY_STATES for u in NEMOTRON_LANES)
+        return any(states.get(u) in lc.BUSY_STATES for u in TABLE_LANES)
 
 
 def spec_accept_len(accepted: float, drafts: float, now: float) -> float | None:
@@ -989,7 +1008,7 @@ def _nemotron_log(container: str = "qwen38-nemotron") -> list[str]:
 def nemotron_engine_state(unit: str, *, active: str, sub: str, prev_state: str | None,
                           enter_key: str) -> tuple:
     """(state, boot, running) for a Nemotron lane, from its own facts, as the Kolibri lane's."""
-    container = NEMOTRON_LANES[unit][0]
+    container = TABLE_LANES[unit][0]
     running = bool(run(["docker", "ps", "-q", "-f", f"name=^{container}$"]).strip())
     healthy = running and kolibri_healthy()          # vLLM's /health, on the same port
     UNHEALTHY_TICKS[unit] = 0 if healthy else UNHEALTHY_TICKS.get(unit, 0) + 1
@@ -1000,8 +1019,11 @@ def nemotron_engine_state(unit: str, *, active: str, sub: str, prev_state: str |
             boot = {"stage": "warming-up", "fired_up": True, "done": list(lc.NEMOTRON_STAGES)}
             healthy = UNHEALTHY_TICKS[unit] < 3
         else:
-            parse = lc.parse_flash_local_boot_log if unit in (FLASH_LOCAL_UNIT, ORNITH_UNIT) else lc.parse_nemotron_boot_log
-            boot = parse(_nemotron_log(container))
+            if unit == LFM3_UNIT:
+                boot = lc.parse_nemotron_boot_log(_nemotron_log(container), lc.LFM3_MARKERS)
+            else:
+                parse = lc.parse_flash_local_boot_log if unit in (FLASH_LOCAL_UNIT, ORNITH_UNIT) else lc.parse_nemotron_boot_log
+                boot = parse(_nemotron_log(container))
     st = lc.derive_state(unit_active=active, unit_sub=sub, container_running=running,
                          healthy=healthy, boot=boot)
     if st["state"] == "degraded" and prev_state not in ("ready", "degraded"):
@@ -1168,7 +1190,8 @@ LLAMACPP_CANNOT = {FLASH_UNSLOTH_UNIT: FLASH_UNSLOTH_CANNOT}
 # The text lanes on another engine than SGLang, vLLM's and llama.cpp's: with lc.TEXT_UNITS, every text lane, as the
 # image and video views ask which one holds the GPU (llm_lane). One tuple, named for its family, where two copies of
 # it were written inline (tests/test_lane_lists_whole.py holds it to that family, v1.48).
-OTHER_TEXT_UNITS = (KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT, ORNITH_UNIT, FLASH_UNSLOTH_UNIT)
+OTHER_TEXT_UNITS = (KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT, ORNITH_UNIT, FLASH_UNSLOTH_UNIT,
+                    LFM3_UNIT)
 
 
 def llamacpp_serving_unit() -> str | None:
@@ -1577,10 +1600,10 @@ def kolibri_engine_info(models: list | None = None):
 
 
 def nemotron_unit_serving(models: list) -> str | None:
-    """The Nemotron lane's unit whose model the engine serves (its /v1/models), by NEMOTRON_LANES:
-    the name exactly, never a guess (a name of neither lane is neither lane's)."""
+    """The unit of the table (TABLE_LANES) whose model the engine serves (its /v1/models): the name exactly, never a
+    guess (a name of no lane is no lane's)."""
     served = str((models or [{}])[0].get("id") or "")
-    return next((u for u, lane in NEMOTRON_LANES.items() if lane[2] == served), None)
+    return next((u for u, lane in TABLE_LANES.items() if lane[2] == served), None)
 
 
 def nemotron_engine_info(models: list | None = None):
@@ -1597,13 +1620,13 @@ def nemotron_engine_info(models: list | None = None):
     labels = dict(re.findall(r'(\w+)="([^"]*)"', cfg.group(1))) if cfg else {}
     version = (http_json(ENGINE_BASE + "/version", timeout=5) or {}).get("version")
     root = models[0].get("root") or ""
-    target = NEMOTRON_LANES[unit][1] if unit and root else None
+    target = TABLE_LANES[unit][1] if unit and root else None
     slim = {"model_path": models[0].get("root"), "served_model_name": models[0].get("id"),
             "context_length": models[0].get("max_model_len"),
             "max_total_num_tokens": facts["pool"] or None,
             "kv_cache_dtype": labels.get("cache_dtype"),
             "mem_fraction_static": float(labels["gpu_memory_utilization"]) if labels.get("gpu_memory_utilization") else None,
-            "quantization": NEMOTRON_LANES[unit][3] if target else None,
+            "quantization": TABLE_LANES[unit][3] if target else None,
             "speculative_algorithm": B12X_SPEC.get(unit) if target else None,
             # its draft length, from the unit that started it (the engine does not publish it)
             "speculative_num_draft_tokens": _unit_int(nemotron_unit_path(unit),
@@ -1726,10 +1749,10 @@ def collect_canary():
         # vLLM refuses the probe's model name, and its own /health already answers for it
         return {"node_id": "local", **CANARY, "skipped": True,
                 "why": "the Kolibri-1 lane is checked by vLLM's own /health, not by a generation"}
-    b12x = next((u for u in NEMOTRON_LANES if states.get(u) in ("ready", "degraded")), None)
+    b12x = next((u for u in TABLE_LANES if states.get(u) in ("ready", "degraded")), None)
     if not ready and b12x:
         return {"node_id": "local", **CANARY, "skipped": True,
-                "why": f"{B12X_LANE_NAME[b12x]} is checked by vLLM's own /health, not by a generation"}
+                "why": f"{TABLE_LANE_NAME[b12x]} is checked by vLLM's own /health, not by a generation"}
     llama = next((u for u in LLAMACPP_LANES if states.get(u) in ("ready", "degraded")), None)
     if not ready and llama:
         return {"node_id": "local", **CANARY, "skipped": True,
@@ -2223,7 +2246,7 @@ def collect_opencode():
         if key == "real":
             for prov, pv in (cfg.get("provider") or {}).items():
                 if prov not in ("qwen38", "flashnext", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                "flash-unsloth", "lfm25"):
+                                "flash-unsloth", "lfm25", "lfm3"):
                     continue
                 for mid, mv in (pv.get("models") or {}).items():
                     lim = mv.get("limit") or {}
@@ -2245,7 +2268,8 @@ def collect_opencode():
         prov = {"qwen3.8-27b": "qwen38", "qwen3.8-flash-next": "flashnext", "kolibri-1": "kolibri",
                 "nemotron-3.5-bolt": "nemotron", "nemotron-3.5-super-vl": "nemotron-super",
                 "qwen3.8-flash-next-fp4": "flash-local", "ornith-1.5-122b": "ornith-122b",
-                "qwen3.8-flash-next-unsloth": "flash-unsloth", "lfm2.5-24b-a2b": "lfm25"}.get(served)
+                "qwen3.8-flash-next-unsloth": "flash-unsloth", "lfm2.5-24b-a2b": "lfm25",
+                "lfm3-1.7b": "lfm3"}.get(served)
         lim = (out["real"]["limits"] or {}).get(f"{prov}/{served}") if prov else None
         if lim and lim.get("context"):
             ctx, outp = int(lim["context"]), int(lim.get("output") or 0)
@@ -2433,7 +2457,7 @@ _ENGINE_INPUTS: dict = {}
 # that list too and stays out here, as engine-inputs.py has it: it runs before the engine and is
 # no input of it, so a new guard restarts nothing (docs/engine-restarts.md).
 VLLM_UNITS = ("qwen38-kolibri.service", "qwen38-nemotron.service", "qwen38-nemotron-super.service",
-              "qwen38-flash-local.service", "qwen38-ornith-122b.service")
+              "qwen38-flash-local.service", "qwen38-ornith-122b.service", "qwen38-lfm3.service")
 VLLM_LANE_FILES = ("vllm-auth/vllm_engine_auth.py",)
 # Each systemctl or docker call engine-inputs.py makes for this collector: a docker that no
 # longer answers held the whole 30 s tier with it, every panel of that tier frozen exactly
@@ -2689,7 +2713,7 @@ def unit_target(unit: str) -> dict:
         model = m.group(1) if m else None
         target = ("kolibri-nvfp4" if model and "NVFP4" in model.upper() else "kolibri") if model else None
         return {"model": model, "target": target}
-    if unit in NEMOTRON_LANES:
+    if unit in TABLE_LANES:
         # one checkpoint for each lane, named in its unit as <repo> --revision <sha>
         try:
             text = nemotron_unit_path(unit).read_text(errors="replace")
@@ -2697,7 +2721,7 @@ def unit_target(unit: str) -> dict:
             return {"model": None, "target": None}
         m = re.search(r"(\S+) --revision [0-9a-f]{40}", text)
         model = m.group(1) if m else None
-        return {"model": model, "target": NEMOTRON_LANES[unit][1] if model else None}
+        return {"model": model, "target": TABLE_LANES[unit][1] if model else None}
     if unit in LLAMACPP_LANES:
         # its checkpoint, named in its unit by the path of its first GGUF part in the cache's snapshot (llama-server
         # takes files, not a repository and a revision): the repository its folder names, and the target the folder
@@ -2902,7 +2926,7 @@ def collect_lifecycle():
         is_image = unit in (lc.IMAGE_UNIT, lc.IMAGE_H3_UNIT)   # Qwen-Image 2.1 and MiniMax-H3-Image
         is_video = unit == lc.VIDEO_UNIT
         is_kolibri = unit == lc.KOLIBRI_UNIT
-        is_nemotron = unit in NEMOTRON_LANES      # the vLLM lanes on b12x: Nemotron's two, FP4-Local, Ornith
+        is_nemotron = unit in TABLE_LANES      # the vLLM lanes on b12x (Nemotron's two, FP4-Local, Ornith) and LFM3
         is_llamacpp = unit in LLAMACPP_LANES      # llama.cpp's: the Unsloth GGUF lane
         is_transcribe = unit == TRANSCRIBE_UNIT   # llama.cpp's too, on a port of its own
         if (is_image or is_video) and not (image_unit_path(unit).exists() if is_image else VIDEO_UNIT_PATH.exists()):
@@ -3387,7 +3411,7 @@ def lane_prepared(lane: str):
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
-            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH,
+            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH,
             "flash": UNIT_PATHS["qwen38-flash.service"], "27b": UNIT_PATHS["qwen38-sglang.service"]}[lane]
     try:
         text = unit.read_text(errors="replace")
@@ -3407,10 +3431,10 @@ def lane_prepared(lane: str):
             return Path(waits.group(1)).stat().st_size > 0     # [ -s ]: an empty one is skipped
         except OSError:
             return False
-    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe", "lfm25"):
+    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe", "lfm25", "lfm3"):
         # its image is pulled as published, by digest: the one digest its unit names (FP4-Local's and Ornith's one,
         # llama.cpp's for the Unsloth GGUF and NVIDIA Nemotron Transcribe lanes, the 27B's for the LFM2.5 lane, whose
-        # checkpoints come with its switch, as Ornith's do)
+        # checkpoints come with its switch, as Ornith's do; vLLM's own nightly for the LFM3 lane)
         m = re.search(r"\S+@sha256:[0-9a-f]{64}", text)
         return bool(m) and run(["docker", "image", "inspect", "--format", "{{.Id}}", m.group(0)],
                                timeout=10).strip().startswith("sha256:")
@@ -3579,13 +3603,13 @@ def collect_lanes_ready():
     """30 s tier: which side lanes are prepared, for the Load journey (it builds a lane's
     runtime first when it is not)."""
     return {lane: lane_prepared(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                   "flash-unsloth", "image-h3", "transcribe", "lfm25", "flash", "27b")}
+                                                   "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "flash", "27b")}
 
 
 UNIT_OF_LANE = {"image": "qwen38-image.service", "video": "qwen38-video.service", "kolibri": KOLIBRI_UNIT,
                 "nemotron": NEMOTRON_UNIT, "nemotron-super": NEMOTRON_SUPER_UNIT, "flash-local": FLASH_LOCAL_UNIT,
                 "ornith-122b": ORNITH_UNIT, "flash-unsloth": FLASH_UNSLOTH_UNIT, "image-h3": "qwen38-image-h3.service",
-                "transcribe": TRANSCRIBE_UNIT, "lfm25": LFM25_UNIT,
+                "transcribe": TRANSCRIBE_UNIT, "lfm25": LFM25_UNIT, "lfm3": LFM3_UNIT,
                 "flash": "qwen38-flash.service", "27b": "qwen38-sglang.service"}
 
 
@@ -3635,7 +3659,7 @@ def lane_startable(lane: str):
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
-            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
+            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
     try:
         text = path.read_text(errors="replace")
     except OSError:
@@ -3740,7 +3764,7 @@ def lane_startable(lane: str):
 def collect_lanes_startable():
     """30 s tier: which side lanes can start as installed (their Start), lane_startable."""
     return {lane: lane_startable(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                    "flash-unsloth", "image-h3", "transcribe", "lfm25", "flash", "27b")}
+                                                    "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "flash", "27b")}
 
 
 def engine_table() -> dict:
@@ -3906,7 +3930,7 @@ SERVING_UNITS = {"qwen38-sglang.service", "qwen38-flash.service",
                  "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                  "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
                  "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
-                 "qwen38-lfm25.service", AGENT_UNIT}
+                 "qwen38-lfm25.service", "qwen38-lfm3.service", AGENT_UNIT}
 UNIT_VERBS = {"start", "stop", "restart"}
 
 def _lane_unit_texts() -> list[str]:
@@ -3916,7 +3940,7 @@ def _lane_unit_texts() -> list[str]:
     for path in (UNIT_PATHS["qwen38-sglang.service"], UNIT_PATHS["qwen38-flash.service"],
                  KOLIBRI_UNIT_PATH, NEMOTRON_UNIT_PATH, NEMOTRON_SUPER_UNIT_PATH, FLASH_LOCAL_UNIT_PATH,
                  ORNITH_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH,
-                 TRANSCRIBE_UNIT_PATH, LFM25_UNIT_PATH):
+                 TRANSCRIBE_UNIT_PATH, LFM25_UNIT_PATH, LFM3_UNIT_PATH):
         try:
             texts.append(path.read_text(errors="replace"))
         except OSError:
@@ -3939,7 +3963,7 @@ ACTIONS = {
         "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8", "arete",
                               "flash", "flash-nvda", "flash-uncensored", "flash-local", "image", "image-turbo",
                               "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "ornith-122b",
-                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25"]},
+                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25", "lfm3"]},
         "argv": lambda p: ["bash", str(REPO_DIR / "switch-model.sh"), p["target"]],
         # A switch can download a whole checkpoint: 124 GB for flash take about 23 min at
         # the 89 MB/s the reference box gets, so 30 min failed it on any slower link, and
@@ -4041,6 +4065,8 @@ def target_lane(target: str) -> str:
         return "transcribe"
     if target == "lfm25":
         return "lfm25"
+    if target == "lfm3":
+        return "lfm3"
     if target == "video":
         return "video"
     if target.startswith("kolibri"):
@@ -4084,7 +4110,8 @@ TARGET_PIN = {"stock": "STOCK_REV", "uncensored": "UNC_REV", "fp8": "FP8_REV", "
               "flash-local": "FLASH_LOCAL_REV", "ornith-122b": "ORNITH_122B_REV", "flash-unsloth": "FLASH_UNSLOTH_REV",
               # the Unsloth GGUF lane's two targets, two folders of one repository at one revision
               "flash-unsloth-iq3": "FLASH_UNSLOTH_REV",
-              "image-h3": "IMAGE_H3_MODEL_PIN_REV", "transcribe": "TRANSCRIBE_REV", "lfm25": "LFM25_REV"}
+              "image-h3": "IMAGE_H3_MODEL_PIN_REV", "transcribe": "TRANSCRIBE_REV", "lfm25": "LFM25_REV",
+              "lfm3": "LFM3_REV"}
 # The Nemotron lanes load a drafter with the checkpoint, and their Download (the switch's --fetch)
 # fetches both: Library's state of such a target counts its drafter too. Bolt's read whole with its
 # drafter missing, which its Load then fetched (found on the reference box, 2026-10-15). The 27B's
@@ -4214,6 +4241,8 @@ def target_unit(target: str) -> Path:
         return TRANSCRIBE_UNIT_PATH
     if target == "lfm25":
         return LFM25_UNIT_PATH
+    if target == "lfm3":
+        return LFM3_UNIT_PATH
     if target.startswith("flash"):
         return UNIT_PATHS["qwen38-flash.service"]
     return UNIT_PATHS["qwen38-sglang.service"]
@@ -4449,7 +4478,7 @@ def served_model_name() -> str:
         return "qwen3.8-flash-next"
     if states.get(KOLIBRI_UNIT) not in (None, "stopped", "failed"):
         return "kolibri-1"
-    for unit, (_, _, served, _) in NEMOTRON_LANES.items():
+    for unit, (_, _, served, _) in TABLE_LANES.items():
         if states.get(unit) not in (None, "stopped", "failed"):
             return served
     if states.get(LFM25_UNIT) not in (None, "stopped", "failed"):
@@ -4514,10 +4543,11 @@ def systemone_available(max_age: float = 60.0) -> dict:
         return {"available": False, "lane": "", "status": None,
                 "reason": f"the Liquid AI LFM2.5 24B-A2B lane is serving: System One is answered by {who} "
                           f"(its chat template begins every answer with its reasoning), so load {one}"}
-    b12x = next((u for u in NEMOTRON_LANES if states.get(u) in lc.BUSY_STATES), None)
+    b12x = next((u for u in TABLE_LANES if states.get(u) in lc.BUSY_STATES), None)
     if text is None and b12x:
+        # the proxy refuses it on every vLLM lane (v6.43), the Liquid AI LFM3 lane's included
         return {"available": False, "lane": "", "status": None,
-                "reason": f"{B12X_LANE_NAME[b12x]} is serving: System One is answered by {who} "
+                "reason": f"{TABLE_LANE_NAME[b12x]} is serving: System One is answered by {who} "
                           f"(its options are measured on the Qwen tokenizer), so load {one}"}
     key = (text, served_model_name() if text else "")
     with SYSTEMONE_LOCK:
@@ -6185,6 +6215,7 @@ def job_diag_bundle(job: Job):
         (tdp / "journal-flash-unsloth.txt").write_text(run(["journalctl", "-u", FLASH_UNSLOTH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-transcribe.txt").write_text(run(["journalctl", "-u", TRANSCRIBE_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-lfm25.txt").write_text(run(["journalctl", "-u", LFM25_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
+        (tdp / "journal-lfm3.txt").write_text(run(["journalctl", "-u", LFM3_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-opencode-web.txt").write_text(run(["journalctl", "-u", AGENT_UNIT, "-n", "200", "--no-pager", "-o", "short-iso"], timeout=15))
         for cont in CONTAINERS:
             (tdp / f"docker-{cont}.txt").write_text(run(["docker", "logs", "--tail", "600", cont], timeout=15, merge_err=True))

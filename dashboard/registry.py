@@ -53,6 +53,8 @@ PIN_MODELS = {
     # the Liquid AI LFM2.5 24B-A2B lane's: Liquid AI's FP8 and its DSpark draft
     "LFM25_REV": "LiquidAI/LFM2.5-24B-A2B-FP8",
     "LFM25_DRAFT_REV": "LiquidAI/LFM2.5-24B-A2B-DSpark",
+    # the Liquid AI LFM3 lane's: Liquid AI's NVFP4
+    "LFM3_REV": "LiquidAI/LFM3-1.7B-NVFP4",
 }
 
 # Where the pins are written: the text lanes' in the switch and the installer, every other
@@ -60,7 +62,8 @@ PIN_MODELS = {
 PIN_FILES = ("switch-model.sh", "run.sh", "install.sh",
              "install-image.sh", "install-video.sh", "install-kolibri.sh", "install-nemotron.sh",
              "install-nemotron-super.sh", "install-flash-local.sh", "install-ornith-122b.sh",
-             "install-flash-unsloth.sh", "install-image-h3.sh", "install-transcribe.sh", "install-lfm25.sh")
+             "install-flash-unsloth.sh", "install-image-h3.sh", "install-transcribe.sh", "install-lfm25.sh",
+             "install-lfm3.sh")
 
 PIN_RE = re.compile(r'^\s*([A-Z][A-Z0-9_]*REV)="?\$?\{?[A-Z0-9_:-]*?([0-9a-f]{40})',
                     re.MULTILINE)

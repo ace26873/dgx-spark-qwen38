@@ -99,12 +99,12 @@ const U27 = 'qwen38-sglang.service', UFLASH = 'qwen38-flash.service', IMAGE_UNIT
       NEMOTRON_SUPER_UNIT = 'qwen38-nemotron-super.service', FLASH_LOCAL_UNIT = 'qwen38-flash-local.service',
       ORNITH_UNIT = 'qwen38-ornith-122b.service', FLASH_UNSLOTH_UNIT = 'qwen38-flash-unsloth.service',
       IMAGE_H3_UNIT = 'qwen38-image-h3.service', TRANSCRIBE_UNIT = 'qwen38-transcribe.service',
-      LFM25_UNIT = 'qwen38-lfm25.service',
+      LFM25_UNIT = 'qwen38-lfm25.service', LFM3_UNIT = 'qwen38-lfm3.service',
       PROXY_UNIT = 'qwen38-keepalive.service', AGENT_UNIT = 'opencode-web.service';
 // the order of the Now view's rack and the Lanes view's cards: Ornith before Kolibri and the Nemotron lanes (Hasan, 2026-10-22);
 // the flash model's builds side by side, Unsloth's GGUF after NVIDIA's FP4-Local (v1.48); the speech recognizer after the
-// video lane (v1.51); Liquid AI's LFM2.5 after the other text lanes
-const LANE_UNITS = [U27, UFLASH, FLASH_LOCAL_UNIT, FLASH_UNSLOTH_UNIT, ORNITH_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, LFM25_UNIT, IMAGE_UNIT, IMAGE_H3_UNIT, VIDEO_UNIT, TRANSCRIBE_UNIT];
+// video lane (v1.51); Liquid AI's LFM2.5 and LFM3 after the other text lanes
+const LANE_UNITS = [U27, UFLASH, FLASH_LOCAL_UNIT, FLASH_UNSLOTH_UNIT, ORNITH_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, LFM25_UNIT, LFM3_UNIT, IMAGE_UNIT, IMAGE_H3_UNIT, VIDEO_UNIT, TRANSCRIBE_UNIT];
 // the image lanes, Qwen-Image 2.1 and MiniMax-H3-Image: one Image view addresses the one that serves (image.js, imgUnit)
 const isImageLane = u => u === IMAGE_UNIT || u === IMAGE_H3_UNIT;
 // the two Nemotron lanes, Bolt and Super VL: one vLLM image, the same routes and the same limits
@@ -113,6 +113,9 @@ const isNemotron = u => u === NEMOTRON_UNIT || u === NEMOTRON_SUPER_UNIT;
 // same routes, the same counters, the same belts that cannot act; each says its own name
 const isB12x = u => isNemotron(u) || u === FLASH_LOCAL_UNIT || u === ORNITH_UNIT;
 const b12xName = u => `the ${LANE_NAME[u]} lane`;
+// the vLLM lanes the server reads from one table (cockpit.py TABLE_LANES): the b12x family's, and the Liquid AI LFM3
+// lane's, on vLLM's own nightly without b12x or a drafter: the same routes, counters and belts that cannot act
+const isVllmTable = u => isB12x(u) || u === LFM3_UNIT;
 // the llama.cpp lanes (the Unsloth GGUF lane, v1.48): none of SGLang's routes either, its own counters, its own name
 const isLlamacpp = u => u === FLASH_UNSLOTH_UNIT;
 const llamacppName = u => `the ${LANE_NAME[u]} lane`;
@@ -122,7 +125,8 @@ const LANE_NAME = {[U27]: 'Qwen3.8 27B', [UFLASH]: 'Qwen3.8 Flash-Next', [FLASH_
                    [KOLIBRI_UNIT]: 'Kolibri-1', [NEMOTRON_UNIT]: 'Nemotron 3.5 Bolt', [NEMOTRON_SUPER_UNIT]: 'Nemotron 3.5 Super VL',
                    [ORNITH_UNIT]: 'Ornith 1.5 122B', [FLASH_UNSLOTH_UNIT]: 'Qwen3.8 Flash-Next Unsloth GGUF',
                    [IMAGE_UNIT]: 'Qwen-Image 2.1', [IMAGE_H3_UNIT]: 'MiniMax-H3-Image', [VIDEO_UNIT]: 'MiniMax-H3',
-                   [TRANSCRIBE_UNIT]: 'NVIDIA Nemotron Transcribe', [LFM25_UNIT]: 'Liquid AI LFM2.5 24B-A2B'};
+                   [TRANSCRIBE_UNIT]: 'NVIDIA Nemotron Transcribe', [LFM25_UNIT]: 'Liquid AI LFM2.5 24B-A2B',
+                   [LFM3_UNIT]: 'Liquid AI LFM3'};
 // What each lane is, for people: the kind of work it does and the one line that says so.
 // `lane` names the lane's hue in the stylesheet (--lane-<lane>); `maker` its mark in img/logos.
 const LANE_META = {
@@ -135,6 +139,7 @@ const LANE_META = {
   [ORNITH_UNIT]: {title: 'Ornith 1.5 122B', kind: 'Text, images and video, 1M tokens', desc: 'Ornith AI’s mixture of experts, 122B with 8 of its 256 experts active, in its authors’ NVFP4 build, served by vLLM with b12x and its MTP head. Reasoning, tool calls and vision.', view: 'agent', lane: 'ornith-122b', maker: 'ornith'},
   [FLASH_UNSLOTH_UNIT]: {title: 'Qwen3.8 Flash-Next Unsloth GGUF', kind: 'Text, 262K tokens of context', desc: 'The same 176B model in Unsloth’s dynamic GGUF (UD-IQ3_XXS or UD-Q4_K_XL), served by llama.cpp with an n-gram lookup and a DFlash2 draft, its n-gram (PLE) table read from the disk. Reasoning and tool calls.', view: 'agent', lane: 'flash-unsloth', maker: 'unsloth'},
   [LFM25_UNIT]: {title: 'Liquid AI LFM2.5 24B-A2B', kind: 'Text, 131K tokens of context', desc: 'Liquid AI’s hybrid mixture of experts, 24B with 2B active, in its official FP8 build with its DSpark draft, served by SGLang. It reasons before every answer, and calls tools.', view: 'agent', lane: 'lfm25', maker: 'liquid'},
+  [LFM3_UNIT]: {title: 'Liquid AI LFM3', kind: 'Text, 262K tokens of context', desc: 'Liquid AI’s small hybrid model, 1.7B, in its official NVFP4 build, served by vLLM. Post-trained for agents: reasoning (on or off) and tool calls, many requests at once.', view: 'agent', lane: 'lfm3', maker: 'liquid'},
   [IMAGE_UNIT]: {title: 'Qwen-Image 2.1', kind: 'Images', desc: 'Create, edit with up to ten references, cut out with a real alpha channel.', view: 'image', lane: 'image', maker: 'qwen'},
   [IMAGE_H3_UNIT]: {title: 'MiniMax-H3-Image', kind: 'Images, up to 16.9 megapixels', desc: 'MiniMax’s image model in six steps: create, or edit with up to ten references, at 2K in about 16 s and 4K in about 82 s. Its licence is not granted in the EU, the UK, South Korea or the US.', view: 'image', lane: 'image-h3', maker: 'minimax'},
   [VIDEO_UNIT]: {title: 'MiniMax-H3', kind: 'Video with sound', desc: 'Video and audio made together, from a prompt or from keyframes.', view: 'video', lane: 'video', maker: 'minimax'},
@@ -149,9 +154,9 @@ function makerMark(unit, cls = 'mark'){
 // How long each lane takes to answer after a start, before the box has seen one of its
 // boots (measured on the reference box). Once a lane booted in front of the cockpit, the
 // median of its own boots replaces these.
-const READY_DEFAULT = {[U27]: 540, [UFLASH]: 780, [FLASH_LOCAL_UNIT]: 1020, [KOLIBRI_UNIT]: 600, [NEMOTRON_UNIT]: 450, [NEMOTRON_SUPER_UNIT]: 660, [ORNITH_UNIT]: 420, [FLASH_UNSLOTH_UNIT]: 420, [IMAGE_UNIT]: 70, [IMAGE_H3_UNIT]: 451, [VIDEO_UNIT]: 720, [TRANSCRIBE_UNIT]: 15, [LFM25_UNIT]: 290};
+const READY_DEFAULT = {[U27]: 540, [UFLASH]: 780, [FLASH_LOCAL_UNIT]: 1020, [KOLIBRI_UNIT]: 600, [NEMOTRON_UNIT]: 450, [NEMOTRON_SUPER_UNIT]: 660, [ORNITH_UNIT]: 420, [FLASH_UNSLOTH_UNIT]: 420, [IMAGE_UNIT]: 70, [IMAGE_H3_UNIT]: 451, [VIDEO_UNIT]: 720, [TRANSCRIBE_UNIT]: 15, [LFM25_UNIT]: 290, [LFM3_UNIT]: 160};
 const TARGET_UNIT = t => t === 'image' || t === 'image-turbo' ? IMAGE_UNIT : t === 'image-h3' ? IMAGE_H3_UNIT : t === 'video' ? VIDEO_UNIT
-  : t === 'transcribe' ? TRANSCRIBE_UNIT : t === 'lfm25' ? LFM25_UNIT
+  : t === 'transcribe' ? TRANSCRIBE_UNIT : t === 'lfm25' ? LFM25_UNIT : t === 'lfm3' ? LFM3_UNIT
   : String(t).startsWith('kolibri') ? KOLIBRI_UNIT : t === 'nemotron-super' ? NEMOTRON_SUPER_UNIT : String(t).startsWith('nemotron') ? NEMOTRON_UNIT
   : t === 'flash-local' ? FLASH_LOCAL_UNIT : t === 'ornith-122b' ? ORNITH_UNIT : String(t).startsWith('flash-unsloth') ? FLASH_UNSLOTH_UNIT
   : String(t).startsWith('flash') ? UFLASH : U27;
@@ -159,7 +164,8 @@ const LANE_TARGETS = {[U27]: ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'a
                       [FLASH_LOCAL_UNIT]: ['flash-local'],
                       [KOLIBRI_UNIT]: ['kolibri', 'kolibri-nvfp4'], [NEMOTRON_UNIT]: ['nemotron'], [NEMOTRON_SUPER_UNIT]: ['nemotron-super'],
                       [ORNITH_UNIT]: ['ornith-122b'], [FLASH_UNSLOTH_UNIT]: ['flash-unsloth-iq3', 'flash-unsloth'], [IMAGE_UNIT]: ['image', 'image-turbo'],
-                      [IMAGE_H3_UNIT]: ['image-h3'], [VIDEO_UNIT]: ['video'], [TRANSCRIBE_UNIT]: ['transcribe'], [LFM25_UNIT]: ['lfm25']};
+                      [IMAGE_H3_UNIT]: ['image-h3'], [VIDEO_UNIT]: ['video'], [TRANSCRIBE_UNIT]: ['transcribe'], [LFM25_UNIT]: ['lfm25'],
+                      [LFM3_UNIT]: ['lfm3']};
 // Each version's official name: the model, its precision, and who publishes it, read off the repository its
 // installer pins (decisions 1180 and 1185: "abliterated", the word of those builds' own makers, never "uncensored"
 // nor "stock"; the targets' ids, in commands, do not change). dashboard/tests/test_target_names.py reads each
@@ -176,7 +182,7 @@ const TARGET_NAME = {stock: 'Qwen3.8 27B NVFP4 · RadixArk', uncensored: 'Qwen3.
                      'flash-unsloth-iq3': 'Qwen3.8 Flash-Next UD-IQ3_XXS GGUF · Unsloth',
                      'image-h3': 'MiniMax-H3-Image · MiniMax',
                      transcribe: 'NVIDIA Nemotron 3.5 Transcribe 30B-A4B Q8_0 GGUF · mradermacher',
-                     lfm25: 'LFM2.5 24B-A2B FP8 · Liquid AI'};
+                     lfm25: 'LFM2.5 24B-A2B FP8 · Liquid AI', lfm3: 'LFM3 1.7B NVFP4 · Liquid AI'};
 // A version's name on its button in Lanes, and the line that tells it apart once chosen. A
 // target is declared in the tables of this block: a page test fails when one lacks a name or a line.
 const TARGET_SHORT_NAME = {stock: 'NVFP4 · RadixArk', uncensored: 'Abliterated NVFP4 · edp1096', fp8: 'FP8 · Qwen',
@@ -184,7 +190,7 @@ const TARGET_SHORT_NAME = {stock: 'NVFP4 · RadixArk', uncensored: 'Abliterated 
   'flash-nvda': 'NVFP4 · NVIDIA', image: 'Base', 'image-turbo': 'Turbo', video: 'H3', kolibri: 'FP8 · Aleph Alpha',
   'kolibri-nvfp4': 'NVFP4 · Quantinine', nemotron: 'Bolt', 'nemotron-super': 'Super VL', 'flash-local': 'FP4-Local',
   'ornith-122b': '122B', 'flash-unsloth': 'UD-Q4_K_XL · Unsloth', 'flash-unsloth-iq3': 'UD-IQ3_XXS · Unsloth',
-  'image-h3': 'H3-Image', transcribe: 'Q8_0', lfm25: 'FP8 · Liquid AI'};
+  'image-h3': 'H3-Image', transcribe: 'Q8_0', lfm25: 'FP8 · Liquid AI', lfm3: 'NVFP4 · Liquid AI'};
 const TARGET_LINE = {
   stock: 'The default: smallest and fastest', uncensored: 'Refusals removed, same size and speed',
   fp8: "Qwen's own weights: the most faithful, and heavier", 'uncensored-fp8': 'Refusals removed, and heavier',
@@ -200,7 +206,8 @@ const TARGET_LINE = {
   'flash-unsloth-iq3': 'The default: its experts in 3-bit, faster, four requests at once',
   'image-h3': 'The one version: six steps, up to 16.9 megapixels',
   transcribe: 'The one version: Q8_0 and its F16 projector',
-  lfm25: 'The one version: its official FP8 and its DSpark draft'};
+  lfm25: 'The one version: its official FP8 and its DSpark draft',
+  lfm3: 'The one version: its official NVFP4'};
 const TARGET_NOTE = {
   stock: 'The NVFP4 quantization this repo pins by default: smallest and fastest of the 27B targets.',
   uncensored: 'The abliterated NVFP4 checkpoint: same size and speed as RadixArk’s NVFP4, refusals removed.',
@@ -223,7 +230,8 @@ const TARGET_NOTE = {
   'flash-unsloth-iq3': 'Unsloth’s UD-IQ3_XXS GGUF of the same model, served the same way (llama.cpp’s own server, its n-gram lookup and ggml-org’s DFlash2 draft, the same chat template and sampling): its experts in 3-bit, 51.1 GiB of weights where UD-Q4_K_XL has 76.9, and the same n-gram (PLE) table, read from the disk. The room it leaves goes to more requests at once: 262,144 tokens of context for each of four, the KV cache in q8_0 (1,048,576 for one request at a time with FLASH_UNSLOTH_CONTEXT=1m given to its installer). Measured on this box, one request at temperature 0 on its image (llama.cpp b12316, 2026-11-14, each text’s first pass, two windows of 262,144 for both quantizations, the GPU capped at 2,400 MHz): 69.4 tokens/s on code, 76.4 in reasoning, 37.7 on prose and 171.7 on a rewrite of code, where UD-Q4_K_XL gave 55.6, 60.5, 32.0 and 129.8; with its four windows, 66.2 tokens/s for one request and 71.5 in all with four (the GPU capped at 2,000 MHz). At the medium effort and temperature 0, four requests at once (llama.cpp b12291 built on this box, 2026-11-14): GSM8K 98.8 % (250 questions; 98.4 % for UD-Q4_K_XL on the same bench) and HumanEval 98.2 % (164 problems; 99.4 %), the box keeping 28.7 GiB available at the lowest. The lane’s default since v1.49.0. The first switch downloads about 85 GB, 55 when UD-Q4_K_XL is there (the n-gram table is one file for the two).',
   'image-h3': 'MiniMax’s MiniMax-H3-Image, served by SGLang Diffusion from its main branch: text to image and editing with up to ten references, six steps fixed by the checkpoint with no guidance, from 2048 × 2048 to 16.9 megapixels (4736 × 3552, 6272 × 2688), one image per call. Measured on the reference box at this lane’s SGLang commit: 2048 × 2048 in 15.6 s, 4736 × 3552 in 81 s, an edit at 2048 × 2048 with a 1024-pixel reference in 24 s, the engine at 92.3 GB at its peak: it fits beside no other lane. Its text encoder is MiniMax-H3’s, the video lane’s, fetched with it when the video lane has not. Its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States; elsewhere commercial use above USD 1 million of annual revenue, or as a service hosted for others, needs MiniMax’s written authorization. The first switch downloads about 69 GB, and 67 more without the video lane.',
   transcribe: 'NVIDIA’s Nemotron-3.5-Transcribe-30B-A4B in mradermacher’s GGUF Q8_0 with its F16 projector (36.5 GB), served by llama.cpp’s own server in the Qwen3.8 Flash-Next Unsloth GGUF lane’s image, on a port of its own (30036) with the box’s key: /v1/audio/transcriptions and the /v1/realtime websocket, reasoning off, a window of 65,536 tokens, as the reference box measured it (French WER 2.76 % over 20 excerpts, English 0.40 %, ready in 15 s once its files are on disk). The proxy on :30001 and opencode are text clients and do not reach it. It fits beside no text lane. The first switch downloads about 37 GB.',
-  lfm25: 'Liquid AI’s LFM2.5 24B-A2B in its official FP8 build (its linear weights in FP8 by blocks of 128 × 128), with its official DSpark draft, served by SGLang in the Qwen3.8 27B lane’s image as Liquid AI’s card gives the command: 131,072 tokens of context, the draft proposing blocks of 9 tokens, its own chat template and sampling (temperature 0.1, top_k 50, repetition_penalty 1.05). Its template opens a reasoning block at every answer, whatever a request asks: no effort or switch turns it off, and System One does not run on it. Tool calls in its own format, which the engine turns into OpenAI tool calls. Measured on the reference box on 2026-11-14: ready in 286 s, GSM8K 91.2 % (250 questions, 8 requests at once), 362 tokens/s in all at the median under those 8, the draft accepting 5.28 tokens at the median, a KV cache of 1,667,049 tokens, the box keeping 24 GiB available at the lowest. Its licence, the LFM Open License v1.0, does not grant commercial use to a company with an annual revenue of 10 million US dollars or more. The first switch downloads about 26 GB.'};
+  lfm25: 'Liquid AI’s LFM2.5 24B-A2B in its official FP8 build (its linear weights in FP8 by blocks of 128 × 128), with its official DSpark draft, served by SGLang in the Qwen3.8 27B lane’s image as Liquid AI’s card gives the command: 131,072 tokens of context, the draft proposing blocks of 9 tokens, its own chat template and sampling (temperature 0.1, top_k 50, repetition_penalty 1.05). Its template opens a reasoning block at every answer, whatever a request asks: no effort or switch turns it off, and System One does not run on it. Tool calls in its own format, which the engine turns into OpenAI tool calls. Measured on the reference box on 2026-11-14: ready in 286 s, GSM8K 91.2 % (250 questions, 8 requests at once), 362 tokens/s in all at the median under those 8, the draft accepting 5.28 tokens at the median, a KV cache of 1,667,049 tokens, the box keeping 24 GiB available at the lowest. Its licence, the LFM Open License v1.0, does not grant commercial use to a company with an annual revenue of 10 million US dollars or more. The first switch downloads about 26 GB.',
+  lfm3: 'Liquid AI’s LFM3 1.7B in its official NVFP4 build (ModelOpt, weights and activations by groups of 16), served by vLLM’s own nightly image (LFM3 is in no vLLM release yet) with the model’s whole window, 262,144 tokens, its own chat template and sampling (temperature 0.1, top_k 50, repetition_penalty 1.1), a memory share of 0.75 that keeps the box room (vLLM’s KV cache otherwise grows into all the memory left). It reasons by default and can be asked not to (the none variant, pi’s off): its template reads that switch and no level. Tool calls in Qwen3-Coder’s form, which the engine turns into OpenAI tool calls. Measured on the reference box on 2026-11-16, before its share was set: ready in about 2 min 40 s, GSM8K 89.6 % (250 questions), 87.7 tokens/s alone and 3,912 in all at 128 requests, a prompt of 131,072 tokens computed in 10.2 s, an agent’s next turn served 99 to 100 % from the prefix cache. Its licence, the LFM Open License v1.0, does not grant commercial use to a company with an annual revenue of 10 million US dollars or more. The first switch downloads about 2 GB.'};
 // What installs a lane this box does not have. Since v1.20 a plain ./install.sh installs
 // every lane, so one missing here was left out (a --no-<lane> on the last run) or did not fit:
 // --with-<lane> installs it beside the lane that serves, which keeps serving. A text lane comes with
@@ -233,7 +241,8 @@ const LANE_INSTALL = {[U27]: './install.sh --with-27b', [UFLASH]: './install.sh 
                       [NEMOTRON_UNIT]: './install.sh --with-nemotron', [NEMOTRON_SUPER_UNIT]: './install.sh --with-nemotron-super',
                       [FLASH_LOCAL_UNIT]: './install.sh --with-flash-local', [ORNITH_UNIT]: './install.sh --with-ornith-122b',
                       [FLASH_UNSLOTH_UNIT]: './install.sh --with-flash-unsloth', [IMAGE_H3_UNIT]: './install.sh --with-image-h3',
-                      [TRANSCRIBE_UNIT]: './install.sh --with-transcribe', [LFM25_UNIT]: './install.sh --with-lfm25'};
+                      [TRANSCRIBE_UNIT]: './install.sh --with-transcribe', [LFM25_UNIT]: './install.sh --with-lfm25',
+                      [LFM3_UNIT]: './install.sh --with-lfm3'};
 // A lane a 64 GB DGX Spark cannot hold (boxmem.py, which the machine panel carries): where another
 // lane names the command that installs it, it says it needs a 128 GB box. Unknown is no refusal.
 const laneFits = unit => {
@@ -591,6 +600,11 @@ const ORNITH_CANNOT = {
   flush_cache: 'The Ornith 1.5 122B lane has no cache flush route: vLLM evicts its prefix cache by itself.',
   abort_all: 'The Ornith 1.5 122B lane has no route that aborts its generations: stopping the lane stops them.',
   fit_opencode: 'The Ornith 1.5 122B lane\'s opencode limits are its own, set when it is loaded: its window decides them, not its pool.'};
+// and the Liquid AI LFM3 lane, in its own name (cockpit.py LFM3_CANNOT)
+const LFM3_CANNOT = {
+  flush_cache: 'The Liquid AI LFM3 lane has no cache flush route: vLLM evicts its prefix cache by itself.',
+  abort_all: 'The Liquid AI LFM3 lane has no route that aborts its generations: stopping the lane stops them.',
+  fit_opencode: 'The Liquid AI LFM3 lane\'s opencode limits are its own, set when it is loaded: its window decides them, not its pool.'};
 // and the Unsloth GGUF lane, llama.cpp's, in its own name (cockpit.py FLASH_UNSLOTH_CANNOT)
 const FLASH_UNSLOTH_CANNOT = {
   flush_cache: 'The Qwen3.8 Flash-Next Unsloth GGUF lane has no cache flush route: llama.cpp keeps and evicts its prompt cache by itself.',
@@ -599,7 +613,7 @@ const FLASH_UNSLOTH_CANNOT = {
 function cannotWhy(name){
   const s = servingEngine();
   return !s ? '' : s[0] === KOLIBRI_UNIT ? (KOLIBRI_CANNOT[name] || '') : s[0] === FLASH_LOCAL_UNIT ? (FLASH_LOCAL_CANNOT[name] || '')
-    : s[0] === FLASH_UNSLOTH_UNIT ? (FLASH_UNSLOTH_CANNOT[name] || '')
+    : s[0] === FLASH_UNSLOTH_UNIT ? (FLASH_UNSLOTH_CANNOT[name] || '') : s[0] === LFM3_UNIT ? (LFM3_CANNOT[name] || '')
     : s[0] === ORNITH_UNIT ? (ORNITH_CANNOT[name] || '') : s[0] === NEMOTRON_SUPER_UNIT ? (NEMOTRON_SUPER_CANNOT[name] || '')
     : isNemotron(s[0]) ? (NEMOTRON_CANNOT[name] || '') : '';
 }
@@ -639,6 +653,7 @@ const EXPLAIN = {
       : TARGET_UNIT(p.target) === ORNITH_UNIT ? `puts in its unit for this checkpoint, and makes ${LANE_NAME[ORNITH_UNIT]} opencode's default model, with its compaction`
       : TARGET_UNIT(p.target) === FLASH_UNSLOTH_UNIT ? `fetches what its GGUF files and its draft lack, puts in its unit for them with its chat template, and makes ${LANE_NAME[FLASH_UNSLOTH_UNIT]} opencode's default model, with its compaction`
       : TARGET_UNIT(p.target) === LFM25_UNIT ? `fetches what its checkpoint and its draft lack, puts in its unit for them, and makes ${LANE_NAME[LFM25_UNIT]} opencode's default model, with its compaction`
+      : TARGET_UNIT(p.target) === LFM3_UNIT ? `puts in its unit for this checkpoint, and makes ${LANE_NAME[LFM3_UNIT]} opencode's default model, with its compaction`
       : isNemotron(TARGET_UNIT(p.target)) ? `points its unit at this checkpoint and its memory share, and makes ${LANE_NAME[TARGET_UNIT(p.target)]} opencode's default model, with its compaction`
       : 'rewrites its unit, the proxy ceiling and the opencode default model'}. It never restarts anything.`,
   flush_cache: () => 'Empties the radix cache. Harmless; the engine refuses it while requests run.',
@@ -864,11 +879,12 @@ const LANE_RUNTIME = {flash: 'its SGLang image (about 16 GB to download), its ch
   'ornith-122b': 'the Qwen3.8 Flash-Next FP4-Local lane’s vLLM image with b12x, about 10 GB to download (18 GB on disk), pulled once for the two',
   'flash-unsloth': 'llama.cpp’s own server image for arm64 with CUDA, about 2.7 GB to download (4.5 GB on disk), pulled as its project publishes it',
   transcribe: 'the Qwen3.8 Flash-Next Unsloth GGUF lane’s llama.cpp server image, about 2.7 GB to download (4.5 GB on disk), pulled once for the two',
-  lfm25: 'the Qwen3.8 27B lane’s SGLang image (about 15 GB to download), pulled once for the two'};
+  lfm25: 'the Qwen3.8 27B lane’s SGLang image (about 15 GB to download), pulled once for the two',
+  lfm3: 'vLLM’s own nightly image, about 11.5 GB to download (28 GB on disk), pulled as published'};
 const SIDE_LANE = {[IMAGE_UNIT]: 'image', [VIDEO_UNIT]: 'video', [KOLIBRI_UNIT]: 'kolibri', [NEMOTRON_UNIT]: 'nemotron',
                    [NEMOTRON_SUPER_UNIT]: 'nemotron-super', [FLASH_LOCAL_UNIT]: 'flash-local', [ORNITH_UNIT]: 'ornith-122b',
                    [FLASH_UNSLOTH_UNIT]: 'flash-unsloth', [IMAGE_H3_UNIT]: 'image-h3', [TRANSCRIBE_UNIT]: 'transcribe',
-                   [LFM25_UNIT]: 'lfm25', [UFLASH]: 'flash', [U27]: '27b'};
+                   [LFM25_UNIT]: 'lfm25', [LFM3_UNIT]: 'lfm3', [UFLASH]: 'flash', [U27]: '27b'};
 // The lanes whose clients follow the window their unit starts with (FLASH_LOCAL_CONTEXT=1m, FLASH_UNSLOTH_CONTEXT=1m):
 // switch-model.sh sets opencode, pi and claude-local for that window, and nothing else does. The Load of such a lane as
 // the boot lane started or restarted its unit alone, so a window chosen with --units-only reached the engine and not
@@ -999,7 +1015,7 @@ function askJourney(target, opts = {}){
   const serving = servingEngine();
   const warns = [];
   if (serving && serving[0] === UFLASH && TRANSITIONAL.has(serving[1].state)) warns.push('Flash is booting: stopping now throws that boot away, and the next start takes a whole boot again.');
-  if (serving && serving[0] !== unit && (serving[0] === U27 || serving[0] === UFLASH || serving[0] === LFM25_UNIT || serving[0] === KOLIBRI_UNIT || isB12x(serving[0]) || isLlamacpp(serving[0]))) warns.push('Agent clients on :30001 lose their engine until a text lane answers again.');
+  if (serving && serving[0] !== unit && (serving[0] === U27 || serving[0] === UFLASH || serving[0] === LFM25_UNIT || serving[0] === KOLIBRI_UNIT || isVllmTable(serving[0]) || isLlamacpp(serving[0]))) warns.push('Agent clients on :30001 lose their engine until a text lane answers again.');
   // stopped for another lane, or restarted on its other checkpoint: either ends a generation
   if (serving && (isImageLane(serving[0]) || serving[0] === VIDEO_UNIT) && steps.some(s => s.name === 'unit' && s.params.unit === serving[0]))
     warns.push('A generation in flight on ' + laneLabel(serving[0]) + ' is lost.');

@@ -167,16 +167,32 @@ NEMOTRON_MARKERS = [
 ]
 
 
-def parse_nemotron_boot_log(lines: list[str]) -> dict:
+# The Liquid AI LFM3 lane's container log: vLLM's own nightly, no drafter, and an extensible KV cache sized after the
+# warmup, so its size comes after the CUDA graphs (the reference box's first boot, 2026-11-16: the model in 1 s, its
+# compile and FlashInfer's NVFP4 tuning, the graphs, then "GPU KV cache size:"). Read with the Nemotron markers, the
+# weights' end said "then the drafter" of a lane that has none, and the cache's line came after the graphs' capture.
+LFM3_MARKERS = [
+    ("Initializing a V1 LLM engine", "init", "starting vLLM"),
+    ("Loading safetensors checkpoint shards", "loading-weights", "the checkpoint"),
+    ("Model loading took", "allocating-kv", "compiling the model and tuning its NVFP4 kernels"),
+    ("Capturing CUDA graphs", "capturing-graphs", "capturing the CUDA graphs"),
+    ("GPU KV cache size:", "warming-up", "sizing the KV cache to its share"),
+    ("init engine (profile, create kv cache, warmup model) took", "warming-up", "starting the API"),
+    ("Application startup complete", "warming-up", "ready"),
+]
+
+
+def parse_nemotron_boot_log(lines: list[str], markers=None) -> dict:
     """The Nemotron lane's container log, in the shape parse_kolibri_boot_log returns, the shard
-    being read in `detail` (the drafter's named so). Only the latest boot counts."""
+    being read in `detail` (the drafter's named so). Only the latest boot counts. markers: another
+    vLLM lane's (LFM3_MARKERS), read the same way."""
     start = 0
     for i, ln in enumerate(lines):
         if "Initializing a V1 LLM engine" in ln:
             start = i
     stage, detail, fired, drafter = None, "", False, False
     for ln in lines[start:]:
-        for needle, st, what in NEMOTRON_MARKERS:
+        for needle, st, what in (markers or NEMOTRON_MARKERS):
             if needle in ln:
                 if needle == "Loading safetensors checkpoint shards" and drafter:
                     what = "the drafter"
@@ -559,12 +575,13 @@ TRANSITIONAL = BUSY_STATES - {"ready", "degraded", "orphan", "wedged"}
 # a second image lane: 92.3 GB at its peak on the reference box, its recipe asking 106 GiB free at its start. And the
 # NVIDIA Nemotron Transcribe lane, llama.cpp's, 36.5 GB of weights, which left 76 GiB available at its lowest with nothing
 # else serving (2026-11-14). And the Liquid AI LFM2.5 24B-A2B lane, SGLang's, a static share of 0.7 of the memory
-# SGLang sees, which left 24 GiB available at its lowest (2026-11-14).
+# SGLang sees, which left 24 GiB available at its lowest (2026-11-14). And the Liquid AI LFM3 lane, vLLM's, its weights
+# 1.8 GB and its KV cache extended into its share of 0.75 of the memory vLLM sees.
 ENGINE_UNITS = ("qwen38-sglang.service", "qwen38-flash.service",
                 "qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service",
                 "qwen38-nemotron.service", "qwen38-nemotron-super.service", "qwen38-flash-local.service",
                 "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service", "qwen38-image-h3.service",
-                "qwen38-transcribe.service", "qwen38-lfm25.service")
+                "qwen38-transcribe.service", "qwen38-lfm25.service", "qwen38-lfm3.service")
 IMAGE_UNIT = "qwen38-image.service"
 IMAGE_H3_UNIT = "qwen38-image-h3.service"
 VIDEO_UNIT = "qwen38-video.service"
@@ -575,6 +592,7 @@ FLASH_LOCAL_UNIT = "qwen38-flash-local.service"
 ORNITH_UNIT = "qwen38-ornith-122b.service"
 FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
 TRANSCRIBE_UNIT = "qwen38-transcribe.service"
+LFM3_UNIT = "qwen38-lfm3.service"
 # The SGLang engines that serve text on ENGINE_BASE: the 27B's, the flash's, and the Liquid AI LFM2.5 24B-A2B lane's,
 # on the 27B's image. Every probe, guard and belt that talks to that port (the generation canary, the pool guard, the
 # wedge autoheal) is about these and only these: with a diffusion lane serving, :30000 is closed, and asking "is an
@@ -582,11 +600,11 @@ TRANSCRIBE_UNIT = "qwen38-transcribe.service"
 # Kolibri lane serves text on that port too, from vLLM, which none of those belts know
 # (its routes, its log and its model names are not SGLang's): the cockpit follows it on
 # its own facts, as it does the image and the video lanes. So do the Nemotron lanes, the Flash
-# FP4-Local lane and the Ornith lane, vLLM too, and the Unsloth GGUF lane, llama.cpp's; the NVIDIA Nemotron Transcribe
-# lane, llama.cpp's too, serves no text, on a port of its own.
+# FP4-Local lane, the Ornith lane and the Liquid AI LFM3 lane, vLLM too, and the Unsloth GGUF lane, llama.cpp's; the
+# NVIDIA Nemotron Transcribe lane, llama.cpp's too, serves no text, on a port of its own.
 TEXT_UNITS = tuple(u for u in ENGINE_UNITS
                    if u not in (IMAGE_UNIT, VIDEO_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT,
-                                ORNITH_UNIT, FLASH_UNSLOTH_UNIT, IMAGE_H3_UNIT, TRANSCRIBE_UNIT))
+                                ORNITH_UNIT, FLASH_UNSLOTH_UNIT, IMAGE_H3_UNIT, TRANSCRIBE_UNIT, LFM3_UNIT))
 
 
 def blocked_reasons(action: str, params: dict, states: dict) -> list[str]:
@@ -1353,7 +1371,8 @@ LANE_PROVIDER = {"qwen38-sglang.service": "qwen38", "qwen38-flash.service": "fla
                  "qwen38-kolibri.service": "kolibri", "qwen38-nemotron.service": "nemotron",
                  "qwen38-nemotron-super.service": "nemotron-super",
                  "qwen38-flash-local.service": "flash-local", "qwen38-ornith-122b.service": "ornith-122b",
-                 "qwen38-flash-unsloth.service": "flash-unsloth", "qwen38-lfm25.service": "lfm25"}
+                 "qwen38-flash-unsloth.service": "flash-unsloth", "qwen38-lfm25.service": "lfm25",
+                 "qwen38-lfm3.service": "lfm3"}
 
 
 def opencode_default_follows(default_model, states: dict) -> tuple:

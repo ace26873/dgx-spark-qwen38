@@ -38,6 +38,7 @@ const UNITS = {units: {'qwen38-sglang.service': {active: 'active', enabled: 'ena
                        'qwen38-image-h3.service': {active: 'inactive', enabled: 'disabled'},
                        'qwen38-transcribe.service': {active: 'inactive', enabled: 'disabled'},
                        'qwen38-lfm25.service': {active: 'inactive', enabled: 'disabled'},
+                       'qwen38-lfm3.service': {active: 'inactive', enabled: 'disabled'},
                        'qwen38-keepalive.service': {active: 'active', enabled: 'enabled'}}};
 const life = (engines, extra) => Object.assign({engines, events: [], blocked: {}}, extra || {});
 const eng = (state, extra) => Object.assign({state, target: 'stock', elapsed: 600}, extra || {});
@@ -278,7 +279,8 @@ class EachVllmLaneIsSaidByItsOwnName(unittest.TestCase):
              ("qwen38-nemotron-super.service", "nemotron-super", "Nemotron 3.5 Super VL"),
              ("qwen38-flash-local.service", "flash-local", "Qwen3.8 Flash-Next FP4-Local"),
              ("qwen38-ornith-122b.service", "ornith-122b", "Ornith 1.5 122B"),
-             ("qwen38-flash-unsloth.service", "flash-unsloth", "Qwen3.8 Flash-Next Unsloth GGUF"))
+             ("qwen38-flash-unsloth.service", "flash-unsloth", "Qwen3.8 Flash-Next Unsloth GGUF"),
+             ("qwen38-lfm3.service", "lfm3", "Liquid AI LFM3"))
 
     def test_each_says_the_lane_that_serves(self):
         for unit, target, name in self.LANES:
@@ -294,6 +296,42 @@ class EachVllmLaneIsSaidByItsOwnName(unittest.TestCase):
                     self.assertTrue(r[k].startswith(f"The {name} lane"), r[k])
                 said = json.dumps(r)
                 self.assertEqual([x for _, _, x in self.LANES if x != name and x in said], [])
+
+
+class TheLfm3LaneReadsAsAVllmLane(unittest.TestCase):
+    """The Liquid AI LFM3 lane runs vLLM's own nightly, no drafter: the Traffic view reads its counters as the other vLLM
+    lanes', says it serves on vLLM in its own name and that it runs no draft model, and Logs opens its container."""
+
+    SERVES = r"""
+    const U = JSON.parse(JSON.stringify(UNITS));
+    U.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
+    U.units['qwen38-lfm3.service'] = {active: 'active', enabled: 'enabled'};
+    feed({config: CONFIG, units: U, lifecycle: life({'qwen38-lfm3.service': eng('ready', {target: 'lfm3'})})});
+    """
+
+    def test_traffic_says_it_serves_on_vllm_with_no_draft_model(self):
+        r = run(self, self.SERVES + r"""
+        feed({engine_fast: {load: [{num_reqs: 1, num_waiting_reqs: 0, num_tokens: 2000000, num_used_tokens: 500000,
+                                    accept_len: 3.5}]}});
+        feed({metrics: {lane: null}, decode: {lane: null}});    // what the server sends on a vLLM lane
+        report({verdict: txt('wm-verdict'), cap: txt('wm-cap'), acc: txt('tr-acc'), kv: txt('tr-kv')});
+        """)
+        self.assertEqual(r["verdict"], "The Liquid AI LFM3 lane serves on vLLM: its counters come with the next read.")
+        self.assertEqual(r["cap"], "Liquid AI LFM3: vLLM")
+        self.assertEqual((r["acc"], r["kv"]), ("no draft model", "25.0 %"))
+
+    def test_logs_opens_its_container(self):
+        r = run(self, self.SERVES + r"""
+        __fetch = async () => __response(200, {lines: []});
+        showView('logs'); await __settle();
+        report($('log-src').value);
+        """)
+        self.assertEqual(r, "qwen38-lfm3")
+
+    def test_logs_offers_its_container_and_its_journal(self):
+        r = run(self, r"""report([...$('log-src').options].map(o => o.value));""")
+        self.assertIn("qwen38-lfm3", r)
+        self.assertIn("qwen38-lfm3.service", r)
 
 
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
@@ -1356,7 +1394,7 @@ class AnEmptyStateIsSaidNotPending(unittest.TestCase):
                 u27: installed('qwen38-sglang.service'), flash: installed('qwen38-flash.service')});
         """)
         self.assertNotIn("…", r["cps"], r)
-        self.assertEqual(sorted(r["cps"]), ["not installed"] * 11 + ["unknown"] * 2, r)
+        self.assertEqual(sorted(r["cps"]), ["not installed"] * 12 + ["unknown"] * 2, r)
         self.assertEqual((r["image"], r["video"], r["kolibri"], r["nemotron"], r["nsuper"], r["flocal"], r["ornith"], r["u27"],
                           r["flash"]), (False, False, False, False, False, False, False, True, True), r)
 
@@ -1398,7 +1436,7 @@ class TheBootLaneIsSaidOnlyWhenOneIs(unittest.TestCase):
     for (const u of ['qwen38-sglang.service', 'qwen38-flash.service', 'qwen38-image.service', 'qwen38-video.service', 'qwen38-kolibri.service',
                      'qwen38-nemotron.service', 'qwen38-nemotron-super.service', 'qwen38-flash-local.service',
                      'qwen38-ornith-122b.service', 'qwen38-flash-unsloth.service', 'qwen38-image-h3.service',
-                     'qwen38-transcribe.service', 'qwen38-lfm25.service'])
+                     'qwen38-transcribe.service', 'qwen38-lfm25.service', 'qwen38-lfm3.service'])
       if (%s !== null) units.units[u].enabled = %s;
     feed({config: CONFIG, units, lifecycle: life({'qwen38-sglang.service': eng('stopped', {target: 'uncensored'}),
                                                  'qwen38-flash.service': eng('stopped', {target: 'flash'})})});
@@ -1418,7 +1456,7 @@ class TheBootLaneIsSaidOnlyWhenOneIs(unittest.TestCase):
         r = self.page("'disabled'")
         self.assertEqual(r["sub"], "no lane starts at boot; load one from Lanes", r)
         self.assertTrue(r["atBoot"] and all(a == "manual start" for a in r["atBoot"]), r["atBoot"])
-        self.assertEqual(r["notes"], ["manual start"] * 13, r["notes"])   # each of the thirteen lanes
+        self.assertEqual(r["notes"], ["manual start"] * 14, r["notes"])   # each of the fourteen lanes
         self.assertIn("Boot lanenone", r["facts"])
         self.assertEqual(len(r["steps"]), 2, r["steps"])
         self.assertIn("switch-model.sh uncensored", r["steps"][0])
@@ -2377,7 +2415,7 @@ class ALaneToComeOpensTheRack(unittest.TestCase):
         self.assertEqual(r["n"], 1)
         self.assertEqual(r["at"], 0)
         self.assertTrue(r["next"].startswith("Qwen3.8 27B"), r["next"])
-        self.assertEqual(r["bays"], 14)   # the thirteen lanes and this card
+        self.assertEqual(r["bays"], 15)   # the fourteen lanes and this card
         self.assertEqual((r["title"], r["cap"], r["lamp"]), ("Qwen4 27B", "coming soon", 0))
         self.assertIn("not released yet", r["text"])
         self.assertIn("no date yet", r["text"])
@@ -2413,9 +2451,9 @@ class EachLaneWearsItsMakersMark(unittest.TestCase):
                 none, flash, video});
         """)
         lanes = ["qwen.svg", "qwen.svg", "nvidia.svg", "unsloth.svg", "ornith.svg", "alephalpha.svg", "nvidia.svg", "nvidia.svg",
-                 "liquid.svg", "qwen.svg", "minimax.svg", "minimax.svg", "nvidia.svg"]   # 27B, flash, Flash FP4-Local,
-        # Unsloth GGUF, Ornith, Kolibri, the Nemotron lanes, Liquid AI's LFM2.5, the two image lanes (Qwen-Image 2.1,
-        # MiniMax-H3-Image), video, and NVIDIA's speech recognizer (NVIDIA Nemotron Transcribe)
+                 "liquid.svg", "liquid.svg", "qwen.svg", "minimax.svg", "minimax.svg", "nvidia.svg"]   # 27B, flash,
+        # Flash FP4-Local, Unsloth GGUF, Ornith, Kolibri, the Nemotron lanes, Liquid AI's LFM2.5 and LFM3, the two image
+        # lanes (Qwen-Image 2.1, MiniMax-H3-Image), video, and NVIDIA's speech recognizer (NVIDIA Nemotron Transcribe)
         self.assertEqual(r["bays"], lanes)
         self.assertEqual(r["cards"], lanes)
         # the mark is decoration beside the lane's name: no alt text to read twice
@@ -2437,7 +2475,7 @@ class EachLaneWearsItsMakersMark(unittest.TestCase):
         # unchecked (found when the Ornith lane came, 2026-10-21)
         lanes = set(re.findall(r"lane: '([a-z0-9-]+)'", (pagejs.STATIC / "js" / "base.js").read_text()))
         self.assertEqual(lanes, {"27b", "flash", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                 "flash-unsloth", "image", "video", "image-h3", "transcribe", "lfm25"})
+                                 "flash-unsloth", "image", "video", "image-h3", "transcribe", "lfm25", "lfm3"})
         for lane in lanes:
             self.assertRegex(css, r"--lane-%s:#[0-9a-f]{6};" % lane)
 

@@ -30,12 +30,13 @@ on('decode', d => {
     setText('tr-kv', l.num_tokens ? (100 * (l.num_used_tokens || 0) / l.num_tokens).toFixed(1) + ' %' : 'idle');
     return;
   }
-  if (!d.lane && isB12x((servingEngine() || [])[0])){
+  if (!d.lane && isVllmTable((servingEngine() || [])[0])){
     // the same vLLM counters as Kolibri's, and a drafter (the Qwen3.8 Flash-Next FP4-Local lane's MTP head
     // counts as one): its mean acceptance over the last seconds, as vLLM counts it
-    // (nemotron_load), idle when no draft came in them
+    // (nemotron_load), idle when no draft came in them; the Liquid AI LFM3 lane runs none
     const l = F.load || {};
-    setText('tr-acc', l.accept_len != null ? l.accept_len.toFixed(2) : 'idle');
+    setText('tr-acc', (servingEngine() || [])[0] === LFM3_UNIT ? 'no draft model'
+      : l.accept_len != null ? l.accept_len.toFixed(2) : 'idle');
     setText('tr-kv', l.num_tokens ? (100 * (l.num_used_tokens || 0) / l.num_tokens).toFixed(1) + ' %' : 'idle');
     return;
   }
@@ -65,7 +66,7 @@ on('decode', d => {
 // test holds to the lanes whose installer stands on vllm-lane.sh, by its name; their names are the
 // cockpit's: a copy of them said "Nemotron" where every other view says "Nemotron Bolt" (found in
 // review, 2026-10-20).
-const VLLM_UNITS = [KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT, ORNITH_UNIT];
+const VLLM_UNITS = [KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT, ORNITH_UNIT, LFM3_UNIT];
 const VLLM_LANE_NAME = Object.fromEntries(VLLM_UNITS.map(u => [u, LANE_NAME[u]]));
 on('metrics', d => {
   if (!d.lane){
@@ -170,7 +171,7 @@ on('reqguard', d => {
   // an SGLang setting, which the guard reads on the SGLang lanes only
   setText('zg-override', d.override === true ? 'yes' : d.override === false ? 'no' : d.lane ? 'unknown (docker did not answer)'
     : (servingEngine() || [])[0] === KOLIBRI_UNIT ? 'not on the Kolibri-1 lane (an SGLang setting)'
-    : isB12x((servingEngine() || [])[0]) ? `not on ${b12xName((servingEngine() || [])[0])} (an SGLang setting)`
+    : isVllmTable((servingEngine() || [])[0]) ? `not on ${b12xName((servingEngine() || [])[0])} (an SGLang setting)`
     : isLlamacpp((servingEngine() || [])[0]) ? `not on ${llamacppName((servingEngine() || [])[0])} (an SGLang setting)` : 'no engine');
   const acted = [];
   if (g.aborted) acted.push(`${g.aborted} aborted`);
@@ -219,8 +220,8 @@ on('machine', d => {
 // On the Kolibri lane the pool guard cannot act: vLLM has no route that flushes its cache, and it
 // read "armed" there (review, 2026-10-14).
 const kolibriHolds = () => (servingEngine() || [])[0] === KOLIBRI_UNIT;
-// the Nemotron lanes, the Qwen3.8 Flash-Next FP4-Local lane and Ornith run on vLLM too
-const nemotronHolds = () => isB12x((servingEngine() || [])[0]);
+// the Nemotron lanes, the Qwen3.8 Flash-Next FP4-Local lane, Ornith and the Liquid AI LFM3 lane run on vLLM too
+const nemotronHolds = () => isVllmTable((servingEngine() || [])[0]);
 // and the llama.cpp lanes, which stop a request whose connection closes, as vLLM does (proxy v6.55)
 const llamacppHolds = () => isLlamacpp((servingEngine() || [])[0]);
 // The floor stops generations through the proxy since v1.40.3, on every lane: vLLM has no route that
@@ -667,7 +668,7 @@ function defaultLogSource(){
   return u === UFLASH ? 'qwen38-flash' : u === KOLIBRI_UNIT ? 'qwen38-kolibri' : u === NEMOTRON_UNIT ? 'qwen38-nemotron'
     : u === NEMOTRON_SUPER_UNIT ? 'qwen38-nemotron-super' : u === FLASH_LOCAL_UNIT ? 'qwen38-flash-local'
     : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth'
-    : u === LFM25_UNIT ? 'qwen38-lfm25' : 'qwen38-sglang';
+    : u === LFM25_UNIT ? 'qwen38-lfm25' : u === LFM3_UNIT ? 'qwen38-lfm3' : 'qwen38-sglang';
 }
 onShow('logs', () => {
   if (LOGS_WANT.src || !logTouched){ $('log-src').value = defaultLogSource(); LOGS_WANT.src = null; }

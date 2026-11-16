@@ -139,7 +139,7 @@ class TheRoomItsFetchAsks(unittest.TestCase):
         total = int(m.group(1).replace(",", "")) + int(m.group(2).replace(",", ""))
         self.assertEqual(int(m.group(3)), math.ceil(total / 1e9))
         js = (REPO / "dashboard" / "static" / "js" / "base.js").read_text()
-        self.assertIsNotNone(re.search(rf"^  lfm25: '[^']*The first switch downloads about {m.group(3)} GB\.'}};$", js, re.M),
+        self.assertIsNotNone(re.search(rf"^  lfm25: '[^']*The first switch downloads about {m.group(3)} GB\.'(?:}};|,)$", js, re.M),
                              "base.js's note says another size")
 
 

@@ -68,6 +68,11 @@ ENGINES = {
         "engine": "SGLang", "version": "0.5.22", "reports": "0.5.22",
         "pin": "lmsysorg/sglang@sha256:e3a4f06001a29542fc4a8638536d9ffc5eb9c9942b08603c09b19a56eae4a1ae",
         "tag": "lmsysorg/sglang:v0.5.22"},
+    # install-lfm3.sh LFM3_IMAGE: vLLM's own nightly image of commit 60bd6dd; its vllm distribution says
+    # 0.34.0rc1.dev571+g60bd6dd2e (importlib.metadata in the image, 2026-11-16)
+    "qwen38-lfm3.service": {
+        "engine": "vLLM", "version": "nightly 60bd6dd", "reports": "0.34.0rc1.dev571+g60bd6dd2e",
+        "pin": "vllm/vllm-openai@sha256:19cfbac06cfed28a2eb2c08950e62b4b07fd6e20685ad6e10f9422236d39e519"},
     # install-image.sh and install-video.sh WHEEL: SGLang's diffusion runtime in the lane's own venv
     "qwen38-image.service": {"engine": "SGLang Diffusion", "version": "0.5.21", "reports": None,
                              "pin": "sglang[diffusion]==0.5.21"},
