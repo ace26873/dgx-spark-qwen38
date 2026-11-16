@@ -3,10 +3,10 @@
 LFM3 1.7B is Liquid AI's small hybrid model: 24 layers, 13 of them short convolutions and 11 attention (6 over
 the whole context, 5 over a sliding window), a vocabulary of 128,000 tokens and a native window of 262,144 tokens.
 Liquid AI's card says it is post-trained for agent harnesses (Hermes Agent, Pi, OpenClaw), designed for local
-agents, tool calling, structured outputs and fine-tuning, and not recommended for agentic coding or complex multi-step
-reasoning, for its small size. This lane serves Liquid
-AI's own NVFP4 build of it, `LiquidAI/LFM3-1.7B-NVFP4`, on the same port and behind the same proxy and key as the
-other text lanes, so every client reaches it the same way, as model `lfm3-1.7b`.
+agents, tool calling, structured outputs and fine-tuning, and not recommended for agentic coding or complex
+multi-step reasoning, for its small size. This lane serves Liquid AI's own NVFP4 build of it,
+`LiquidAI/LFM3-1.7B-NVFP4`, on the same port and behind the same proxy and key as the other text lanes, so every
+client reaches it the same way, as model `lfm3-1.7b`.
 
 The numbers on this page were measured on the reference box (an ASUS Ascent GX10, 128 GB) on 2026-11-16, in the
 campaign called "base": the image and the checkpoint the lane pins, in a test container of its own on loopback,
@@ -50,8 +50,8 @@ vllm serve LiquidAI/LFM3-1.7B-NVFP4 --revision <pinned sha> --served-model-name 
   and then extends it into every byte left free (`vllm/v1/worker/extensible_kv_cache.py`, which says to set a share
   on a unified-memory device). With none set, the cache grew to 5,239,455 tokens (100.85 GiB), twenty times the
   window, and the box kept 1,087 MiB available at its lowest during the campaign, close to the edge where a GB10
-  freezes ([docs/gb10-memory.md](gb10-memory.md)). A share of 0.75 of the 121.63 GiB the engine sees on the reference box
-  is about 91 GiB for the engine, by the arithmetic. What it leaves the cache and the box is
+  freezes ([docs/gb10-memory.md](gb10-memory.md)). A share of 0.75 of the 121.63 GiB the engine sees on the
+  reference box is about 91 GiB for the engine, by the arithmetic. What it leaves the cache and the box is
   MESURE-A-VENIR(lfm3-prod).
 - **Sampling**: the checkpoint's `generation_config.json` asks temperature 0.1, top_k 50 and repetition_penalty
   1.1, and vLLM applies it to every request that sets none of its own, as it says at boot.
@@ -85,7 +85,7 @@ All in the "base" campaign of 2026-11-16, under the conditions above.
 | GSM8K, 250 questions | 0.896 | MESURE-A-VENIR(lfm3-prod) |
 
 **Speeds**, with `vllm bench serve` on the same image: random prompts of 1,024 tokens, 512 tokens out (the end of
-text ignored), 4 requests at 1 at once, and twice as many requests as run at once from 8 up:
+text ignored), 4 requests one at a time, and from 8 at once up, twice as many requests as run at once:
 
 | requests at once | 1 | 8 | 32 | 64 | 128 | 256 |
 |---|---|---|---|---|---|---|
