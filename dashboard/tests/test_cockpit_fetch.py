@@ -35,7 +35,8 @@ class Fetch(unittest.TestCase):
         closed = "http://127.0.0.1:1"
         os.environ.update(HOME=str(cls.tmp), COCKPIT_DRY_RUN="1", COCKPIT_CONFIG_DIR=str(cls.tmp / "config"),
                           COCKPIT_REPO_DIR=str(REPO), COCKPIT_PORT="0", COCKPIT_AGENT_PORT="0",
-                          COCKPIT_AUTOHEAL="0", COCKPIT_ENGINE=closed, COCKPIT_PROXY=closed, COCKPIT_IMAGE=closed, COCKPIT_IMAGE_H3=closed)
+                          COCKPIT_AUTOHEAL="0", COCKPIT_ENGINE=closed, COCKPIT_PROXY=closed,
+                          COCKPIT_IMAGE=closed, COCKPIT_IMAGE_H3=closed, COCKPIT_VIDEO=closed, COCKPIT_TRANSCRIBE=closed)
         spec = importlib.util.spec_from_file_location("cockpit_fetch_under_test", DASH / "cockpit.py")
         cls.cp = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.cp)

@@ -88,7 +88,7 @@ def load_cockpit(config_dir: Path):
         COCKPIT_AUTOHEAL="0",
         COCKPIT_ENGINE=CLOSED,
         COCKPIT_PROXY=CLOSED,
-        COCKPIT_IMAGE=CLOSED, COCKPIT_IMAGE_H3=CLOSED,
+        COCKPIT_IMAGE=CLOSED, COCKPIT_IMAGE_H3=CLOSED, COCKPIT_VIDEO=CLOSED, COCKPIT_TRANSCRIBE=CLOSED,
         HOME=str(config_dir),        # the HF cache and opencode config it reads are there
     )
     sys.path.insert(0, str(DASH))

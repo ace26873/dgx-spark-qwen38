@@ -106,7 +106,8 @@ def load_cockpit(config_dir: Path):
     """Import cockpit.py with its environment pointed at a throwaway box."""
     os.environ.update(COCKPIT_DRY_RUN="1", COCKPIT_CONFIG_DIR=str(config_dir), COCKPIT_REPO_DIR=str(REPO),
                       COCKPIT_PORT="0", COCKPIT_AGENT_PORT="0", COCKPIT_AUTOHEAL="0",
-                      COCKPIT_ENGINE=CLOSED, COCKPIT_PROXY=CLOSED, COCKPIT_IMAGE=CLOSED, COCKPIT_IMAGE_H3=CLOSED, COCKPIT_VIDEO=CLOSED,
+                      COCKPIT_ENGINE=CLOSED, COCKPIT_PROXY=CLOSED,
+                      COCKPIT_IMAGE=CLOSED, COCKPIT_IMAGE_H3=CLOSED, COCKPIT_TRANSCRIBE=CLOSED, COCKPIT_VIDEO=CLOSED,
                       HOME=str(config_dir))
     sys.path.insert(0, str(DASH))
     spec = importlib.util.spec_from_file_location("cockpit_gpu_clock_under_test", DASH / "cockpit.py")
