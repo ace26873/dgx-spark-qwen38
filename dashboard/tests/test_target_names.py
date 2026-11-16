@@ -22,15 +22,18 @@ PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC
         "flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
         "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_REPO"),
         "image": ("install-image.sh", "IMAGE_MODEL_PIN"), "image-turbo": ("install-image.sh", "IMAGE_TURBO_PIN"),
-        "video": ("install-video.sh", "VIDEO_MODEL_PIN"), "image-h3": ("install-image-h3.sh", "IMAGE_H3_MODEL_PIN")}
+        "video": ("install-video.sh", "VIDEO_MODEL_PIN"), "image-h3": ("install-image-h3.sh", "IMAGE_H3_MODEL_PIN"),
+        "transcribe": ("install-transcribe.sh", "TRANSCRIBE_REPO")}
 # a repository's owner on Hugging Face, written as its own pages write its name
 PUBLISHER = {"RadixArk": "RadixArk", "edp1096": "edp1096", "Qwen": "Qwen", "nvidia": "NVIDIA", "dealignai": "dealignai",
              "Aleph-Alpha": "Aleph Alpha", "Quantinine": "Quantinine", "ornith-ai": "Ornith AI", "MiniMaxAI": "MiniMax",
-             "unsloth": "Unsloth", "atakans": "atakans"}
+             "unsloth": "Unsloth", "atakans": "atakans", "mradermacher": "mradermacher"}
 # a precision the repository's name does not say: Aleph Alpha's own release of Kolibri-1 is its FP8 build, and
 # Unsloth's GGUF repository holds every quantization of the model, the lane serving its UD-Q4_K_XL folder or its
-# UD-IQ3_XXS one, each read off the folder of the part its installer pins first (PRECISION below)
-UNSAID = {"kolibri": {"fp8"}, "flash-unsloth": {"ud", "q4", "k", "xl"}, "flash-unsloth-iq3": {"ud", "iq3", "xxs"}}
+# UD-IQ3_XXS one, each read off the folder of the part its installer pins first (PRECISION below); mradermacher's GGUF
+# repository of NVIDIA's speech recognizer holds every quantization too, the lane serving its Q8_0 (v1.51)
+UNSAID = {"kolibri": {"fp8"}, "flash-unsloth": {"ud", "q4", "k", "xl"}, "flash-unsloth-iq3": {"ud", "iq3", "xxs"},
+          "transcribe": {"q8", "0"}}
 PRECISION = {"flash-unsloth": "FLASH_UNSLOTH_PART1", "flash-unsloth-iq3": "FLASH_UNSLOTH_IQ3_PART1"}
 
 
@@ -93,6 +96,15 @@ class EachVersionHasItsOfficialName(unittest.TestCase):
                 self.assertEqual(set(words(folder)), UNSAID[target])
                 self.assertIn(f" {folder} ", self.name[target])
                 self.assertTrue(self.short[target].startswith(folder + " · "), self.short[target])
+
+    def test_the_nvidia_nemotron_transcribe_lanes_precision_is_the_file_its_installer_pins(self):
+        # its repository holds every quantization: the name says the one the lane loads, read off its pinned file
+        text = (REPO / "install-transcribe.sh").read_text()
+        file = re.search(r'^TRANSCRIBE_FILE="([^"=]+)=', text, re.M).group(1)
+        quant = re.search(r"\.(Q\d+_\d+)\.gguf$", file).group(1)
+        self.assertEqual(set(words(quant)), UNSAID["transcribe"])
+        self.assertIn(f" {quant} ", self.name["transcribe"])
+        self.assertEqual(self.short["transcribe"], quant)
 
     def test_no_name_says_stock_uncensored_or_flash_176b(self):
         shown = list(self.name.values()) + list(self.short.values()) + list(table("TARGET_LINE").values())

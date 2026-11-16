@@ -59,6 +59,10 @@ ENGINES = {
     "qwen38-flash-unsloth.service": {
         "engine": "llama.cpp", "version": "b12316", "reports": "b12316-5d4c8eeb2",
         "pin": "ghcr.io/ggml-org/llama.cpp@sha256:a5600a59c704208491adbb96505454a8d3d4cd3a9db48b03cf2760b660b7fd16"},
+    # install-transcribe.sh TRANSCRIBE_IMAGE: the Unsloth GGUF lane's image, by the same digest (v1.51), so the same build
+    "qwen38-transcribe.service": {
+        "engine": "llama.cpp", "version": "b12316", "reports": "b12316-5d4c8eeb2",
+        "pin": "ghcr.io/ggml-org/llama.cpp@sha256:a5600a59c704208491adbb96505454a8d3d4cd3a9db48b03cf2760b660b7fd16"},
     # install-image.sh and install-video.sh WHEEL: SGLang's diffusion runtime in the lane's own venv
     "qwen38-image.service": {"engine": "SGLang Diffusion", "version": "0.5.21", "reports": None,
                              "pin": "sglang[diffusion]==0.5.21"},

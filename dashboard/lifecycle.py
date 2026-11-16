@@ -556,11 +556,14 @@ TRANSITIONAL = BUSY_STATES - {"ready", "degraded", "orphan", "wedged"}
 # share of 97 GiB too; and the Qwen3.8 Flash-Next Unsloth GGUF lane, llama.cpp's, 76.9 GiB of weights and a KV cache
 # for each of its two windows, 95.3 GiB of GPU memory in all with its draft (97,552 MiB by nvidia-smi on the reference
 # box, 2026-11-12; 100,881 MiB in its 1M mode), its n-gram table read from the disk. And the MiniMax-H3-Image lane,
-# a second image lane: 92.3 GB at its peak on the reference box, its recipe asking 106 GiB free at its start.
+# a second image lane: 92.3 GB at its peak on the reference box, its recipe asking 106 GiB free at its start. And the
+# NVIDIA Nemotron Transcribe lane, llama.cpp's, 36.5 GB of weights, which left 76 GiB available at its lowest with nothing
+# else serving (2026-11-14).
 ENGINE_UNITS = ("qwen38-sglang.service", "qwen38-flash.service",
                 "qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service",
                 "qwen38-nemotron.service", "qwen38-nemotron-super.service", "qwen38-flash-local.service",
-                "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service", "qwen38-image-h3.service")
+                "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service", "qwen38-image-h3.service",
+                "qwen38-transcribe.service")
 IMAGE_UNIT = "qwen38-image.service"
 IMAGE_H3_UNIT = "qwen38-image-h3.service"
 VIDEO_UNIT = "qwen38-video.service"
@@ -570,6 +573,7 @@ NEMOTRON_SUPER_UNIT = "qwen38-nemotron-super.service"
 FLASH_LOCAL_UNIT = "qwen38-flash-local.service"
 ORNITH_UNIT = "qwen38-ornith-122b.service"
 FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
+TRANSCRIBE_UNIT = "qwen38-transcribe.service"
 # The SGLang engines that serve text on ENGINE_BASE. Every probe, guard and belt that talks
 # to that port (the generation canary, the pool guard, the wedge autoheal) is about these
 # and only these: with a diffusion lane serving, :30000 is closed, and asking "is an
@@ -577,10 +581,11 @@ FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
 # Kolibri lane serves text on that port too, from vLLM, which none of those belts know
 # (its routes, its log and its model names are not SGLang's): the cockpit follows it on
 # its own facts, as it does the image and the video lanes. So do the Nemotron lanes, the Flash
-# FP4-Local lane and the Ornith lane, vLLM too, and the Unsloth GGUF lane, llama.cpp's.
+# FP4-Local lane and the Ornith lane, vLLM too, and the Unsloth GGUF lane, llama.cpp's; the NVIDIA Nemotron Transcribe
+# lane, llama.cpp's too, serves no text, on a port of its own.
 TEXT_UNITS = tuple(u for u in ENGINE_UNITS
                    if u not in (IMAGE_UNIT, VIDEO_UNIT, KOLIBRI_UNIT, NEMOTRON_UNIT, NEMOTRON_SUPER_UNIT, FLASH_LOCAL_UNIT,
-                                ORNITH_UNIT, FLASH_UNSLOTH_UNIT, IMAGE_H3_UNIT))
+                                ORNITH_UNIT, FLASH_UNSLOTH_UNIT, IMAGE_H3_UNIT, TRANSCRIBE_UNIT))
 
 
 def blocked_reasons(action: str, params: dict, states: dict) -> list[str]:
@@ -635,6 +640,10 @@ def warn_reasons(action: str, params: dict, states: dict,
             # the same, with the boot of the MiniMax-H3-Image lane (451 s from the external SSD)
             warns.append("an image being generated right now is lost, and the Image "
                           "tab has nothing to talk to until this lane is back (about 8 min)")
+        elif unit == TRANSCRIBE_UNIT and state == "ready":
+            # on a port of its own: nothing reaches it through the proxy on :30001
+            warns.append("a transcription the NVIDIA Nemotron Transcribe lane is making right now is lost, and "
+                         "nothing answers on its port until this lane is back (about 15 s)")
         elif unit == VIDEO_UNIT and state == "ready":
             # same text-door reason as the image lane; a video boot is the long one
             warns.append("a video being generated right now is lost, and the Video "

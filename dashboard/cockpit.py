@@ -193,14 +193,15 @@ MASKED_FIELDS = {"api_key", "admin_api_key"}
 UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service",
          "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
          "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-         "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-keepalive.service")
+         "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
+         "qwen38-keepalive.service")
 JOURNAL_UNITS = UNITS + (AGENT_UNIT,)   # what the Logs tab may read (UNITS carries the image, video, Kolibri and Nemotron lanes)
 # The SGLang text engines' containers: what their scheduler lines and their abort contract
 # are read from. The Kolibri and Nemotron lanes' vLLM writes neither, so they are only in
 # CONTAINERS, the list the Logs tab, the diagnostics bundle and the container stats read.
 SGL_CONTAINERS = ("qwen38-sglang", "qwen38-flash")
 CONTAINERS = SGL_CONTAINERS + ("qwen38-kolibri", "qwen38-nemotron", "qwen38-nemotron-super", "qwen38-flash-local",
-                               "qwen38-ornith-122b", "qwen38-flash-unsloth")
+                               "qwen38-ornith-122b", "qwen38-flash-unsloth", "qwen38-transcribe")
 
 UNIT2CONT = {"qwen38-sglang.service": "qwen38-sglang",
              "qwen38-flash.service": "qwen38-flash",
@@ -1252,6 +1253,76 @@ def llamacpp_engine_state(unit: str, *, active: str, sub: str, prev_state: str |
             healthy = UNHEALTHY_TICKS[unit] < 3
         else:
             boot = lc.parse_llamacpp_boot_log(_llamacpp_log(container))
+    st = lc.derive_state(unit_active=active, unit_sub=sub, container_running=running,
+                         healthy=healthy, boot=boot)
+    if st["state"] == "degraded" and prev_state not in ("ready", "degraded"):
+        st["state"] = "warming-up"
+    if st["state"] == "ready":
+        LLAMACPP_READY_ENTER[unit] = enter_key
+    return st, boot, running
+
+
+# ── The NVIDIA Nemotron Transcribe lane: llama-server on a port of its own ──────────────────────────────────────
+# NVIDIA's speech recognizer (v1.51), the same llama.cpp image as the Unsloth GGUF lane's, which answers
+# /v1/audio/transcriptions and /v1/realtime on its own port (30036 by default, its unit's --port), not on the text port:
+# the proxy and the SGLang belts never meet it. Its /health asks no key (llama.cpp's server-http.cpp), 503 while its
+# model loads, 200 after, and it is followed on that and its container, as the llama.cpp text lane is.
+TRANSCRIBE_UNIT = "qwen38-transcribe.service"
+TRANSCRIBE_UNIT_PATH = Path("/etc/systemd/system/qwen38-transcribe.service")
+TRANSCRIBE_CONTAINER = "qwen38-transcribe"
+
+
+def transcribe_flag(flag: str, fallback: str) -> str:
+    """What the installed unit passes for flag (its last word on the engine's lines, its comments left out), fallback
+    when it says nothing."""
+    try:
+        text = TRANSCRIBE_UNIT_PATH.read_text(errors="replace")
+    except OSError:
+        return fallback
+    found = re.findall(rf"(?<!\S){re.escape(flag)}\s+([^\s'\\]+)", "\n".join(
+        ln for ln in text.splitlines() if not ln.lstrip().startswith("#")))
+    return found[-1] if found else fallback
+
+
+def transcribe_port() -> int:
+    """The NVIDIA Nemotron Transcribe lane's port, as its unit says it (install-transcribe.sh, TRANSCRIBE_PORT)."""
+    try:
+        return int(transcribe_flag("--port", "30036"))
+    except ValueError:
+        return 30036
+
+
+def transcribe_base() -> str:
+    """Where the NVIDIA Nemotron Transcribe lane answers: its unit's bind and port."""
+    host = transcribe_flag("--host", "127.0.0.1")
+    return os.environ.get("COCKPIT_TRANSCRIBE", f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{transcribe_port()}")
+
+
+def transcribe_healthy() -> bool:
+    """llama-server's own /health on the lane's port: it generates nothing, and asks no key."""
+    try:
+        urllib.request.urlopen(transcribe_base() + "/health", timeout=3).read()
+        return True
+    except Exception:  # noqa: BLE001 (no answer is the answer)
+        return False
+
+
+def transcribe_engine_state(unit: str, *, active: str, sub: str, prev_state: str | None,
+                            enter_key: str) -> tuple:
+    """(state, boot, running) for the NVIDIA Nemotron Transcribe lane, from its own facts, as llamacpp_engine_state
+    reads the llama.cpp text lane's: its container, its /health on its own port, and its boot read in its log while it
+    is not healthy (the same llama-server, the same milestones)."""
+    running = bool(run(["docker", "ps", "-q", "-f", f"name=^{TRANSCRIBE_CONTAINER}$"]).strip())
+    healthy = running and transcribe_healthy()
+    UNHEALTHY_TICKS[unit] = 0 if healthy else UNHEALTHY_TICKS.get(unit, 0) + 1
+    served_here = LLAMACPP_READY_ENTER.get(unit) == enter_key and enter_key != "0"
+    boot = {"stage": None, "fired_up": False, "done": []}
+    if running and not healthy:
+        if served_here:
+            boot = {"stage": "warming-up", "fired_up": True, "done": list(lc.LLAMACPP_STAGES)}
+            healthy = UNHEALTHY_TICKS[unit] < 3
+        else:
+            boot = lc.parse_llamacpp_boot_log(_llamacpp_log(TRANSCRIBE_CONTAINER))
     st = lc.derive_state(unit_active=active, unit_sub=sub, container_running=running,
                          healthy=healthy, boot=boot)
     if st["state"] == "degraded" and prev_state not in ("ready", "degraded"):
@@ -2631,6 +2702,15 @@ def unit_target(unit: str) -> dict:
         m = re.search(r"\s-m\s+(/root/\.cache/huggingface/hub/models--([^/\s]+)/snapshots/[0-9a-f]{40}/\S*)", text)
         model = m.group(2).replace("--", "/") if m else None
         return {"model": model, "target": llamacpp_target(unit, m.group(1))[0] if m else None}
+    if unit == TRANSCRIBE_UNIT:
+        # one checkpoint, one target: the repository of the GGUF its engine's -m names in the cache's snapshot
+        try:
+            text = TRANSCRIBE_UNIT_PATH.read_text(errors="replace")
+        except OSError:
+            return {"model": None, "target": None}
+        m = re.search(r"\s-m\s+/root/\.cache/huggingface/hub/models--([^/\s]+)/snapshots/[0-9a-f]{40}/\S*", text)
+        model = m.group(1).replace("--", "/") if m else None
+        return {"model": model, "target": "transcribe" if model else None}
     if unit == "qwen38-video.service":
         # one checkpoint, one target, same rule as the image lane
         model = _video_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3") \
@@ -2815,6 +2895,7 @@ def collect_lifecycle():
         is_kolibri = unit == lc.KOLIBRI_UNIT
         is_nemotron = unit in NEMOTRON_LANES      # the vLLM lanes on b12x: Nemotron's two, FP4-Local, Ornith
         is_llamacpp = unit in LLAMACPP_LANES      # llama.cpp's: the Unsloth GGUF lane
+        is_transcribe = unit == TRANSCRIBE_UNIT   # llama.cpp's too, on a port of its own
         if (is_image or is_video) and not (image_unit_path(unit).exists() if is_image else VIDEO_UNIT_PATH.exists()):
             continue                    # not installed: no card, no pill, no gate
         if is_kolibri and not KOLIBRI_UNIT_PATH.exists():
@@ -2823,8 +2904,10 @@ def collect_lifecycle():
             continue
         if is_llamacpp and not FLASH_UNSLOTH_UNIT_PATH.exists():
             continue
+        if is_transcribe and not TRANSCRIBE_UNIT_PATH.exists():
+            continue
         # the lanes the cockpit follows on their own facts, not the SGLang text belts
-        own_facts = is_image or is_video or is_kolibri or is_nemotron or is_llamacpp
+        own_facts = is_image or is_video or is_kolibri or is_nemotron or is_llamacpp or is_transcribe
         # The checkpoint the unit names, read once per unit and per poll; and the one this
         # activation booted, kept from its start: a switch during a boot rewrites the unit,
         # whose file then names the NEXT start's checkpoint, and the boot landed in that
@@ -2859,6 +2942,10 @@ def collect_lifecycle():
                 enter_key=d.get("ActiveEnterTimestampMonotonic", "0"))
         elif is_llamacpp:
             st, boot, running = llamacpp_engine_state(
+                unit, active=active, sub=d.get("SubState", "?"), prev_state=prev.get(unit),
+                enter_key=d.get("ActiveEnterTimestampMonotonic", "0"))
+        elif is_transcribe:
+            st, boot, running = transcribe_engine_state(
                 unit, active=active, sub=d.get("SubState", "?"), prev_state=prev.get(unit),
                 enter_key=d.get("ActiveEnterTimestampMonotonic", "0"))
         else:
@@ -3291,6 +3378,7 @@ def lane_prepared(lane: str):
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
+            "transcribe": TRANSCRIBE_UNIT_PATH,
             "flash": UNIT_PATHS["qwen38-flash.service"], "27b": UNIT_PATHS["qwen38-sglang.service"]}[lane]
     try:
         text = unit.read_text(errors="replace")
@@ -3310,9 +3398,9 @@ def lane_prepared(lane: str):
             return Path(waits.group(1)).stat().st_size > 0     # [ -s ]: an empty one is skipped
         except OSError:
             return False
-    if lane in ("flash-local", "ornith-122b", "flash-unsloth"):
+    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe"):
         # its image is pulled as published, by digest: the one digest its unit names (FP4-Local's and Ornith's one,
-        # llama.cpp's for the Unsloth GGUF lane)
+        # llama.cpp's for the Unsloth GGUF and NVIDIA Nemotron Transcribe lanes)
         m = re.search(r"\S+@sha256:[0-9a-f]{64}", text)
         return bool(m) and run(["docker", "image", "inspect", "--format", "{{.Id}}", m.group(0)],
                                timeout=10).strip().startswith("sha256:")
@@ -3481,12 +3569,13 @@ def collect_lanes_ready():
     """30 s tier: which side lanes are prepared, for the Load journey (it builds a lane's
     runtime first when it is not)."""
     return {lane: lane_prepared(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                   "flash-unsloth", "image-h3", "flash", "27b")}
+                                                   "flash-unsloth", "image-h3", "transcribe", "flash", "27b")}
 
 
 UNIT_OF_LANE = {"image": "qwen38-image.service", "video": "qwen38-video.service", "kolibri": KOLIBRI_UNIT,
                 "nemotron": NEMOTRON_UNIT, "nemotron-super": NEMOTRON_SUPER_UNIT, "flash-local": FLASH_LOCAL_UNIT,
                 "ornith-122b": ORNITH_UNIT, "flash-unsloth": FLASH_UNSLOTH_UNIT, "image-h3": "qwen38-image-h3.service",
+                "transcribe": TRANSCRIBE_UNIT,
                 "flash": "qwen38-flash.service", "27b": "qwen38-sglang.service"}
 
 
@@ -3535,7 +3624,8 @@ def lane_startable(lane: str):
     path = {"image": IMAGE_UNIT_PATH, "video": VIDEO_UNIT_PATH, "kolibri": KOLIBRI_UNIT_PATH,
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
-            "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
+            "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
+            "transcribe": TRANSCRIBE_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
     try:
         text = path.read_text(errors="replace")
     except OSError:
@@ -3633,7 +3723,7 @@ def lane_startable(lane: str):
 def collect_lanes_startable():
     """30 s tier: which side lanes can start as installed (their Start), lane_startable."""
     return {lane: lane_startable(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                    "flash-unsloth", "image-h3", "flash", "27b")}
+                                                    "flash-unsloth", "image-h3", "transcribe", "flash", "27b")}
 
 
 def engine_table() -> dict:
@@ -3798,7 +3888,7 @@ SERVING_UNITS = {"qwen38-sglang.service", "qwen38-flash.service",
                  "qwen38-keepalive.service", "qwen38-image.service",
                  "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                  "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                 "qwen38-flash-unsloth.service", "qwen38-image-h3.service", AGENT_UNIT}
+                 "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service", AGENT_UNIT}
 UNIT_VERBS = {"start", "stop", "restart"}
 
 def _lane_unit_texts() -> list[str]:
@@ -3807,7 +3897,8 @@ def _lane_unit_texts() -> list[str]:
     texts = []
     for path in (UNIT_PATHS["qwen38-sglang.service"], UNIT_PATHS["qwen38-flash.service"],
                  KOLIBRI_UNIT_PATH, NEMOTRON_UNIT_PATH, NEMOTRON_SUPER_UNIT_PATH, FLASH_LOCAL_UNIT_PATH,
-                 ORNITH_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH):
+                 ORNITH_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH,
+                 TRANSCRIBE_UNIT_PATH):
         try:
             texts.append(path.read_text(errors="replace"))
         except OSError:
@@ -3830,7 +3921,7 @@ ACTIONS = {
         "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8", "arete",
                               "flash", "flash-nvda", "flash-uncensored", "flash-local", "image", "image-turbo",
                               "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "ornith-122b",
-                              "flash-unsloth", "flash-unsloth-iq3", "image-h3"]},
+                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe"]},
         "argv": lambda p: ["bash", str(REPO_DIR / "switch-model.sh"), p["target"]],
         # A switch can download a whole checkpoint: 124 GB for flash take about 23 min at
         # the 89 MB/s the reference box gets, so 30 min failed it on any slower link, and
@@ -3928,6 +4019,8 @@ def target_lane(target: str) -> str:
         return "image"
     if target == "image-h3":
         return "image-h3"
+    if target == "transcribe":
+        return "transcribe"
     if target == "video":
         return "video"
     if target.startswith("kolibri"):
@@ -3971,7 +4064,7 @@ TARGET_PIN = {"stock": "STOCK_REV", "uncensored": "UNC_REV", "fp8": "FP8_REV", "
               "flash-local": "FLASH_LOCAL_REV", "ornith-122b": "ORNITH_122B_REV", "flash-unsloth": "FLASH_UNSLOTH_REV",
               # the Unsloth GGUF lane's two targets, two folders of one repository at one revision
               "flash-unsloth-iq3": "FLASH_UNSLOTH_REV",
-              "image-h3": "IMAGE_H3_MODEL_PIN_REV"}
+              "image-h3": "IMAGE_H3_MODEL_PIN_REV", "transcribe": "TRANSCRIBE_REV"}
 # The Nemotron lanes load a drafter with the checkpoint, and their Download (the switch's --fetch)
 # fetches both: Library's state of such a target counts its drafter too. Bolt's read whole with its
 # drafter missing, which its Load then fetched (found on the reference box, 2026-10-15). The 27B's
@@ -4003,7 +4096,10 @@ def h3_encoder_whole(snap: Path) -> bool:
 # folders of one repository at one revision: its snapshot counted whole, either one read "on disk" once the other's
 # files were there (v1.49).
 TARGET_FILES = {"flash-unsloth": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_PART"),
-                "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_IQ3_PART")}
+                "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH_IQ3_PART"),
+                # mradermacher's repository holds every quantization of NVIDIA's model: the lane serves its Q8_0 and its
+                # F16 projector, pinned each by a variable of its own (v1.51)
+                "transcribe": ("install-transcribe.sh", ("TRANSCRIBE_FILE", "TRANSCRIBE_MMPROJ"))}
 
 
 def _read_once() -> dict:
@@ -4022,9 +4118,12 @@ def _read_once() -> dict:
     for var in lost:
         missed.append(f"{var} not found")
         why.setdefault(rg.PIN_MODELS[var], []).append(f"{var} not found")
-    files = {t: rg.pinned_paths(texts.get(script, ""), prefix) for t, (script, prefix) in TARGET_FILES.items()}
+    files = {t: (rg.pinned_paths(texts.get(script, ""), prefix) if isinstance(prefix, str)
+                 else rg.pinned_files(texts.get(script, ""), prefix)) for t, (script, prefix) in TARGET_FILES.items()}
     for t, paths in files.items():
-        if not (paths and rg.splits_whole(paths)):
+        # every file of a target pinned by its own variables found too (pinned_files leaves one not found out)
+        named = TARGET_FILES[t][1]
+        if not (paths and rg.splits_whole(paths)) or (not isinstance(named, str) and len(paths) != len(named)):
             said = f"{t}'s parts not all found in {TARGET_FILES[t][0]}"
             missed.append(said)
             why.setdefault(rg.PIN_MODELS[TARGET_PIN[t]], []).append(said)
@@ -4089,6 +4188,8 @@ def target_unit(target: str) -> Path:
         return ORNITH_UNIT_PATH
     if target.startswith("flash-unsloth"):
         return FLASH_UNSLOTH_UNIT_PATH
+    if target == "transcribe":
+        return TRANSCRIBE_UNIT_PATH
     if target.startswith("flash"):
         return UNIT_PATHS["qwen38-flash.service"]
     return UNIT_PATHS["qwen38-sglang.service"]
@@ -6049,6 +6150,7 @@ def job_diag_bundle(job: Job):
         (tdp / "journal-flash-local.txt").write_text(run(["journalctl", "-u", FLASH_LOCAL_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-ornith-122b.txt").write_text(run(["journalctl", "-u", ORNITH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-flash-unsloth.txt").write_text(run(["journalctl", "-u", FLASH_UNSLOTH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
+        (tdp / "journal-transcribe.txt").write_text(run(["journalctl", "-u", TRANSCRIBE_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-opencode-web.txt").write_text(run(["journalctl", "-u", AGENT_UNIT, "-n", "200", "--no-pager", "-o", "short-iso"], timeout=15))
         for cont in CONTAINERS:
             (tdp / f"docker-{cont}.txt").write_text(run(["docker", "logs", "--tail", "600", cont], timeout=15, merge_err=True))

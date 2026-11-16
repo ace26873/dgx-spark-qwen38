@@ -76,11 +76,21 @@ class Prepare(unittest.TestCase):
         self.lane("video", built=False)
         self.assertEqual(self.cp.collect_lanes_ready(), {"image": True, "video": False, "kolibri": None, "nemotron": None,
                                                           "nemotron-super": None, "flash-local": None, "ornith-122b": None,
-                                                          "flash-unsloth": None, "image-h3": None, "flash": None, "27b": None})
+                                                          "flash-unsloth": None, "image-h3": None, "transcribe": None,
+                                                          "flash": None, "27b": None})
         (self.units / "qwen38-kolibri.service").write_text("ExecStart=/usr/bin/docker run qwen38-kolibri:1.0\n")
         self.assertIs(self.cp.collect_lanes_ready()["kolibri"], False)
         self.images.add("qwen38-kolibri:1.0")
         self.assertIs(self.cp.collect_lanes_ready()["kolibri"], True)
+
+    def test_the_nvidia_nemotron_transcribe_lane_is_prepared_by_its_image(self):
+        # llama.cpp's image, pulled by the digest its unit names, as the Unsloth GGUF lane's (v1.51)
+        img = "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64
+        (self.units / "qwen38-transcribe.service").write_text(f"ExecStart=/bin/bash -c 'exec /usr/bin/docker run {img} -m x'\n")
+        self.assertIs(self.cp.lane_prepared("transcribe"), False)
+        self.images.add(img)
+        self.assertIs(self.cp.lane_prepared("transcribe"), True)
+        self.assertEqual(self.cp.UNIT_OF_LANE["transcribe"], "qwen38-transcribe.service")
 
     @staticmethod
     def runs(image, *rest):

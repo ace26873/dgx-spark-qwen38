@@ -138,6 +138,12 @@ class EachVersionIsTheOneInstalled(unittest.TestCase):
         self.assertIn(f"server-cuda13: {EN.ENGINES[unit]['version']}, commit ", (REPO / "install-flash-unsloth.sh").read_text())
         self.assertTrue(EN.runs_pin(unit, [self.pin(unit)]))
         self.assertFalse(EN.runs_pin(unit, ["ghcr.io/ggml-org/llama.cpp:server-cuda13"]))
+        # the NVIDIA Nemotron Transcribe lane (v1.51) pins the same image, the same build
+        for other, script, var in (("qwen38-transcribe.service", "install-transcribe.sh", "TRANSCRIBE_IMAGE"),):
+            with self.subTest(unit=other):
+                self.assertEqual(self.pin(other), assigned(script, var))
+                self.assertEqual({k: EN.ENGINES[other][k] for k in ("engine", "version", "reports", "pin")},
+                                 {k: EN.ENGINES[unit][k] for k in ("engine", "version", "reports", "pin")})
 
     def test_the_diffusion_lanes(self):
         for unit, script in (("qwen38-image.service", "install-image.sh"), ("qwen38-video.service", "install-video.sh")):

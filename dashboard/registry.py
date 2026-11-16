@@ -48,6 +48,8 @@ PIN_MODELS = {
     # model, at the revision that lane pins)
     "IMAGE_H3_MODEL_PIN_REV": "MiniMaxAI/MiniMax-H3-Image",
     "IMAGE_H3_ENCODER_PIN_REV": "MiniMaxAI/MiniMax-H3",
+    # the NVIDIA Nemotron Transcribe lane's: mradermacher's GGUF repository of NVIDIA's model (its Q8_0 and its projector)
+    "TRANSCRIBE_REV": "mradermacher/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF",
 }
 
 # Where the pins are written: the text lanes' in the switch and the installer, every other
@@ -55,7 +57,7 @@ PIN_MODELS = {
 PIN_FILES = ("switch-model.sh", "run.sh", "install.sh",
              "install-image.sh", "install-video.sh", "install-kolibri.sh", "install-nemotron.sh",
              "install-nemotron-super.sh", "install-flash-local.sh", "install-ornith-122b.sh",
-             "install-flash-unsloth.sh", "install-image-h3.sh")
+             "install-flash-unsloth.sh", "install-image-h3.sh", "install-transcribe.sh")
 
 PIN_RE = re.compile(r'^\s*([A-Z][A-Z0-9_]*REV)="?\$?\{?[A-Z0-9_:-]*?([0-9a-f]{40})',
                     re.MULTILINE)
@@ -192,6 +194,18 @@ def pinned_paths(installer_text: str, prefix: str) -> list[str]:
     of a llama.cpp lane serves of a repository that holds every quantization (install-flash-unsloth.sh's
     FLASH_UNSLOTH_PART1 to 4, and FLASH_UNSLOTH_IQ3_PART1 to 4 for its second target, v1.49)."""
     return re.findall(rf'^{re.escape(prefix)}\d+="([^"=]+)=[0-9a-f]{{64}}:\d+"$', installer_text or "", re.M)
+
+
+def pinned_files(installer_text: str, names) -> list[str]:
+    """The paths an installer pins each by a variable of its own named in names, NAME="PATH=SHA256:SIZE", in names'
+    order: the files a llama.cpp lane serves of a repository that holds others (install-transcribe.sh's TRANSCRIBE_FILE
+    and TRANSCRIBE_MMPROJ, v1.51). One not found leaves the list short."""
+    out = []
+    for name in names:
+        m = re.search(rf'^{re.escape(name)}="([^"=]+)=[0-9a-f]{{64}}:\d+"$', installer_text or "", re.M)
+        if m:
+            out.append(m.group(1))
+    return out
 
 
 VIDEO_ALLOW_RE = re.compile(r'if \[ "\$VID_VARIANT" = "fl2va" \]; then VID_ALLOW="([^"]+)"\s*else VID_ALLOW="([^"]+)"')
