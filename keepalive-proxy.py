@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.60). No content logging, and the only
+"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.61). No content logging, and the only
 rewriting is the tool-schema guard (role 4); two routes, POST /v1/systemone (role 5) and the
 operator's POST /proxy/stop (role 7), are answered here instead of relayed.
 
@@ -59,6 +59,11 @@ Ten roles, nothing else:
    lists every box's models (see "Two boxes behind one endpoint" below). A model both boxes serve is
    shared: a conversation stays on the box that holds its prefix, a new one goes to the box with the
    fewest requests in flight (v6.52, docs/pair.md).
+
+v6.61: the Liquid AI LFM3 lane, on vLLM under the name lfm3-1.7b, is a lane of the pair's routes, and its template, which
+reads enable_thinking alone as Ornith's does, gets a request's reasoning effort the way Ornith's gets it (ornith_effort):
+none and minimal turn the reasoning off, every other level keeps it. pi and opencode send it none and high, the two
+states it holds. System One stays refused there, as on every vLLM lane.
 
 v6.60: the Liquid AI LFM2.5 24B-A2B lane, on SGLang under the name lfm2.5-24b-a2b, is a lane of the pair's
 routes, and POST /v1/systemone is refused while it serves (400, the lanes it serves on named): its chat template opens a
@@ -1648,20 +1653,35 @@ def nemotron_effort(body, path):
 # every other level its full reasoning, its default.
 ORNITH_EFFORTS = {"none": "off", "minimal": "off", "low": "full", "medium": "full",
                   "high": "full", "xhigh": "full", "max": "full"}
+# v6.61: the other lanes whose template reads enable_thinking alone, by the name each serves under, translated the same
+# way: the Liquid AI LFM3 lane (its chat_template.jinja at the pinned revision, read 2026-11-16: enable_thinking, true
+# by default, and no reasoning effort).
+SWITCH_ONLY_NAMES = frozenset({"lfm3-1.7b"})
+
+
+def switch_only_lane(names) -> str | None:
+    """The template family of a lane that reads enable_thinking alone ("Ornith", "LFM3"), by its served names, or None."""
+    for n in names or ():
+        if str(n).startswith("ornith-"):
+            return "Ornith"
+        if n in SWITCH_ONLY_NAMES:
+            return "LFM3"
+    return None
 
 
 def ornith_effort(body, path):
     """(the body to forward, the level translated or None). v6.45: on the Ornith lane (vLLM, a served
-    name starting ornith-), a reasoning effort, top-level or in chat_template_kwargs, becomes what its
-    template reads: enable_thinking false for none and minimal, true for the others. The effort fields
-    go, as on the Nemotron lane. none and minimal win over the request's own enable_thinking, as on
-    the Qwen lanes (qwen_effort_none): omp, as pi-gen.py writes its config, sends enable_thinking true
-    beside its level, and its minimal reasoned in full (found in review, 2026-10-22). With a level that
-    keeps the reasoning, a request that names enable_thinking itself keeps its choice. Any other level,
-    any other lane, any doubt: the body goes as it came."""
+    name starting ornith-), and since v6.61 on the Liquid AI LFM3 lane (SWITCH_ONLY_NAMES), a reasoning
+    effort, top-level or in chat_template_kwargs, becomes what its template reads: enable_thinking false
+    for none and minimal, true for the others. The effort fields go, as on the Nemotron lane. none and
+    minimal win over the request's own enable_thinking, as on the Qwen lanes (qwen_effort_none): omp, as
+    pi-gen.py writes its config, sends enable_thinking true beside its level, and its minimal reasoned in
+    full (found in review, 2026-10-22). With a level that keeps the reasoning, a request that names
+    enable_thinking itself keeps its choice. Any other level, any other lane, any doubt: the body goes as
+    it came."""
     if not body or path.split("?", 1)[0] != "/v1/chat/completions" or b'"reasoning_effort"' not in body:
         return body, None
-    if _SERVED["engine"] != "vllm" or not any(str(n).startswith("ornith-") for n in _SERVED["names"]):
+    if _SERVED["engine"] != "vllm" or not switch_only_lane(_SERVED["names"]):
         return body, None
     try:
         j = json.loads(body)
@@ -3672,7 +3692,7 @@ def route_model_name(body, path):
 # the pair port takes the pair's routes only, and this box's own key admits them to its engine.
 LANE_NAMES = frozenset({"qwen3.8-27b", "qwen3.8-flash-next", "qwen3.8-flash-next-fp4", "ornith-1.5-122b",
                         "nemotron-3.5-bolt", "nemotron-3.5-super-vl", "kolibri-1", "qwen3.8-flash-next-unsloth",
-                        "lfm2.5-24b-a2b"})
+                        "lfm2.5-24b-a2b", "lfm3-1.7b"})
 PAIR_FILE = os.path.expanduser(os.environ.get("QWEN38_PAIR_FILE") or "~/.config/qwen38/pair.json")
 PAIR_DIR = os.path.join(os.path.dirname(PAIR_FILE), "pair")
 # made by pair.py, a directory renamed into place whole: a certificate never meets another key
@@ -8765,7 +8785,8 @@ class H(BaseHTTPRequestHandler):
                 f"relayed as {how}, unless the request names enable_thinking itself")
         body, level = ornith_effort(body, self.path)
         if level and _effort_off_logged.first("ornith " + level):
-            log(f"{self._peer} reasoning_effort {level} is not what the Ornith template reads: relayed as "
+            log(f"{self._peer} reasoning_effort {level} is not what the {switch_only_lane(_SERVED['names']) or 'Ornith'} "
+                "template reads: relayed as "
                 + ("enable_thinking false" if ORNITH_EFFORTS[level] == "off"
                    else "enable_thinking true, unless the request names enable_thinking itself"))
         return body
@@ -9367,7 +9388,7 @@ if __name__ == "__main__":
     holds = (f"holds requests up to {HOLD_MAX_S:.0f}s while {' or '.join(HOLD_UNITS)} comes back"
              if HOLD_UNITS and HOLD_MAX_S > 0 else "holds nothing")
     # one f-string: the cockpit's tests render this line from the source
-    log(f"v6.60 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
+    log(f"v6.61 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
     # v6.47: what the memory floor's refusal reads, read once here, so the journal shows it works where
     # the unit runs this proxy (its sandbox leaves /proc/meminfo readable)
     avail = mem_available_gib()
