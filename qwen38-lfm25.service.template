@@ -39,7 +39,18 @@ ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-secrets.sh
 # What every SGLang lane of this box passes besides (qwen38-sglang.service.template says why each): the health
 # route that generates nothing, the rendezvous through a file, gloo and NCCL on lo, the request header overrides
 # the proxy's request ids need, the offline cache, the scheduler parked when idle (--sleep-on-idle), the metrics
-# and the cache report, the key by --config, and the bind of the other text lanes.
+# and the cache report, the key by --config, and the bind of the other text lanes. The first two, as each unit
+# says them:
+# SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION=0: GET /health answers from the server's state, 503
+# while it starts and 200 once it serves, instead of generating a token whenever the engine is
+# idle. /health takes no key, and the proxy relayed it from the network (D02 of the 2026-10-24
+# security review); /health_generate still generates, and the proxy asks the key for it.
+# SGLANG_DISTRIBUTED_INIT_METHOD_OVERRIDE: the rendezvous of the engine's one process goes through a file
+# in the container, which --rm makes new at each start. torch's TCPStore, the default, listened on every
+# interface whatever address it was given (*:23906 on the reference box, 2026-10-30, no key, no firewall),
+# and with the file no port opens for it. GLOO_SOCKET_IFNAME and NCCL_SOCKET_IFNAME keep gloo's and NCCL's
+# bootstrap on lo: under the real clients, the lane listened on four ports of the box's LAN address without
+# them, though the box's name resolves to 127.0.0.1 (2026-10-30).
 # Of the config directory, the one file the engine reads, read-only: the key's yaml. --mount, not -v: a source that
 # is not there fails the start, where -v made a directory in its place, owned by root. Its own compile cache.
 # --memory 110g: the cap the measured run held (110g, 2026-11-14).
