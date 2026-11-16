@@ -45,9 +45,10 @@ from pathlib import Path
 # taken for it (found in review, 2026-10-24). The launcher install.sh writes sets it.
 CONFIG_DIR = Path(os.environ.get("QWEN38_CONFIG_DIR") or Path.home() / ".config/qwen38")
 DEFAULT_BASE = "http://127.0.0.1:30001"
-# What fits every lane's window (262,144 tokens on the smallest), every pool measured on a 128 GB
-# box and Bolt's on a 64 GB one, for a box whose opencode limits say nothing about the lane that
-# serves. The 27B's pool on a 64 GB box is smaller: there the proxy refuses a prompt past it, and
+# What fits every lane's window but one (262,144 tokens on the smallest of them), every pool measured on a
+# 128 GB box and Bolt's on a 64 GB one, for a box whose opencode limits say nothing about the lane that
+# serves. The one is the Liquid AI LFM2.5 24B-A2B lane's, 131,072 tokens, which its engine says on
+# /v1/models (SGLang's max_model_len): claude_pair fits the pair to it. The 27B's pool on a 64 GB box is smaller: there the proxy refuses a prompt past it, and
 # Claude Code compacts on that refusal.
 FALLBACK = (205_000, 32_000)
 # Claude Code's own output setting, as it reads it (its default when unset)
