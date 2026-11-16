@@ -15,6 +15,7 @@ is not used. Those weights can live on an external disk: only the start is slowe
 | Lane | What it reads, and when | From the external SSD |
 |---|---|---|
 | 27B, flash, Kolibri, both Nemotron lanes, Ornith | the weights, once, at the start | the start is slower (the flash lane's, read in many small pieces, about 80 s more), the serving is the same |
+| The two Liquid AI lanes | the weights, once, at the start | measured from the external SSD alone, not yet against the NVMe: LFM2.5 24B-A2B's checkpoint read in 156.7 s and its draft in 3.4 s (2026-11-14), LFM3's in 0.95 s (2026-11-16) |
 | Images (Qwen-Image 2.1) | the weights, once, at the start | 75 s to start instead of about 70, the same image bit for bit, in the same time |
 | Videos (MiniMax-H3) | its weights **at every step of every generation** (SGLang offloads its layers by itself) | **1.78 times slower** to generate: 29.4 s a step against 14.55 |
 | Qwen3.8 Flash-Next, its PLE table | a 47.7 GiB file **at every token**, written beside the home directory at every boot (`PLE_DIR`, `~/flashnext-ple`) | not on the external disk by default: `PLE_DIR` is under the home directory |
