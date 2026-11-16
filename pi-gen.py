@@ -22,7 +22,8 @@ modelThinkingLevels "off" for the Qwen models (unset sends no effort field: the
 installed template's default, lean, or xhigh on a box installed with LEAN_DEFAULT=0
 and on the Qwen3.8 Flash-Next FP4-Local lane installed with FLASH_LOCAL_EFFORT=xhigh)
 and "high" for Kolibri-1, the two Nemotron lanes and Ornith 1.5 122B, which are
-sent their effort (EFFORT_FIELD),
+sent their effort (EFFORT_FIELD); the Liquid AI LFM2.5 24B-A2B lane, whose template reasons on every
+request and reads no level, is offered "high" alone and sent none (FIXED_LEVEL),
 keepRecentTokens from the artifact's compaction block and per-lane reserveTokens =
 the lane's output cap. omp
 gets the same values re-serialized: the same models array, thinking block
@@ -166,6 +167,17 @@ EFFORT_FIELD = {"kolibri": ({"off": "none", "minimal": "low", "xhigh": "high"}, 
                 "nemotron": ({"off": "none", "minimal": "low", "xhigh": "high"}, "high"),
                 "nemotron-super": ({"off": "none", "minimal": "low", "xhigh": "high"}, "high"),
                 "ornith-122b": ({"off": "none"}, "high")}
+# The lanes whose template reasons on every request and reads no level and no switch: the one level a client may show
+# is the one the model holds, and no field is sent, since the template reads none. The Liquid AI LFM2.5 24B-A2B lane's
+# chat_template.jinja (at the pinned revision, read 2026-11-16) ends every generation prompt with "<think>", and the
+# variables it reads are add_generation_prompt, bos_token, messages, tools and preserve_thinking (which keeps the
+# thoughts of past turns, and turns nothing off): no enable_thinking, no reasoning_effort, nothing that cuts the
+# reasoning. Kept as it was, pi offered all its levels on it, off first, and started there (pi's "off" for an
+# unknown model). pi hides a level its model maps to null (getSupportedThinkingLevels, pi 1.2.0; thinkingLevelMap
+# since 0.72.0), so every level but this one is mapped to null; omp gets the one effort too, as its default, though
+# omp 18.4.9 offers off and auto beside a reasoning model's efforts whatever its file says (cycleThinkingLevel).
+FIXED_LEVEL = {"lfm25": "high"}
+PI_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
 
 def model_meta(mid, m):
@@ -204,6 +216,10 @@ def build(artifact):
             level_map, thinking[f"{prov}/{mid}"] = EFFORT_FIELD[prov]
             meta["compat"]["supportsReasoningEffort"] = True
             meta["thinkingLevelMap"] = dict(level_map)
+        if prov in FIXED_LEVEL:
+            thinking[f"{prov}/{mid}"] = FIXED_LEVEL[prov]
+            meta["compat"]["supportsReasoningEffort"] = False
+            meta["thinkingLevelMap"] = {lvl: None for lvl in PI_LEVELS if lvl != FIXED_LEVEL[prov]}
         overrides[f"{prov}/{mid}"] = {"reserveTokens": meta["maxTokens"]}
         tiers = list((models[mid] or {}).get("variants") or {})
         if tiers:
@@ -322,6 +338,9 @@ def omp_convert(models_doc, settings, efforts, defaults=None):
             # validation error).
             e = {k: v for k, v in m.items() if k not in ("inputLimits", "compat", "thinkingLevelMap")}
             thinking, compat = omp_thinking(efforts.get(f"{prov}/{m['id']}", []), (defaults or {}).get(prov))
+            if prov in FIXED_LEVEL:
+                # its one effort, as its default; no qwenTemplateReasoningEffort, so no field is sent
+                thinking = {"mode": "effort", "efforts": [FIXED_LEVEL[prov]], "defaultLevel": FIXED_LEVEL[prov]}
             if thinking:
                 e["thinking"] = thinking
             if compat:

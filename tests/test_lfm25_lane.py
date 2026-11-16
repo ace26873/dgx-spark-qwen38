@@ -345,7 +345,10 @@ class ItsClients(unittest.TestCase):
         self.assertEqual(list(block["models"]), [SERVED])
         model = block["models"][SERVED]
         self.assertEqual(model["limit"], {"context": 74000, "input": 74000, "output": 32000})
-        self.assertNotIn("variants", model, "its template reads no level: none to offer")
+        # opencode 1.19.5 offers no level for a model with neither: its template reads none, and "reasoning" alone
+        # would make opencode offer low, medium and high (ProviderTransform.variants on @ai-sdk/openai-compatible)
+        for key in ("variants", "reasoning", "reasoning_options"):
+            self.assertNotIn(key, model, "its template reads no level: none to offer")
         self.assertNotIn("modalities", model, "it reads no image")
         self.assertEqual(block["options"]["apiKey"], "{file:/k}")
 

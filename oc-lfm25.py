@@ -13,9 +13,13 @@ import sys
 
 
 def provider(base_url, key_file, ctx, out, name):
-    """The provider block. No variants: the checkpoint's chat template opens <think> at every answer and reads no
-    level and no switch (its chat_template.jinja at the pinned revision, read 2026-11-16), so the lane reasons on
-    every request whatever a client asks. Text only: the model reads no image (its config, Lfm2MoeForCausalLM)."""
+    """The provider block. No variants, and no "reasoning": the checkpoint's chat template opens <think> at every
+    answer and reads no level and no switch (its chat_template.jinja at the pinned revision, read 2026-11-16), so the
+    lane reasons on every request whatever a client asks, and opencode must offer no level to pick. opencode 1.19.5
+    builds a model's variants from its "reasoning" capability, false when the config leaves it out (provider.ts), and
+    gives none to a model without it (ProviderTransform.variants); with it, it offers low, medium and high on
+    @ai-sdk/openai-compatible, three levels this template does not read. Text only: the model reads no image (its
+    config, Lfm2MoeForCausalLM)."""
     return {
         "npm": "@ai-sdk/openai-compatible",
         "name": "Liquid AI LFM2.5 24B-A2B (DGX Spark)",

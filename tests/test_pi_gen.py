@@ -348,6 +348,40 @@ class PiGen(unittest.TestCase):
         self.assertEqual(entry["input"], ["text", "image"])
         self.assertEqual(settings["modelThinkingLevels"]["ornith-122b/ornith-1.5-122b"], "high")
 
+    def test_lfm25_offers_the_one_level_its_template_holds_and_sends_none(self):
+        """The Liquid AI LFM2.5 24B-A2B lane's template reasons on every request and reads no level and no switch (its
+        chat_template.jinja at the pinned revision): pi offered all its levels on it, off first, and started there."""
+        prov = json.loads(subprocess.run([sys.executable, str(REPO / "oc-lfm25.py"), "http://127.0.0.1:30001/v1",
+                                          "/keys/api-key", "74000", "32000", "LFM2.5 (local, 131K)"],
+                                         capture_output=True, text=True, check=True).stdout)
+        art = json.loads(json.dumps(ARTIFACT))
+        art["provider"].update(prov["provider"])
+        art["model"] = "lfm25/lfm2.5-24b-a2b"
+        with open(self.art, "w") as f:
+            f.write(json.dumps(art))
+        self.gen()
+        models, settings = self.read_pi()
+        entry = models["providers"]["lfm25"]["models"][0]
+        self.assertTrue(entry["reasoning"])
+        # pi 1.2.0's getSupportedThinkingLevels, ported: a level mapped to null is hidden, xhigh and max need a mapping
+        levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+        tlm = entry.get("thinkingLevelMap") or {}
+        shown = [lvl for lvl in levels if not (lvl in tlm and tlm[lvl] is None)
+                 and (lvl not in ("xhigh", "max") or lvl in tlm)]
+        self.assertEqual(shown, ["high"])
+        self.assertEqual(settings["modelThinkingLevels"]["lfm25/lfm2.5-24b-a2b"], "high")
+        # no field sent: pi's OpenAI dialect sends reasoning_effort only with supportsReasoningEffort, which it
+        # otherwise detects as true for a provider it does not know
+        self.assertIs(entry["compat"]["supportsReasoningEffort"], False)
+        # the other lanes as before
+        self.assertEqual(settings["modelThinkingLevels"]["qwen38/qwen3.8-27b"], "off")
+        self.assertNotIn("thinkingLevelMap", models["providers"]["qwen38"]["models"][0])
+        omp_models, _ = self.read_omp()
+        omp_entry = omp_models["providers"]["lfm25"]["models"][0]
+        self.assertEqual(omp_entry["thinking"], {"mode": "effort", "efforts": ["high"], "defaultLevel": "high"})
+        self.assertNotIn("qwenTemplateReasoningEffort", omp_entry["compat"])
+        self.assertNotIn("thinkingLevelMap", omp_entry)
+
     def test_idempotent(self):
         self.gen()
         again = self.gen()
