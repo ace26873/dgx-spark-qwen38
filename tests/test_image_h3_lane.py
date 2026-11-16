@@ -41,6 +41,33 @@ class TheUnit(unittest.TestCase):
         for ph in sorted(set(re.findall(r"__[A-Z][A-Z0-9_]*__", UNIT))):
             self.assertIn(f"s|{ph}|", INST, ph)
 
+    def test_the_checkpoint_is_named_by_its_snapshots_path(self):
+        # by name, an offline start checked the snapshot against the repository's whole cached file list, and this lane
+        # fetches only what it loads: every start failed (IncompleteSnapshotError, its first proof, 2026-11-16)
+        self.assertIn('MODEL_SNAP="$HF_CACHE/hub/models--${MODEL//\\//--}/snapshots/$MODEL_REV"', INST)
+        self.assertIn('-e "s|__IMAGE_H3_MODEL__|$MODEL_SNAP|g"', INST)
+        self.assertIn('[[ "$MODEL_REV" =~ ^[0-9a-f]{40}$ ]] || die', INST, "a branch name would make no snapshot path")
+        self.assertIn('_match_registered_hf_path(sys.argv[1]) != "MiniMaxAI/MiniMax-H3-Image"', INST)
+
+    def test_the_switch_reads_the_repository_and_revision_off_the_units_path(self):
+        import tempfile
+        sw = (REPO / "switch-model.sh").read_text()
+        start = sw.index('  H3_MODEL="$(grep -oE -- \'--model-path [^ ]+\' "$IMAGE_H3_UNIT"')
+        end = sw.index("\n", sw.index('    if [ "$H3_MODEL" = "$IMAGE_H3_MODEL_PIN" ]; then H3_REV='))
+        block = sw[start:end] + "\n  fi\n"
+        d = pathlib.Path(tempfile.mkdtemp(prefix="h3-switch-"))
+        rev, pin = "a" * 40, "b" * 40
+        cases = {"path": (f"--model-path /c/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/{rev} \\", rev),
+                 "name": ("--model-path MiniMaxAI/MiniMax-H3-Image \\", pin)}
+        for how, (line, want) in cases.items():
+            with self.subTest(how):
+                unit = d / f"{how}.service"
+                unit.write_text(f"[Service]\nExecStart=/x/sglang serve {line}\n")
+                script = (f'IMAGE_H3_UNIT="{unit}"; HF_CACHE="{d}"; IMAGE_H3_MODEL_PIN=MiniMaxAI/MiniMax-H3-Image; '
+                          f'IMAGE_H3_MODEL_PIN_REV={pin}\n' + block + '\necho "$H3_MODEL $H3_REV"')
+                r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+                self.assertEqual(r.stdout.split(), ["MiniMaxAI/MiniMax-H3-Image", want], r.stderr)
+
     def test_the_encoder_path_is_the_pinned_revision_of_minimax_h3(self):
         self.assertIn('ENCODER_DIR="$HF_CACHE/hub/models--${IMAGE_H3_ENCODER_PIN//\\//--}/snapshots/$IMAGE_H3_ENCODER_PIN_REV/text_encoder"', INST)
         video = (REPO / "install-video.sh").read_text()

@@ -101,6 +101,10 @@ class Base(unittest.TestCase):
         # systemd about its image unit 36 times (found in review, 2026-09-24). A test that
         # needs an answer puts its own run() in place.
         cls.ck.run = lambda argv, timeout=5.0, merge_err=False: ""
+        # The MiniMax-H3-Image lane's unit too (v1.50): image_unit() reads both image lanes' units, and left real it read
+        # the reference box's, installed by the lane's proof, and addressed its port (found 2026-11-16). Absent here; a
+        # test that needs it writes its own.
+        cls.ck.IMAGE_H3_UNIT_PATH = cls.tmp / "qwen38-image-h3.service"
         # Kept in a dict, not as a class attribute: a plain function assigned to a class
         # becomes a bound method and would be handed self. Two tests below call the real
         # one to check it reads the installed unit.

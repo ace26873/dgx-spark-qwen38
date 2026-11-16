@@ -49,6 +49,16 @@ class TheLaneTheViewAddresses(Base):
         self.box([QWEN, H3], {QWEN: "stopped", H3: "stopped"})
         self.assertEqual(self.ck.image_unit(), QWEN, "nothing failed: the one installed first")
 
+    def test_a_unit_that_names_its_snapshots_path_says_its_repository(self):
+        # since v1.50.0 the unit names the checkpoint by its snapshot's path (install-image-h3.sh says why): the page and
+        # the lane's card still say the repository
+        snap = "/h/.cache/huggingface/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/" + "5" * 40
+        (self.t / H3).write_text(f"[Service]\nExecStart=/x/sglang serve --model-path {snap} --host 127.0.0.1 --port 30026\n")
+        self.ck.LIFE["states"] = {H3: "ready", QWEN: "stopped"}
+        self.assertEqual(self.ck.image_status()["model"], "MiniMaxAI/MiniMax-H3-Image")
+        self.assertEqual(self.ck.unit_target(H3)["model"], "MiniMaxAI/MiniMax-H3-Image")
+        self.assertEqual(self.ck.hf_repo_of("Qwen/Qwen-Image-2.1"), "Qwen/Qwen-Image-2.1", "a name stays as it is")
+
     def test_in_a_switch_the_lane_coming_up_before_the_one_stopping(self):
         self.box([QWEN, H3], {QWEN: "stopping", H3: "starting"})
         self.assertEqual(self.ck.image_unit(), H3)

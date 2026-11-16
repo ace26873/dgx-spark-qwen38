@@ -1200,13 +1200,17 @@ if [ "$CHOICE" = "image-h3" ]; then
   done
   unset _v
   H3_MODEL="$(grep -oE -- '--model-path [^ ]+' "$IMAGE_H3_UNIT" | head -1 | cut -d' ' -f2 || true)"
-  H3_MODEL="${H3_MODEL:-$IMAGE_H3_MODEL_PIN}"
   H3_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$IMAGE_H3_UNIT" | cut -d= -f3- || true)"
-  # The revision this box serves, as for the image lane: refs/main, which the offline unit
-  # resolves; the installer's pin when it is missing or holds no commit.
-  H3_MODEL_DIR="${H3_HF:-$HF_CACHE}/hub/models--${H3_MODEL//\//--}"
   H3_REV=""
-  if [ -f "$H3_MODEL_DIR/refs/main" ]; then H3_REV="$(cat "$H3_MODEL_DIR/refs/main")"; fi
+  # The unit names the checkpoint by its snapshot's path (v1.50.0: by name, an offline start refused the snapshot this
+  # lane fetches only in part): the repository and the revision are that path's. A unit of before names the repository,
+  # and its revision is then refs/main's, which the offline unit resolved, else the installer's pin.
+  if [[ "$H3_MODEL" =~ /models--([^/]+)--([^/]+)/snapshots/([0-9a-f]{40})$ ]]; then
+    H3_MODEL="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"; H3_REV="${BASH_REMATCH[3]}"
+  fi
+  H3_MODEL="${H3_MODEL:-$IMAGE_H3_MODEL_PIN}"
+  H3_MODEL_DIR="${H3_HF:-$HF_CACHE}/hub/models--${H3_MODEL//\//--}"
+  if [ -z "$H3_REV" ] && [ -f "$H3_MODEL_DIR/refs/main" ]; then H3_REV="$(cat "$H3_MODEL_DIR/refs/main")"; fi
   [[ "$H3_REV" =~ ^[0-9a-f]{40}$ ]] || H3_REV=""
   if [ -z "$H3_REV" ]; then
     if [ "$H3_MODEL" = "$IMAGE_H3_MODEL_PIN" ]; then H3_REV="$IMAGE_H3_MODEL_PIN_REV"; else H3_REV=main; fi

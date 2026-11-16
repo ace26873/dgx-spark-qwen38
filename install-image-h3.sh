@@ -92,6 +92,7 @@ PORT="${IMAGE_H3_PORT:-$(unit_flag --port)}"; PORT="${PORT:-30026}"
 IMAGE_H3_MODEL_PIN="MiniMaxAI/MiniMax-H3-Image"
 IMAGE_H3_MODEL_PIN_REV="5f90473023975e6271b0ed1dd84c4e88e4bbc6d3"
 MODEL="$IMAGE_H3_MODEL_PIN"; MODEL_REV="${IMAGE_H3_MODEL_REV:-$IMAGE_H3_MODEL_PIN_REV}"
+[[ "$MODEL_REV" =~ ^[0-9a-f]{40}$ ]] || die "IMAGE_H3_MODEL_REV must be a commit (40 hexadecimal characters), got: $MODEL_REV"
 # Its text encoder, which its model_index.json loads from MiniMax-H3's text_encoder/ folder: the
 # video lane's model, at the revision that lane pins (install-video.sh VIDEO_MODEL_PIN_REV), whose
 # text_encoder/ holds the same 23 files as its FL2VA/ and Ref2VA/ ones (their blobs compared on the
@@ -115,6 +116,12 @@ HF_CACHE="${HF_CACHE:-$(installed_env HF_HOME | tr -s /)}"; HF_CACHE="${HF_CACHE
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 # The text encoder's folder in that cache, which the unit names: the files of the pinned revision.
 ENCODER_DIR="$HF_CACHE/hub/models--${IMAGE_H3_ENCODER_PIN//\//--}/snapshots/$IMAGE_H3_ENCODER_PIN_REV/text_encoder"
+# The checkpoint by its snapshot's path, not by its repository's name: the runtime then reads the folder as it is.
+# By name, huggingface_hub (1.33) checks an offline snapshot against the repository's whole file list it cached at the
+# fetch, and this lane fetches only the files it loads (ALLOW): every start failed with IncompleteSnapshotError (the
+# lane's first proof on the reference box, 2026-11-16). SGLang's registry maps such a path to MiniMax-H3-Image's own
+# config by its models--MiniMaxAI--MiniMax-H3-Image folder (step 3 checks it).
+MODEL_SNAP="$HF_CACHE/hub/models--${MODEL//\//--}/snapshots/$MODEL_REV"
 # The SGLang source this lane runs: main at the commit SGLang's DGX Spark recipe was measured on
 # by this project (study G8, 2026-11-11: 2048 x 2048 in 15.6 s, 4736 x 3552 in 81.1 s). It holds the
 # recipe's own commit (539fea720b86, merged by PR 49552 as 170804b40a40) and the runtime's
@@ -215,7 +222,7 @@ install_service(){
   RENDER="$(mktemp)"; trap 'rm -f "$RENDER"' EXIT
   sed -e "s|__USER__|$(id -un)|g" -e "s|__GROUP__|$(id -gn "$(id -un)")|g" \
       -e "s|__IMAGE_H3_LANE_DIR__|$LANE_DIR|g" -e "s|__IMAGE_H3_VENV__|$VENV|g" \
-      -e "s|__IMAGE_H3_MODEL__|$MODEL|g" -e "s|__IMAGE_H3_ENCODER__|$ENCODER_DIR|g" \
+      -e "s|__IMAGE_H3_MODEL__|$MODEL_SNAP|g" -e "s|__IMAGE_H3_ENCODER__|$ENCODER_DIR|g" \
       -e "s|__IMAGE_H3_PORT__|$PORT|g" -e "s|__IMAGE_H3_BIND__|$IMAGE_H3_BIND|g" -e "s|__HF_CACHE__|$HF_CACHE|g" \
       -e "s|__HOME__|$HOME|g" \
       "$HERE/$UNIT.template" > "$RENDER"
@@ -412,7 +419,7 @@ fi
 # MiniMax-H3-Image's own config (registered under it at this commit, ahead of MiniMax-H3's), and
 # the pipeline its model_index.json names resolves to MiniMax-H3's image pipeline.
 # Its error, if any, is said as it is, on the line above the die: a missing package, or a pin that does not register it.
-"$VENV/bin/python" - <<'PY' || die "the runtime does not load MiniMax-H3-Image (its error is just above: a missing package, or a pin that does not register the model)."
+"$VENV/bin/python" - "$MODEL_SNAP" <<'PY' || die "the runtime does not load MiniMax-H3-Image (its error is just above: a missing package, or a pin that does not register the model)."
 import pathlib, sglang
 from sglang.multimodal_gen import registry
 from sglang.multimodal_gen.configs.pipeline_configs.minimax_h3_image import MiniMaxH3ImagePipelineConfig
@@ -423,6 +430,10 @@ if info is None or info.pipeline_config_cls is not MiniMaxH3ImagePipelineConfig:
     raise SystemExit("MiniMaxAI/MiniMax-H3-Image does not map to MiniMax-H3-Image's own config in the model registry")
 if registry.get_pipeline_class("MiniMaxH3ImagePipeline") is not MiniMaxH3ImagePipeline:
     raise SystemExit("MiniMaxH3ImagePipeline does not resolve to MiniMax-H3's image pipeline in the model registry")
+# the path the unit passes resolves to the same registered model (not MiniMax-H3's, the video lane's)
+import sys
+if registry._match_registered_hf_path(sys.argv[1]) != "MiniMaxAI/MiniMax-H3-Image":
+    raise SystemExit(f"the snapshot path {sys.argv[1]} does not resolve to MiniMaxAI/MiniMax-H3-Image in the model registry")
 print(f"   runtime: {pathlib.Path(sglang.__file__).parent}")
 PY
 # The runtime is whole: its note says so, and it is what the cockpit and install.sh read as this
@@ -444,7 +455,7 @@ echo "MiniMax-H3-Image: ${LICENCE/Its licence/its licence}"
 echo "fetching with allow: $ALLOW"
 HF_HOME="$HF_CACHE" HF_HUB_DOWNLOAD_TIMEOUT=30 HF_HUB_DISABLE_XET=1 \
   "$VENV/bin/python" "$HERE/ckpt-fetch.py" "$MODEL" "$MODEL_REV" --allow "$ALLOW" --refs-main pin \
-  || die "checkpoint download failed. Causes: no internet, HuggingFace throttling an unauthenticated download (set HF_TOKEN=<your token>), a pinned revision removed upstream (IMAGE_H3_MODEL_REV=main serves the current one), or a permission error in the cache. Re-running resumes."
+  || die "checkpoint download failed. Causes: no internet, HuggingFace throttling an unauthenticated download (set HF_TOKEN=<your token>), a pinned revision removed upstream (IMAGE_H3_MODEL_REV=<a commit of the repository> serves another), or a permission error in the cache. Re-running resumes."
 HF_HOME="$HF_CACHE" HF_HUB_DOWNLOAD_TIMEOUT=30 HF_HUB_DISABLE_XET=1 \
   "$VENV/bin/python" "$HERE/ckpt-fetch.py" "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" --allow "text_encoder/*" --offline-first \
   || die "the text encoder's download failed (the same causes as the checkpoint's). Re-running resumes."

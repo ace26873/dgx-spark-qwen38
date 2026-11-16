@@ -2588,7 +2588,7 @@ def unit_target(unit: str) -> dict:
         return {"model": model, "target": target}
     if unit == IMAGE_H3_UNIT:
         # one checkpoint, one target, read from the unit as the image lane's
-        model = _image_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3-Image", IMAGE_H3_UNIT_PATH) \
+        model = hf_repo_of(_image_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3-Image", IMAGE_H3_UNIT_PATH)) \
             if IMAGE_H3_UNIT_PATH.exists() else None
         return {"model": model, "target": "image-h3" if model else None}
     if unit == KOLIBRI_UNIT:
@@ -4373,6 +4373,14 @@ def _image_unit_text(path: Path | None = None) -> str:
     return text
 
 
+def hf_repo_of(model: str) -> str:
+    """A repository's name for what a unit's --model-path says: the name itself, or the repository of a Hugging Face
+    cache snapshot's path (.../models--ORG--NAME/snapshots/<rev>), as the MiniMax-H3-Image lane names its checkpoint
+    since v1.50.0 (install-image-h3.sh says why)."""
+    m = re.search(r"/models--([^/]+?)--([^/]+)/snapshots/[0-9a-f]{40}/?$", model or "")
+    return f"{m.group(1)}/{m.group(2)}" if m else model
+
+
 def _image_unit_flag(flag: str, fallback: str, path: Path | None = None) -> str:
     """What the installed unit passes, not what this file assumes. The installer accepts
     IMAGE_BIND, so a lane bound elsewhere must not be probed on a loopback port that
@@ -4568,7 +4576,7 @@ def image_status() -> dict:
     out = {"unit": unit, "units": [u for u in IMAGE_UNITS if image_unit_path(u).exists()],
            "installed": path.exists(), "port": image_h3_port() if h3 else image_port(),
            "host": _image_unit_flag("--host", "127.0.0.1", path),
-           "model": _image_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3-Image" if h3 else "Qwen/Qwen-Image-2.1", path),
+           "model": hf_repo_of(_image_unit_flag("--model-path", "MiniMaxAI/MiniMax-H3-Image" if h3 else "Qwen/Qwen-Image-2.1", path)),
            "state": "not installed", "available": False, "llm_lane": "", "progress": {}}
     if not out["installed"]:
         return out
