@@ -501,6 +501,10 @@ async function scanRegistry(fresh = true){
   try{
     const r = await fetch(fresh ? '/api/registry?refresh=1' : '/api/registry'); if (r.status === 401) return login(); if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json(); LOADED.registry = true;
+    // each disk: what is free, and what the models, Docker's images and the runtimes hold there
+    const dk = $('reg-disks'); clear(dk);
+    (d.disks || []).forEach(x => { const parts = [['models', 'models'], ['docker', "Docker's images (every project's)"], ['runtimes', 'runtimes and caches']].filter(([k]) => x[k]).map(([k, w]) => `${w} ${fmtGiB(x[k])}`);
+      dk.append(el('span', null, `${x.mount}: ${fmtGiB(x.free, 0)} free of ${fmtGiB(x.total, 0)}` + (parts.length ? ` (${parts.join(', ')})` : '')), el('br')); });
     const tb = $('reg-models').tBodies[0]; clear(tb);
     const offered = [];
     (d.models || []).forEach(m => (m.revisions || []).forEach((rv, i) => {

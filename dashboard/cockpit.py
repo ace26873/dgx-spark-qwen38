@@ -6315,6 +6315,38 @@ def tree_bytes(paths) -> int:
 
 
 RUNTIME_ITEMS = ("image", "image-h3", "video", "diffusion-caches")
+
+
+def disk_rows(caches: list, runtimes: list) -> list[dict]:
+    """Library's disks: each one a cache, Docker or a runtime lives on, its size and what is free, and what is there of
+    the models (registry.hub_bytes: a shared blob once), of Docker's images (every project's, as docker system df
+    counts them) and of the lanes' runtimes and caches."""
+    disks: dict = {}
+
+    def add(mount, key, n):
+        if n:
+            d = disks.setdefault(mount, {"mount": mount})
+            d[key] = d.get(key, 0) + n
+    for cache in caches:
+        for mount, n in rg.hub_bytes(Path(cache) / "hub").items():
+            add(mount, "models", n)
+    root = run(["docker", "info", "--format", "{{.DockerRootDir}}"], timeout=10).strip()
+    for ln in run(["docker", "system", "df", "--format", "{{json .}}"], timeout=30).splitlines():
+        try:
+            row = json.loads(ln)
+        except ValueError:
+            continue
+        if row.get("Type") == "Images" and root:
+            add(rg.mount_of(root), "docker", rg.parse_docker_size(row.get("Size", "")) or 0)
+    for r in runtimes:
+        add(r["mount"], "runtimes", r["bytes"])
+    for d in disks.values():
+        try:
+            st = os.statvfs(d["mount"])
+            d["total"], d["free"] = st.f_blocks * st.f_frsize, st.f_bavail * st.f_frsize
+        except OSError:
+            pass
+    return sorted(disks.values(), key=lambda d: d["mount"])
 DIFFUSION_UNITS = ("qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service")
 
 
@@ -6821,6 +6853,7 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                     state = state if state == dstate or (files is not None and state == "absent") else "incomplete"
             targets.append({"target": t, "repo": repo, "rev": rev, "state": state,
                             "installed": target_unit(t).exists()})
+        rt_rows = runtime_rows()
         data = {"pins": pins, "managed_repos": sorted(set(rg.PIN_MODELS.values())), "caches": caches,
                 "targets": targets,
                 "models": [m for m in models if m["managed"]],
@@ -6828,7 +6861,8 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                                   "disk_bytes": m["disk_bytes"]}
                                  for m in models if not m["managed"]],
                 "images": [i for i in images if i["engine"]],
-                "runtimes": runtime_rows(),
+                "runtimes": rt_rows,
+                "disks": disk_rows(caches, rt_rows),
                 "partial": partial,
                 "pins_lost": read["pins_lost"],
                 "ts": time.time()}

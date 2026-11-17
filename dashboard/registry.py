@@ -421,6 +421,32 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
             "mount": mount_of(repo_dir)}
 
 
+def hub_bytes(hub: Path) -> dict:
+    """{mount: bytes} the blobs of a Hugging Face cache hold on each disk: every repository's blobs and the shared
+    store's, each real file once (a repository blob that links to the shared store counts there), in blocks, on the
+    disk the file really is. A repository folder can be a link to another disk: the reference box keeps MiniMax-H3 on
+    its own disk, linked from the cache on the SSD, and counted under the cache's disk it read 62 GiB too many there
+    (2026-11-17). scan_hf_cache counts a shared blob in each repository that links to it."""
+    seen, out, mounts = set(), {}, {}
+    for d in list(Path(hub).glob("*/blobs")) + list(Path(hub).glob("blobs/*")):
+        try:
+            entries = list(d.iterdir())
+        except OSError:
+            continue
+        for b in entries:
+            try:
+                st = os.stat(b)
+            except OSError:
+                continue
+            if (st.st_dev, st.st_ino) in seen or os.path.isdir(b):
+                continue
+            seen.add((st.st_dev, st.st_ino))
+            if st.st_dev not in mounts:
+                mounts[st.st_dev] = mount_of(b)
+            out[mounts[st.st_dev]] = out.get(mounts[st.st_dev], 0) + st.st_blocks * 512
+    return out
+
+
 def apply_repo_deletion(plan: dict) -> int:
     """Carry out a repo_deletion_plan: the whole repository folder (links, never what they point at) and its lock
     folder, or only the links and blobs the plan names when part of it is kept; then the shared blobs it owned alone,

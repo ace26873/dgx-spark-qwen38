@@ -233,5 +233,29 @@ class UpstreamVerdict(unittest.TestCase):
         self.assertTrue(rg.upstream_verdict(self.snap, [self.sib("w.bin", data)])["identical"])
 
 
+
+class HubBytes(unittest.TestCase):
+    """Library's disks: the bytes a cache's blobs hold on each disk, each real file once, on the disk it really is."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="registry-hub-bytes-"))
+        self.addCleanup(__import__("shutil").rmtree, self.root, True)
+        self.c = Cache(self.root)
+
+    def test_a_shared_blob_once_and_a_linked_repository_by_its_real_files(self):
+        # two disks cannot be made here: the reference box's (SSD 303.0 GiB, its own disk 62.1 for MiniMax-H3, linked
+        # from the cache on the SSD) read as du reads each (2026-11-17)
+        sha = "b" * 64
+        self.c.store(sha, b"y" * 8192, ["m", "n"])
+        self.c.repo("m", {"a.bin": b"x" * 4096}, {"s.bin": sha})
+        self.c.repo("n", {}, {"s.bin": sha})
+        far = Cache(self.root / "interne").repo("h3", {"te.bin": b"z" * 4096})
+        os.symlink(far, self.c.hub / far.name)
+        got = rg.hub_bytes(self.c.hub)
+        # the shared store's .refs too, as du counts them (a block each)
+        shared = self.c.hub / "blobs" / sha[:2] / sha
+        files = [shared, Path(str(shared) + ".refs"), self.c.hub / "models--o--m" / "blobs" / "m000", far / "blobs" / "h3000"]
+        self.assertEqual(got, {rg.mount_of(self.root): sum(os.stat(f).st_blocks * 512 for f in files)})
+
 if __name__ == "__main__":
     unittest.main()

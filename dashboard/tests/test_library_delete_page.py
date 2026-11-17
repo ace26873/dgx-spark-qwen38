@@ -121,5 +121,25 @@ class LibraryDeletesAnEngineImage(unittest.TestCase):
         self.assertIn("lose it for good", r["warns"])
 
 
+
+class LibrarySaysEachDisk(unittest.TestCase):
+    def test_each_disk_its_free_space_and_what_the_stack_holds_there(self):
+        GiB = 2**30
+        reg = dict(REG, disks=[{"mount": "/", "total": 915 * GiB, "free": 354 * GiB, "models": 62 * GiB,
+                                "docker": 110 * GiB, "runtimes": 54 * GiB},
+                               {"mount": "/mnt/ssd", "total": 1877 * GiB, "free": 1181 * GiB, "models": 303 * GiB}],
+                   runtimes=[{"item": "image-h3", "bytes": 16 * GiB, "mount": "/", "paths": ["/h/venv"]}])
+        r = run(self, r"""
+        __fetch = async (url, init) => url.startsWith('/api/recipes') ? __response(200, {builtin: [], custom: [], custom_dir: ''})
+          : url.startsWith('/api/registry') ? __response(200, %s) : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        showView('library'); await __settle(); await __settle();
+        report({disks: txt('reg-disks'), runtimes: [...$('reg-runtimes').tBodies[0].rows].map(r => [...r.cells].map(c => c.textContent))});
+        """ % json.dumps(reg))
+        self.assertIn("/: 354 GiB free of 915 GiB (models 62.0 GiB, Docker's images (every project's) 110.0 GiB, "
+                      "runtimes and caches 54.0 GiB)", r["disks"])
+        self.assertIn("/mnt/ssd: 1181 GiB free of 1877 GiB (models 303.0 GiB)", r["disks"])
+        self.assertEqual(r["runtimes"], [["MiniMax-H3-Image runtime on /", "16.0 GiB", "Delete"]])
+
 if __name__ == "__main__":
     unittest.main()
