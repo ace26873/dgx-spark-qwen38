@@ -11,7 +11,8 @@ import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 TEXT = (REPO / "install.sh").read_text()
-BLOCK = TEXT[TEXT.index("# An update downloads nothing large (decisions 1404"):TEXT.index("# Measured where the weights actually land")]
+BLOCK = TEXT[TEXT.index("# An update downloads nothing large (decisions 1404 and 1408 to 1410 of Hasan, 2026-11-16 and 17): weights"):
+             TEXT.index("# Measured where the weights actually land")]
 IMAGE = "lmsysorg/sglang@sha256:" + "a" * 64
 REV, DREV = "1" * 40, "d" * 40
 

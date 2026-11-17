@@ -1666,6 +1666,24 @@ side_begun(){  # $1 lane (image, video, kolibri, nemotron, nemotron-super, flash
   esac
 }
 # The other text lane is on demand too: text_lane_prepared (lanes.sh) says when it is prepared.
+# An update downloads nothing large (decisions 1404 and 1408 to 1410 of Hasan, 2026-11-16 and 17). A lane begun on the
+# box, which a run updates whole, gets its units first (lanes.sh's unit_put, with PENDING_PUT=1): when its new unit
+# waits for its Load (it reads what the box lacks, while the unit in place has all it reads), that is all this run does
+# for it, and it says so; when nothing waits, the rest of its update follows as before, with nothing to download.
+# --with-<lane> and --all-weights update it whole now, as asked.
+SIDE_WAITED=" "
+side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<lane>): runs its installer
+  if [ "$2" = --no-smoke ] && [ "${PENDING_PUT:-0}" = 1 ] && [ "$ALL_WEIGHTS" -eq 0 ] && [ "${3:-0}" -eq 0 ]; then
+    "$REPO_DIR/install-$1.sh" --units-only || return 1
+    if [ -f "$CONFIG_DIR/pending/qwen38-$1.service" ]; then
+      SIDE_WAITED="$SIDE_WAITED$1 "
+      echo "NOTE: the $(lane_title "$1") lane's update waits for its next Load, which downloads what it lacks ($(unit_pending_says "/etc/systemd/system/qwen38-$1.service")); it serves the release it served until then (./install.sh --with-$1 downloads it now)."
+      return 0
+    fi
+  fi
+  "$REPO_DIR/install-$1.sh" "$2"
+}
+side_waited(){ case "$SIDE_WAITED" in *" $1 "*) return 0 ;; esac; return 1; }  # $1 lane: its update waits for its Load
 side_mode(){  # $1 lane, $2 --with-<lane> given: the installer's option for this run
   if [ "$ALL_WEIGHTS" -eq 1 ] || [ "$2" -eq 1 ] || side_begun "$1"; then echo --no-smoke; else echo --units-only; fi
 }
@@ -3953,7 +3971,7 @@ except Exception as e:
     if [ "$WANT_IMAGE" -eq 1 ]; then
       step "Qwen-Image 2.1 lane (text-to-image, editing, native RGBA)"
       IMAGE_MODE="$(side_mode image "$WITH_IMAGE")"
-      if "$REPO_DIR/install-image.sh" "$IMAGE_MODE"; then IMAGE_STATE=installed; [ "$IMAGE_MODE" = --units-only ] && IMAGE_STATE=units; else
+      if side_install image "$IMAGE_MODE" "$WITH_IMAGE"; then IMAGE_STATE=installed; { [ "$IMAGE_MODE" = --units-only ] || side_waited image; } && IMAGE_STATE=units; else
         IMAGE_STATE=failed
         echo "NOTE: the image lane did not install (the lines above say why); the rest goes on."
       fi
@@ -3961,7 +3979,7 @@ except Exception as e:
     if [ "$WANT_VIDEO" -eq 1 ]; then
       step "MiniMax-H3 lane (text-to-video with joint video-and-audio)"
       VIDEO_MODE="$(side_mode video "$WITH_VIDEO")"
-      if "$REPO_DIR/install-video.sh" "$VIDEO_MODE"; then VIDEO_STATE=installed; [ "$VIDEO_MODE" = --units-only ] && VIDEO_STATE=units; else
+      if side_install video "$VIDEO_MODE" "$WITH_VIDEO"; then VIDEO_STATE=installed; { [ "$VIDEO_MODE" = --units-only ] || side_waited video; } && VIDEO_STATE=units; else
         VIDEO_STATE=failed
         echo "NOTE: the video lane did not install (the lines above say why); the rest goes on."
       fi
@@ -3969,7 +3987,7 @@ except Exception as e:
     if [ "$WANT_KOLIBRI" -eq 1 ]; then
       step "Kolibri-1 lane (Aleph Alpha's German and English reasoning model, on vLLM)"
       KOLIBRI_MODE="$(side_mode kolibri "$WITH_KOLIBRI")"
-      if "$REPO_DIR/install-kolibri.sh" "$KOLIBRI_MODE"; then KOLIBRI_STATE=installed; [ "$KOLIBRI_MODE" = --units-only ] && KOLIBRI_STATE=units; else
+      if side_install kolibri "$KOLIBRI_MODE" "$WITH_KOLIBRI"; then KOLIBRI_STATE=installed; { [ "$KOLIBRI_MODE" = --units-only ] || side_waited kolibri; } && KOLIBRI_STATE=units; else
         KOLIBRI_STATE=failed
         echo "NOTE: the Kolibri-1 lane did not install (the lines above say why); the rest goes on."
       fi
@@ -3977,7 +3995,7 @@ except Exception as e:
     if [ "$WANT_NEMOTRON" -eq 1 ]; then
       step "Nemotron 3.5 Bolt lane (NVIDIA's 2-bit 74B reasoning model with vision, on vLLM)"
       NEMOTRON_MODE="$(side_mode nemotron "$WITH_NEMOTRON")"
-      if "$REPO_DIR/install-nemotron.sh" "$NEMOTRON_MODE"; then NEMOTRON_STATE=installed; [ "$NEMOTRON_MODE" = --units-only ] && NEMOTRON_STATE=units; else
+      if side_install nemotron "$NEMOTRON_MODE" "$WITH_NEMOTRON"; then NEMOTRON_STATE=installed; { [ "$NEMOTRON_MODE" = --units-only ] || side_waited nemotron; } && NEMOTRON_STATE=units; else
         NEMOTRON_STATE=failed
         echo "NOTE: the Nemotron 3.5 Bolt lane did not install (the lines above say why); the rest goes on."
       fi
@@ -3985,7 +4003,7 @@ except Exception as e:
     if [ "$WANT_NEMOTRON_SUPER" -eq 1 ]; then
       step "Nemotron 3.5 Super VL lane (NVIDIA's 120B reasoning model with vision and a 1M window, on vLLM)"
       NEMOTRON_SUPER_MODE="$(side_mode nemotron-super "$WITH_NEMOTRON_SUPER")"
-      if "$REPO_DIR/install-nemotron-super.sh" "$NEMOTRON_SUPER_MODE"; then NEMOTRON_SUPER_STATE=installed; [ "$NEMOTRON_SUPER_MODE" = --units-only ] && NEMOTRON_SUPER_STATE=units; else
+      if side_install nemotron-super "$NEMOTRON_SUPER_MODE" "$WITH_NEMOTRON_SUPER"; then NEMOTRON_SUPER_STATE=installed; { [ "$NEMOTRON_SUPER_MODE" = --units-only ] || side_waited nemotron-super; } && NEMOTRON_SUPER_STATE=units; else
         NEMOTRON_SUPER_STATE=failed
         echo "NOTE: the Nemotron 3.5 Super VL lane did not install (the lines above say why); the rest goes on."
       fi
@@ -3993,7 +4011,7 @@ except Exception as e:
     if [ "$WANT_FLASH_LOCAL" -eq 1 ]; then
       step "Qwen3.8 Flash-Next FP4-Local lane (NVIDIA's FP4 build of the flash model, on vLLM with b12x)"
       FLASH_LOCAL_MODE="$(side_mode flash-local "$WITH_FLASH_LOCAL")"
-      if "$REPO_DIR/install-flash-local.sh" "$FLASH_LOCAL_MODE"; then FLASH_LOCAL_STATE=installed; [ "$FLASH_LOCAL_MODE" = --units-only ] && FLASH_LOCAL_STATE=units; else
+      if side_install flash-local "$FLASH_LOCAL_MODE" "$WITH_FLASH_LOCAL"; then FLASH_LOCAL_STATE=installed; { [ "$FLASH_LOCAL_MODE" = --units-only ] || side_waited flash-local; } && FLASH_LOCAL_STATE=units; else
         FLASH_LOCAL_STATE=failed
         echo "NOTE: the Qwen3.8 Flash-Next FP4-Local lane did not install (the lines above say why); the rest goes on."
       fi
@@ -4001,7 +4019,7 @@ except Exception as e:
     if [ "$WANT_ORNITH_122B" -eq 1 ]; then
       step "Ornith 1.5 122B lane (Ornith AI's 122B mixture of experts with vision, on vLLM with b12x)"
       ORNITH_122B_MODE="$(side_mode ornith-122b "$WITH_ORNITH_122B")"
-      if "$REPO_DIR/install-ornith-122b.sh" "$ORNITH_122B_MODE"; then ORNITH_122B_STATE=installed; [ "$ORNITH_122B_MODE" = --units-only ] && ORNITH_122B_STATE=units; else
+      if side_install ornith-122b "$ORNITH_122B_MODE" "$WITH_ORNITH_122B"; then ORNITH_122B_STATE=installed; { [ "$ORNITH_122B_MODE" = --units-only ] || side_waited ornith-122b; } && ORNITH_122B_STATE=units; else
         ORNITH_122B_STATE=failed
         echo "NOTE: the Ornith 1.5 122B lane did not install (the lines above say why); the rest goes on."
       fi
@@ -4009,7 +4027,7 @@ except Exception as e:
     if [ "$WANT_FLASH_UNSLOTH" -eq 1 ]; then
       step "Qwen3.8 Flash-Next Unsloth GGUF lane (Unsloth's GGUF of the flash model, on llama.cpp)"
       FLASH_UNSLOTH_MODE="$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")"
-      if "$REPO_DIR/install-flash-unsloth.sh" "$FLASH_UNSLOTH_MODE"; then FLASH_UNSLOTH_STATE=installed; [ "$FLASH_UNSLOTH_MODE" = --units-only ] && FLASH_UNSLOTH_STATE=units; unsloth_clients_follow; else
+      if side_install flash-unsloth "$FLASH_UNSLOTH_MODE" "$WITH_FLASH_UNSLOTH"; then FLASH_UNSLOTH_STATE=installed; { [ "$FLASH_UNSLOTH_MODE" = --units-only ] || side_waited flash-unsloth; } && FLASH_UNSLOTH_STATE=units; unsloth_clients_follow; else
         FLASH_UNSLOTH_STATE=failed
         echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install (the lines above say why); the rest goes on."
       fi
@@ -4017,7 +4035,7 @@ except Exception as e:
     if [ "$WANT_IMAGE_H3" -eq 1 ]; then
       step "MiniMax-H3-Image lane (text-to-image and editing up to 16.9 megapixels, on SGLang's main)"
       IMAGE_H3_MODE="$(side_mode image-h3 "$WITH_IMAGE_H3")"
-      if "$REPO_DIR/install-image-h3.sh" "$IMAGE_H3_MODE"; then IMAGE_H3_STATE=installed; [ "$IMAGE_H3_MODE" = --units-only ] && IMAGE_H3_STATE=units; else
+      if side_install image-h3 "$IMAGE_H3_MODE" "$WITH_IMAGE_H3"; then IMAGE_H3_STATE=installed; { [ "$IMAGE_H3_MODE" = --units-only ] || side_waited image-h3; } && IMAGE_H3_STATE=units; else
         IMAGE_H3_STATE=failed
         echo "NOTE: the MiniMax-H3-Image lane did not install (the lines above say why); the rest goes on."
       fi

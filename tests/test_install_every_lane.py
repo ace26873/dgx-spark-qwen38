@@ -855,14 +855,15 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
     what is installed and how (whole, or its units only, prepared at its first Load), what is
     proved, in which order, and that the served lane comes back."""
     BLOCK = between("    # ── Every other lane", "    printf '\\n\\033[1;32m✅ Installed")
-    MODES = between("side_lane_dir(){", "\n# The other text lane") + "\n" + between("side_mode(){", "\n}\n") + "\n}\n"
+    # side_install and side_waited (v1.52.0) sit between the two
+    MODES = between("side_lane_dir(){", "side_mode(){") + between("side_mode(){", "\n}\n") + "\n}\n"
 
     def end(self, units=(), want_image=1, want_video=1, with_image=0, with_video=0, with_flash=0,
             second_state="installed", second_fresh=1, image_rc=0, video_rc=0, prove_fail="",
             want_kolibri=1, with_kolibri=0, kolibri_rc=0, prepared=(), all_weights=0, begun=(), second_new=None,
             want_nemotron=1, with_nemotron=0, nemotron_rc=0, want_super=1, with_super=0, super_rc=0,
             nemotron_image=None, want_flocal=0, with_flocal=0, flocal_rc=0, want_ornith=0, with_ornith=0, ornith_rc=0,
-            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0):
+            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0, pending_put=0, waits=()):
         t = tmp("lane-end-")
         unit_dir = t / "units"
         unit_dir.mkdir()
@@ -918,7 +919,11 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                          ("install-nemotron-super.sh", super_rc), ("install-flash-local.sh", flocal_rc),
                          ("install-ornith-122b.sh", ornith_rc), ("install-flash-unsloth.sh", unsloth_rc),
                          ("install-image-h3.sh", h3_rc)):
-            stub(repo / name, f'echo "{name} $*" >> "{log}"\n'
+            # a lane in waits: its --units-only leaves its new unit waiting for its Load (lanes.sh's unit_put)
+            lane = name[len("install-"):-len(".sh")]
+            wait = (f'case "$*" in *--units-only*) mkdir -p "{t}/pending"; echo new > "{t}/pending/qwen38-{lane}.service"; '
+                    f'echo "image x@sha256:1" > "{t}/pending/qwen38-{lane}.service.needs" ;; esac\n') if lane in waits else ""
+            stub(repo / name, f'echo "{name} $*" >> "{log}"\n' + wait +
                               f'case "$*" in *--no-smoke*) exit {rc} ;; esac\nexit 0')
         (repo / "oc-fit-limits.py").write_text(f"open({str(log)!r}, 'a').write('oc-fit-limits\\n')\n")
         bin_ = t / "bin"
@@ -938,7 +943,8 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         # then this test's own stale_since
         script = ("set -euo pipefail\nRECOMMENDED=0\nstep(){ echo \"STEP $*\"; }\ndie(){ echo \"DIE $*\"; exit 1; }\n"
                   + f'LANES_UNIT_DIR="{unit_dir}"; CONFIG_DIR="{t}"; . "{REPO}/lanes.sh"\n'
-                  "stale_since(){ return 1; }\n" + f'HOME="{t}/home"; ALL_WEIGHTS={all_weights}\n'
+                  "stale_since(){ return 1; }\n" + f'HOME="{t}/home"; ALL_WEIGHTS={all_weights}; PENDING_PUT={pending_put}\n'
+                  "lane_title(){ echo \"$1\"; }\n"
                   # the clients' entry follows the unit the lane's installer rendered (install.sh defines it above
                   # this block; its own behaviour is tests/test_install_unsloth_target_moves.py)
                   + f'unsloth_clients_follow(){{ echo "clients follow" >> "{log}"; }}\n'
@@ -1008,6 +1014,31 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         self.assertEqual(calls, ["install-image.sh --no-smoke", "install-video.sh --no-smoke",
                                  "install-kolibri.sh --no-smoke", "install-nemotron.sh --no-smoke", "install-nemotron-super.sh --no-smoke"])
         self.assertIn("STATES second=installed image=installed video=installed kolibri=installed nemotron=installed super=installed", out)
+
+    def test_an_update_of_a_lane_whose_new_unit_lacks_what_the_box_has_waits_for_its_load(self):
+        # decisions 1404 and 1408 to 1410: its units first; its new unit waits, so nothing more for it this run; the
+        # others, nothing waiting, are updated whole as before (nothing to download)
+        rc, out, calls = self.end(units=("qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service", "qwen38-nemotron-super.service"),
+                                  second_fresh=0, prepared=("image", "video", "kolibri", "nemotron", "nemotron-super"),
+                                  pending_put=1, waits=("image",))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-image.sh --units-only",
+                                 "install-video.sh --units-only", "install-video.sh --no-smoke",
+                                 "install-kolibri.sh --units-only", "install-kolibri.sh --no-smoke",
+                                 "install-nemotron.sh --units-only", "install-nemotron.sh --no-smoke",
+                                 "install-nemotron-super.sh --units-only", "install-nemotron-super.sh --no-smoke"])
+        self.assertIn("STATES second=installed image=units video=installed", out)
+        self.assertIn("the image lane's update waits for its next Load, which downloads what it lacks (image x@sha256:1)", out)
+
+    def test_a_lane_named_or_all_weights_is_updated_whole_now(self):
+        for kw in ({"with_image": 1}, {"all_weights": 1}):
+            with self.subTest(**kw):
+                rc, out, calls = self.end(units=("qwen38-image.service",), second_fresh=0, prepared=("image",),
+                                          want_video=0, want_kolibri=0, want_nemotron=0, want_super=0,
+                                          pending_put=1, waits=("image",), **kw)
+                self.assertEqual(rc, 0, out)
+                self.assertEqual(calls[0], "install-image.sh --no-smoke")
+                self.assertNotIn("install-image.sh --units-only", calls)
 
     def test_a_nemotron_lane_is_begun_by_its_own_load_not_by_the_image_the_two_share(self):
         # Bolt's first Load built the image the two Nemotron lanes run: Super VL, never loaded,
