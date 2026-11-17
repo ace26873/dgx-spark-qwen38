@@ -241,6 +241,8 @@ def job_phrase(action: str, params: dict) -> str:
         return "fit the opencode limits to this engine"
     if action == "delete_strays":
         return "delete the stray revisions from the model caches"
+    if action == "apply_pending":
+        return f"put in place the update {p.get('unit', '')} waited for"
     if action == "delete_runtime":
         return f"delete the {p.get('item', '')} runtime"
     if action == "delete_image":
@@ -3294,6 +3296,10 @@ def lane_prepared(lane: str):
         text = unit.read_text(errors="replace")
     except OSError:
         return None
+    # an update left its new unit waiting for its Load (lanes.sh's unit_put, decision 1408): the lane serves what it
+    # served, and its Load prepares what that unit lacks, then puts it in place (apply_pending)
+    if (PENDING_DIR / unit.name).is_file():
+        return False
     if lane in ("flash", "27b"):
         img = engine_image(text)
         if not (img and run(["docker", "image", "inspect", "--format", "{{.Id}}", img],
@@ -3325,6 +3331,60 @@ def lane_prepared(lane: str):
         return (d / "venv/bin/python").exists() and (d / "sglang-wheel").stat().st_size > 0
     except OSError:
         return False
+
+
+# ---- An update that waits for its Load (decisions 1404 and 1408 to 1410 of Hasan, 2026-11-16 and 17) ----------------
+# An update downloads nothing large: a lane's new unit that reads what the box lacks waits in $CONFIG_DIR/pending/<unit>,
+# what it lacks beside it (<unit>.needs, lanes.sh's unit_needs), while the lane serves what it served. Its Load prepares
+# what it lacks, then puts it in place (apply_pending), and restarts it.
+PENDING_DIR = CONFIG_DIR / "pending"
+
+
+def pending_units() -> dict:
+    """{unit: [what its waiting unit lacks]} for each lane unit whose update waits for its Load."""
+    out = {}
+    for unit in sorted(SERVING_UNITS):
+        f = PENDING_DIR / unit
+        if f.is_file():
+            try:
+                out[unit] = [ln for ln in (PENDING_DIR / (unit + ".needs")).read_text().splitlines() if ln.strip()]
+            except OSError:
+                out[unit] = []
+    return out
+
+
+@guard
+def collect_pending():
+    return pending_units()
+
+
+def job_apply_pending(job: Job):
+    """Put a lane's waiting unit in place, once the box has all it reads (lanes.sh's unit_needs, asked again now):
+    through the fixed staging path its exact sudoers line allows, then a daemon-reload. The lane's restart is the
+    next step of its Load."""
+    unit = job.params["unit"]
+    src = PENDING_DIR / unit
+    if not src.is_file():
+        return True, [f"no update waits for {unit}"], {"ok": True}
+    r = subprocess.run(["bash", "-c", 'set -u; . "$1/lanes.sh"; unit_needs "$2"', "x", str(REPO_DIR), str(src)],
+                       capture_output=True, text=True, timeout=120)
+    lacks = [ln for ln in r.stdout.splitlines() if ln.strip()]
+    if r.returncode != 0 or lacks:
+        return False, [f"{unit}'s update still lacks: " + ("; ".join(lacks) or r.stderr.strip()[:200])
+                       + " (its Load prepares it first)"], {"ok": False}
+    stage = CONFIG_DIR / f"{unit}.switch-stage"
+    shutil.copyfile(src, stage)
+    lines = []
+    for argv in (["sudo", "-n", "/usr/bin/install", "-m", "644", str(stage), f"/etc/systemd/system/{unit}"],
+                 ["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"]):
+        out = run(argv, timeout=60, merge_err=True)
+        if not answered(out):
+            return False, lines + [f"{' '.join(argv[2:])} failed: {str(out).strip()[:200]}"], {"ok": False}
+    stage.unlink(missing_ok=True)
+    src.unlink(missing_ok=True)
+    (PENDING_DIR / (unit + ".needs")).unlink(missing_ok=True)
+    audit({"kind": "pending_applied", "unit": unit})
+    return True, lines + [f"{unit}: the update that waited for its Load is in place; its restart applies it"], {"ok": True}
 
 
 @guard
@@ -3579,7 +3639,7 @@ TIERS = [
     (30.0, {"engine_info": collect_engine_info, "engine_table": collect_engine_table, "api": collect_api,
             "repo": collect_repo,
             "kernel": collect_kernel,
-            "lanes_ready": collect_lanes_ready, "lanes_startable": collect_lanes_startable,
+            "lanes_ready": collect_lanes_ready, "lanes_startable": collect_lanes_startable, "pending": collect_pending,
             "opencode": collect_opencode, "reqguard": collect_guard,
             "update": collect_update}),
 ]
@@ -4143,16 +4203,18 @@ def run_job(job: Job):
         # (found in review, 2026-10-15). After the lock: read while it was held (a quarter of a
         # second), the page that saw the job end started its next step on a lock still taken,
         # and was told busy (found in review of that fix, the same day).
-        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo", "delete_image", "delete_runtime"):
+        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo", "delete_image", "delete_runtime",
+                          "apply_pending"):
             with REGISTRY_LOCK:      # a scan running now would write its own date over it
                 REGISTRY_CACHE["ts"] = 0.0
             with STORAGE_LOCK:
                 STORAGE_CACHE["ts"] = 0.0
-            for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable)):
+            for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable),
+                             ("pending", collect_pending)):
                 snap = fn()
                 with STATE_LOCK:
                     STATE[name] = {"data": snap, "ts": time.time()}
-        if job.action in ("unit", "switch"):
+        if job.action in ("unit", "switch", "apply_pending"):
             refresh_owed()
         with EVENT:
             EVENT.notify_all()
@@ -6588,6 +6650,17 @@ def job_delete_runtime(job: Job):
                   else f"the {item} lane's next Load builds it again"], {"ok": True, "bytes": size}
 
 
+# the units whose new unit can wait for their Load: those an exact sudoers line lets the cockpit put in place from
+# their fixed staging path (dashboard/sudoers-cockpit.template)
+PENDING_UNITS = ("qwen38-sglang.service", "qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service",
+                 "qwen38-kolibri.service", "qwen38-nemotron.service", "qwen38-nemotron-super.service",
+                 "qwen38-flash-local.service", "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service")
+ACTIONS["apply_pending"] = {
+    "danger": "medium",
+    "params": {"unit": list(PENDING_UNITS)},
+    "argv": None,
+    "timeout": 180,
+}
 ACTIONS["delete_runtime"] = {
     "danger": "medium",
     "params": {"item": list(RUNTIME_ITEMS)},
@@ -6694,7 +6767,7 @@ def gpu_clock_at_start():
 JOB_FUNCS = {"flush_cache": job_flush_cache, "abort_all": job_abort_all,
              "smoke": job_smoke, "diag_bundle": job_diag_bundle,
              "delete_strays": job_delete_strays, "delete_repo": job_delete_repo,
-             "delete_image": job_delete_image, "delete_runtime": job_delete_runtime,
+             "delete_image": job_delete_image, "delete_runtime": job_delete_runtime, "apply_pending": job_apply_pending,
              "gpu_clock": job_gpu_clock}
 
 

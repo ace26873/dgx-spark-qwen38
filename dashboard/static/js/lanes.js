@@ -117,16 +117,20 @@ function renderLanes(){
       b.setAttribute('aria-checked', String(t === target)); b.tabIndex = t === target ? 0 : -1;
       b.classList.toggle('served', live && t === served);
     });
-    setText(c.pickLine, `${TARGET_NAME[target]}.` + (TARGET_LINE[target] ? ` ${TARGET_LINE[target]}.` : '') + (live && target === served ? ' Serving now.' : ''));
+    // an update that waits for this lane's Load (decision 1409): what its Load downloads, said on the card
+    const pend = (F.pending || {})[unit];
+    setText(c.pickLine, `${TARGET_NAME[target]}.` + (TARGET_LINE[target] ? ` ${TARGET_LINE[target]}.` : '') + (live && target === served ? ' Serving now.' : '')
+      + (pend ? ` An update waits for its Load, which downloads ${pend.length ? pend.join('; ') : 'what it lacks'}; until then it serves the release it served.` : ''));
     const on = !!e && (!UNIT_DOWN.has(st) || !!e.restarting);
     const sameTarget = !laneTarget(unit) || laneTarget(unit) === target;
     // the verbs that make sense now
     // the lane that serves what it is set to has nothing to load, unless an update is owed to it
     // the same test as the journey's (base.js, laneJourneySteps): the card names the restart
     // only when its Load is that restart
-    const owedUpdate = seated && laneTarget(unit) === target && !!updateOwed(unit);
+    const owedUpdate = seated && laneTarget(unit) === target && (!!updateOwed(unit) || !!pend);
     c.load.hidden = !has || (seated && sameTarget && !owedUpdate);
-    setText(c.load, owedUpdate ? `Restart ${LANE_NAME[unit]} to apply the update`
+    setText(c.load, pend && owedUpdate ? `Load the update of ${LANE_NAME[unit]}`
+      : owedUpdate ? `Restart ${LANE_NAME[unit]} to apply the update`
       : seated || LANE_TARGETS[unit].length > 1 ? `Load ${TARGET_NAME[target]}` : `Load ${LANE_NAME[unit]}`);
     // installed on demand and not prepared yet, or prepared and not switched to yet (its
     // checkpoint, its chat template): only its Load, which prepares and switches it, can start it

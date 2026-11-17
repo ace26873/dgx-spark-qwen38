@@ -128,6 +128,12 @@ prepare_flash(){
 prepare_27b(){
   local unit=/etc/systemd/system/qwen38-sglang.service img model draft drev hf target trepo trev tok=()
   [ -f "$unit" ] || die "the 27B lane is not installed on this box (no $unit): ./install.sh installs it"
+  # an update left its new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what that unit reads (its
+  # image, its draft) is what this prepares; the cockpit puts it in place next (apply_pending)
+  if [ -f "$CONFIG_DIR/pending/qwen38-sglang.service" ]; then
+    unit="$CONFIG_DIR/pending/qwen38-sglang.service"
+    echo "the 27B lane's update waits for this Load: preparing what its new unit reads ($(unit_pending_says /etc/systemd/system/qwen38-sglang.service))"
+  fi
   img="$(engine_image "$unit")"; model="$(arg_of "$unit" --model-path)"; hf="$(mount_of "$unit" /root/.cache/huggingface)"
   draft="$(arg_of "$unit" --speculative-draft-model-path)"; drev="$(arg_of "$unit" --speculative-draft-model-revision)"
   case "$img" in -*) img="" ;; esac                  # a flag where the image should be, as for the flash lane

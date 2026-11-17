@@ -148,5 +148,29 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertFalse(self.pending.exists())
 
 
+
+class PrepareReadsTheWaitingUnit(unittest.TestCase):
+    """prepare-lane.sh 27b prepares what the unit waiting for this Load reads (its image, its draft), not the unit in
+    place, which serves the release before."""
+
+    def test_the_unit_it_reads(self):
+        text = (REPO / "prepare-lane.sh").read_text()
+        block = text[text.index("  # an update left its new unit waiting for this Load"):text.index("  img=\"$(engine_image \"$unit\")\"")]
+        d = pathlib.Path(tempfile.mkdtemp(prefix="prepare-pending-"))
+        (d / "pending").mkdir()
+        for waiting in (False, True):
+            with self.subTest(waiting=waiting):
+                if waiting:
+                    (d / "pending" / "qwen38-sglang.service").write_text("new")
+                    (d / "pending" / "qwen38-sglang.service.needs").write_text("image x\n")
+                r = subprocess.run(["bash", "-c", f'set -euo pipefail\nCONFIG_DIR="{d}"; . "{REPO}/lanes.sh"\n'
+                                    f'unit=/etc/systemd/system/qwen38-sglang.service\n{block}\necho "UNIT=$unit"'],
+                                   capture_output=True, text=True, timeout=30)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn(f"UNIT={d}/pending/qwen38-sglang.service" if waiting
+                              else "UNIT=/etc/systemd/system/qwen38-sglang.service", r.stdout)
+                if waiting:
+                    self.assertIn("preparing what its new unit reads (image x)", r.stdout)
+
 if __name__ == "__main__":
     unittest.main()

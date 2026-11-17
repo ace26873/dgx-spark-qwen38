@@ -485,5 +485,8 @@ afterApply(() => {
   const bad = Object.values(engines()).find(e => ['wedged', 'failed', 'degraded', 'orphan'].includes(e.state));
   const trans = Object.values(engines()).find(e => TRANSITIONAL.has(e.state) || e.state === 'stopping');
   badge('now', bad ? '!' : '', bad ? 'err' : '');
-  badge('lanes', bad ? bad.state : trans ? (trans.state === 'stopping' ? 'stopping' : 'booting') : '', bad ? 'err' : trans ? 'warn' : '');
+  // an update that waits for a lane's Load (decision 1409): orange until its Load
+  const waits = Object.keys(F.pending || {}).length;
+  badge('lanes', bad ? bad.state : trans ? (trans.state === 'stopping' ? 'stopping' : 'booting') : waits ? 'update' : '',
+        bad ? 'err' : trans || waits ? 'warn' : '');
 });

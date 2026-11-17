@@ -538,6 +538,7 @@ const ACTION_PHRASE = {
   delete_repo: p => `delete ${p.repo || 'a repository'} from the model cache`,
   delete_image: p => `delete the engine image ${p.image || ''}`,
   delete_runtime: p => `delete the ${RUNTIME_NAME[p.item] || p.item || 'runtime'}`,
+  apply_pending: p => `put in place the update ${LANE_NAME[p.unit] || p.unit || 'a lane'} waited for`,
   fetch: p => `download the checkpoint of ${TARGET_NAME[p.target] || p.target || 'a target'}`,
   clients: p => `set the clients for the window of ${TARGET_NAME[p.target] || p.target || 'a lane'}`,
   prepare: p => `build the runtime of the ${laneOfTarget(p.target) || ''} lane`,
@@ -867,15 +868,23 @@ function laneJourneySteps(target){
   const steps = [];
   // installed on demand: a lane whose runtime is not built yet builds it first, as the user
   const lane = SIDE_LANE[unit];
+  // an update that waits for this Load (decision 1408): its preparation fetches what the new unit lacks, the step after
+  // puts the unit in place; the restart below applies it
+  const pend = (F.pending || {})[unit];
   if (lane && (F.lanesReady || {})[lane] === false)
-    steps.push({name: 'prepare', params: {target}, title: `Build the runtime of ${LANE_NAME[unit]}`,
-      desc: `Its first Load: ${LANE_RUNTIME[lane]}, with no sudo.` + (lane === 'flash' || lane === '27b' ? '' : ' The next step fetches its checkpoint.')});
+    steps.push({name: 'prepare', params: {target},
+      title: pend ? `Download what the update of ${LANE_NAME[unit]} needs` : `Build the runtime of ${LANE_NAME[unit]}`,
+      desc: pend ? `What its new unit reads and this box lacks${pend.length ? ': ' + pend.join('; ') : ''}, with no sudo. It serves meanwhile.`
+        : `Its first Load: ${LANE_RUNTIME[lane]}, with no sudo.` + (lane === 'flash' || lane === '27b' ? '' : ' The next step fetches its checkpoint.')});
+  if (pend)
+    steps.push({name: 'apply_pending', params: {unit}, title: `Put in place the update ${LANE_NAME[unit]} waited for`,
+      desc: `Its new unit replaces the one it served with${pend.length ? ', now that the box has what it lacked: ' + pend.join('; ') : ''}. Nothing restarts yet.`});
   // The Load of the lane that serves this very target, with an update owed to it, is the
   // restart that applies the update and nothing else: the steps below would point the boot at
   // it (a lane started as installed is not the boot lane) or switch it back, which no update
   // asked for (found in review, 2026-10-17). The lane's card asks the same of it (lanes.js).
   const sv0 = servingEngine();
-  if (sv0 && sv0[0] === unit && laneTarget(unit) === target && updateOwed(unit))
+  if (sv0 && sv0[0] === unit && laneTarget(unit) === target && (updateOwed(unit) || pend))
     return steps.concat(!WINDOW_CLIENTS.has(unit) ? [] : bootUnit() === unit ? [clientsStep(unit, target)] : [clientsOnlyStep(unit, target)],
                         [{name: 'unit', params: {verb: 'restart', unit}, title: `Restart ${LANE_NAME[unit]} on what the update installed`,
              desc: `It answers again in ${readyIn(unit)}.` + (isImageLane(unit) || unit === VIDEO_UNIT ? ' A generation in flight is lost.' : '')}]);
@@ -1375,6 +1384,8 @@ on('update', d => { F.update = d || {}; });
 // runtime at the first Load): true, false, or null for a lane not installed
 on('lanes_ready', d => { F.lanesReady = d || {}; });
 on('lanes_startable', d => { F.lanesStartable = d || {}; });
+// an update that waits for a lane's Load (decision 1408): {unit: [what its new unit lacks]} (cockpit.py, pending_units)
+on('pending', d => { F.pending = d || {}; });
 on('agent', d => { F.agent = d; });
 on('containers', d => { F.containers = d.containers || {}; });
 on('job', renderJob);
