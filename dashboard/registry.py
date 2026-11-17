@@ -444,6 +444,71 @@ def apply_repo_deletion(plan: dict) -> int:
     return plan["bytes"]
 
 
+# A file of a snapshot hashed whole to compare it with the Hub: a config the installers rewrote, or a small file a
+# tool cached under another name than its git id (NVIDIA Sync's launcher names them by sha256: the disk cleanup of
+# 2026-11-16 read them "different" until their content was hashed). A larger one is not read: it stays unverified.
+HASH_MAX = 64 * 2**20
+
+
+def _hashes(path) -> tuple[str, str]:
+    """(git blob id, sha256) of a file's content: the Hub names a small file by the first, an LFS one by the second."""
+    import hashlib
+    size = os.path.getsize(path)
+    g, s = hashlib.sha1(b"blob %d\0" % size), hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            g.update(chunk)
+            s.update(chunk)
+    return g.hexdigest(), s.hexdigest()
+
+
+def upstream_verdict(snap: Path, siblings: list[dict]) -> dict:
+    """Whether the Hub serves every file of a cached revision as it is here, from the revision's file list with its
+    blob ids and LFS sha256 (GET /api/models/<repo>/revision/<rev>?blobs=true): what deleting it loses.
+
+    A linked file is the same when the name of the blob it reaches is the Hub's sha256 or git id at the same size, or
+    its content hashes to one of them. A file written in the snapshot (no link) is "rewritten here" when the Hub has a
+    file of that name and its content differs: the installers rewrite a few configs (YaRN's config.json, keeping the
+    original as config.json.pre-yarn, which is compared under the original name; the fp8 KV declaration of
+    hf_quant_config.json) and write them again from the Hub's. {"same", "rewritten": [...], "differs": [...],
+    "absent": [...], "unverified": [...], "identical": bool}."""
+    up = {s.get("rfilename"): s for s in siblings if isinstance(s, dict)}
+    out = {"same": 0, "rewritten": [], "differs": [], "absent": [], "unverified": []}
+    for base, _dirs, files in os.walk(snap):
+        for fn in sorted(files):
+            p = Path(base) / fn
+            rel = str(p.relative_to(snap))
+            name = rel[:-len(".pre-yarn")] if rel.endswith(".pre-yarn") else rel
+            s = up.get(name)
+            if s is None:
+                out["absent"].append(rel)
+                continue
+            lfs = s.get("lfs") or {}
+            ids, usize = {lfs.get("sha256"), s.get("blobId")} - {None}, lfs.get("size", s.get("size"))
+            try:
+                size = os.path.getsize(p)
+            except OSError:
+                out["differs"].append(rel)                  # a link to nothing: what it named is gone here
+                continue
+            # the repository blob's name, or the shared store's blob it links to, named otherwise (snac_24khz's
+            # repository blob is the Hub's sha256, its shared blob another hash)
+            names = {os.path.basename(os.path.realpath(p)), os.path.basename(_hop(p) or "")}
+            if p.is_symlink() and names & ids and usize in (None, size):
+                out["same"] += 1
+                continue
+            if size > HASH_MAX:
+                out["unverified"].append(rel)
+                continue
+            if set(_hashes(p)) & ids:
+                out["same"] += 1
+            elif not p.is_symlink() and rel == name:
+                out["rewritten"].append(rel)
+            else:
+                out["differs"].append(rel)
+    out["identical"] = not (out["differs"] or out["absent"] or out["unverified"])
+    return out
+
+
 def classify(models: list[dict], pins: dict[str, str]) -> list[dict]:
     """Mark every cached revision pinned (by which var) or stray."""
     # the first variable that pins a revision names it: two may pin one (MiniMax-H3's commit, the video lane's checkpoint

@@ -154,3 +154,83 @@ class DeleteRepo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpstreamVerdict(unittest.TestCase):
+    """What deleting a cached revision loses, read against the Hub's file list for that revision (blob ids, LFS
+    sha256): the check verif_hf.py made by hand for the disk cleanup of 2026-11-16, its traps included."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="registry-upstream-"))
+        self.addCleanup(__import__("shutil").rmtree, self.root, True)
+        self.snap = self.root / "models--o--m" / "snapshots" / REV
+        self.blobs = self.root / "models--o--m" / "blobs"
+
+    def linked(self, rel, data, name=None):
+        git, sha = self.hashes(data)
+        blob = self.blobs / (name or sha)
+        write(blob, data)
+        link(self.snap / rel, blob)
+        return git, sha
+
+    def written(self, rel, data):
+        write(self.snap / rel, data)
+
+    @staticmethod
+    def hashes(data):
+        import hashlib
+        return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest(), hashlib.sha256(data).hexdigest()
+
+    def sib(self, rel, data, lfs=True):
+        git, sha = self.hashes(data)
+        return {"rfilename": rel, "blobId": git, "size": len(data),
+                **({"lfs": {"sha256": sha, "size": len(data)}} if lfs else {})}
+
+    def test_identical_by_name_and_by_content(self):
+        w, c = b"w" * 50, b'{"a": 1}'
+        self.linked("model.safetensors", w)
+        # a small file a tool cached under its sha256 rather than its git id: the same once its content is hashed
+        self.linked("config.json", c)
+        v = rg.upstream_verdict(self.snap, [self.sib("model.safetensors", w), self.sib("config.json", c, lfs=False)])
+        self.assertEqual((v["same"], v["identical"]), (2, True))
+
+    def test_configs_the_installers_rewrite(self):
+        orig, patched = b'{"rope": null}', b'{"rope": "yarn"}'
+        self.written("config.json", patched)
+        self.written("config.json.pre-yarn", orig)
+        v = rg.upstream_verdict(self.snap, [self.sib("config.json", orig, lfs=False)])
+        self.assertEqual((v["same"], v["rewritten"], v["identical"]), (1, ["config.json"], True))
+        # the original kept beside it is what the Hub must still serve
+        self.written("config.json.pre-yarn", b'{"rope": "other"}')
+        v = rg.upstream_verdict(self.snap, [self.sib("config.json", orig, lfs=False)])
+        self.assertEqual((v["differs"], v["identical"]), (["config.json.pre-yarn"], False))
+
+    def test_a_linked_blob_the_hub_no_longer_serves(self):
+        self.linked("model.safetensors", b"old" * 10)
+        v = rg.upstream_verdict(self.snap, [self.sib("model.safetensors", b"new" * 10)])
+        self.assertEqual((v["differs"], v["identical"]), (["model.safetensors"], False))
+
+    def test_absent_upstream_and_a_broken_link(self):
+        self.linked("extra.bin", b"e")
+        link(self.snap / "gone.bin", self.blobs / "nothing")
+        v = rg.upstream_verdict(self.snap, [self.sib("gone.bin", b"g")])
+        self.assertEqual((v["absent"], v["differs"], v["identical"]), (["extra.bin"], ["gone.bin"], False))
+
+    def test_a_large_file_named_otherwise_stays_unverified(self):
+        data = b"L" * 300
+        self.linked("big.bin", data, name="not-its-hash")
+        old, rg.HASH_MAX = rg.HASH_MAX, 100
+        self.addCleanup(setattr, rg, "HASH_MAX", old)
+        v = rg.upstream_verdict(self.snap, [self.sib("big.bin", data)])
+        self.assertEqual((v["unverified"], v["identical"]), (["big.bin"], False))
+
+    def test_shared_store_blob_named_otherwise(self):
+        data = b"s" * 40
+        git, sha = self.hashes(data)
+        store = self.root / "blobs" / "13" / ("1" * 64)
+        write(store, data)
+        link(self.blobs / sha, store)
+        link(self.snap / "w.bin", self.blobs / sha)
+        old, rg.HASH_MAX = rg.HASH_MAX, 10                   # by its names alone, not by its content
+        self.addCleanup(setattr, rg, "HASH_MAX", old)
+        self.assertTrue(rg.upstream_verdict(self.snap, [self.sib("w.bin", data)])["identical"])
