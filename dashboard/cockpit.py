@@ -3366,15 +3366,29 @@ def job_apply_pending(job: Job):
     src = PENDING_DIR / unit
     if not src.is_file():
         return True, [f"no update waits for {unit}"], {"ok": True}
-    r = subprocess.run(["bash", "-c", 'set -u; . "$1/lanes.sh"; unit_needs "$2"', "x", str(REPO_DIR), str(src)],
+    # the flash lane's serving command is its launcher, the user's file: what waits is that launcher (install.sh)
+    launch = PENDING_DIR / "launch-flash.sh" if unit == "qwen38-flash.service" else None
+    r = subprocess.run(["bash", "-c", 'set -u; . "$1/lanes.sh"; unit_needs "$2"', "x", str(REPO_DIR),
+                        str(launch if launch and launch.is_file() else src)],
                        capture_output=True, text=True, timeout=120)
     lacks = [ln for ln in r.stdout.splitlines() if ln.strip()]
     if r.returncode != 0 or lacks:
         return False, [f"{unit}'s update still lacks: " + ("; ".join(lacks) or r.stderr.strip()[:200])
                        + " (its Load prepares it first)"], {"ok": False}
+    lines = []
+    if launch is not None:
+        if launch.is_file():
+            tmp = CONFIG_DIR / "launch-flash.sh.pending-tmp"
+            shutil.copyfile(launch, tmp)
+            os.chmod(tmp, 0o755)
+            os.replace(tmp, CONFIG_DIR / "launch-flash.sh")
+            launch.unlink()
+        src.unlink(missing_ok=True)
+        (PENDING_DIR / (unit + ".needs")).unlink(missing_ok=True)
+        audit({"kind": "pending_applied", "unit": unit})
+        return True, [f"{unit}: its new launch script is in place; its restart applies it"], {"ok": True}
     stage = CONFIG_DIR / f"{unit}.switch-stage"
     shutil.copyfile(src, stage)
-    lines = []
     for argv in (["sudo", "-n", "/usr/bin/install", "-m", "644", str(stage), f"/etc/systemd/system/{unit}"],
                  ["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"]):
         out = run(argv, timeout=60, merge_err=True)
@@ -6652,7 +6666,7 @@ def job_delete_runtime(job: Job):
 
 # the units whose new unit can wait for their Load: those an exact sudoers line lets the cockpit put in place from
 # their fixed staging path (dashboard/sudoers-cockpit.template)
-PENDING_UNITS = ("qwen38-sglang.service", "qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service",
+PENDING_UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service",
                  "qwen38-kolibri.service", "qwen38-nemotron.service", "qwen38-nemotron-super.service",
                  "qwen38-flash-local.service", "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service")
 ACTIONS["apply_pending"] = {

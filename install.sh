@@ -3406,6 +3406,17 @@ if [ "$LANE" = "flash" ]; then
   # said as it is: an update that changed nothing here read "wrote" all the same
   if cmp -s "$TMP_LAUNCH" "$CONFIG_DIR/launch-flash.sh"; then
     echo "launch script unchanged: $CONFIG_DIR/launch-flash.sh"
+    rm -f "$CONFIG_DIR/pending/launch-flash.sh"
+  elif [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$CONFIG_DIR/launch-flash.sh" ] && [ -n "$(unit_needs "$TMP_LAUNCH")" ] \
+       && [ -z "$(unit_needs "$CONFIG_DIR/launch-flash.sh")" ]; then
+    # the flash lane's serving command is its launcher (lanes.sh's unit_put says why a new one waits): kept as it is,
+    # the new one waits for the lane's Load beside the unit in place, which is noted as waiting with what it lacks
+    mkdir -p "$CONFIG_DIR/pending"
+    install -m 755 "$TMP_LAUNCH" "$CONFIG_DIR/pending/launch-flash.sh"
+    unit_needs "$TMP_LAUNCH" > "$CONFIG_DIR/pending/qwen38-flash.service.needs"
+    cp "/etc/systemd/system/qwen38-flash.service" "$CONFIG_DIR/pending/qwen38-flash.service" 2>/dev/null \
+      || cp "$TMP_LAUNCH" "$CONFIG_DIR/pending/qwen38-flash.service"
+    echo "its new launch script waits for its Load, the one in place kept: it lacks $(unit_pending_says qwen38-flash.service) (decision 1408)"
   else
     install -m 755 "$TMP_LAUNCH" "$CONFIG_DIR/launch-flash.sh"
     echo "wrote $CONFIG_DIR/launch-flash.sh"

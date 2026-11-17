@@ -81,6 +81,12 @@ pins_or_die(){  # the pins install.sh declares, the one place they are, each che
 prepare_flash(){
   local launch="$CONFIG_DIR/launch-flash.sh" img model hf ple map target rev why
   [ -f "$launch" ] || die "the flash lane is not installed on this box (no $launch): ./install.sh installs it"
+  # an update left its new launch script waiting for this Load (install.sh, decision 1408): what it reads is what this
+  # prepares; the cockpit puts it in place next (apply_pending)
+  if [ -f "$CONFIG_DIR/pending/launch-flash.sh" ]; then
+    launch="$CONFIG_DIR/pending/launch-flash.sh"
+    echo "the flash lane's update waits for this Load: preparing what its new launch script reads ($(unit_pending_says qwen38-flash.service))"
+  fi
   # its image and its checkpoint (223 GB in all) for a lane that cannot start on a GB10 outside
   # its ATS addressing mode (issue #54): said before the first byte
   if why="$(flash_cannot_start)"; then die "the flash lane cannot start on this box: $why"; fi

@@ -124,10 +124,32 @@ class ApplyPending(unittest.TestCase):
     def test_every_unit_that_can_wait_has_its_sudoers_line(self):
         sudoers = (DASH / "sudoers-cockpit.template").read_text()
         for unit in self.cp.PENDING_UNITS:
+            if unit == "qwen38-flash.service":
+                continue        # its launcher waits, the user's file: no sudo (test below)
             with self.subTest(unit=unit):
                 self.assertIn(f"/usr/bin/install -m 644 __HOME__/.config/qwen38/{unit}.switch-stage /etc/systemd/system/{unit}",
                               sudoers)
 
+
+    def test_the_flash_lanes_launcher_goes_in_place_with_no_sudo(self):
+        flash = "qwen38-flash.service"
+        (self.pdir / flash).write_text("[Service]\nExecStart=launch\n")
+        (self.pdir / "launch-flash.sh").write_text("#!/bin/bash\nnew\n")
+        (self.pdir / (flash + ".needs")).write_text("image x\n")
+        launcher = self.cp.CONFIG_DIR / "launch-flash.sh"
+        launcher.write_text("#!/bin/bash\nold\n")
+        code, body = self.cp.start_action("apply_pending", {"unit": flash})
+        self.assertEqual(code, 202, body)
+        job = self.cp.JOBS[body["job"]]
+        for _ in range(200):
+            if job.status != "running":
+                break
+            time.sleep(0.05)
+        self.assertEqual(job.status, "done", job.lines)
+        self.assertEqual(launcher.read_text(), "#!/bin/bash\nnew\n")
+        self.assertTrue(os.access(launcher, os.X_OK))
+        self.assertEqual(self.calls, [], "no sudo for the user's own file")
+        self.assertNotIn(flash, self.cp.pending_units())
 
 if __name__ == "__main__":
     unittest.main()
