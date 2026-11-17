@@ -219,7 +219,11 @@ unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written 
 unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   local hf img repo rev f seen=" "
   [ -r "$1" ] || return 0
-  hf="$(unit_hf_cache "$1")"; hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"
+  # the cache a container mounts, or the one a native lane names in its environment (the image and video lanes: code
+  # review of v1.52.0, read in the default cache they were not)
+  hf="$(unit_hf_cache "$1")"
+  [ -n "$hf" ] || hf="$({ grep -m1 -oE '^Environment=HF_HOME=[^ ]+' "$1" || true; } | cut -d= -f3- | tr -s /)"
+  hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"
   for img in $(engine_image "$1") $({ grep -oE '[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}' "$1" || true; }) \
              $({ grep -oE 'qwen38-(kolibri|nemotron):[A-Za-z0-9._-]+' "$1" || true; }); do
     case "$seen" in *" $img "*) continue ;; esac
@@ -227,6 +231,8 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
     docker image inspect "$img" >/dev/null 2>&1 || echo "image $img"
   done
   repo="$({ grep -m1 -oE -- '(--model-path|vllm serve) [^ ]+' "$1" || true; } | head -1 | awk '{print $NF}')"
+  # Kolibri's and the Nemotron lanes' units name their model as the first word of its own line, before its revision
+  [ -n "$repo" ] || repo="$({ grep -m1 -oE '^[[:space:]]*[A-Za-z0-9._-]+/[A-Za-z0-9._-]+ --revision ' "$1" || true; } | awk '{print $1}')"
   rev="$({ grep -m1 -oE -- '--revision [^ ]+' "$1" || true; } | head -1 | cut -d' ' -f2)"
   case "$repo" in
     "") ;;
@@ -251,6 +257,8 @@ unit_pending_says(){  # $1 where a unit goes: what its unit waiting in $CONFIG_D
   paste -sd ';' "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs" 2>/dev/null | sed 's/;/; /g'
 }
 unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for it any more
+  # the flash lane's wait is its launch script's (install.sh): its unit, which only runs that script, clears nothing
+  [ "$(basename "$1")" = qwen38-flash.service ] && [ -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/launch-flash.sh" ] && return 0
   rm -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1")" "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs"
 }
 lane_serves_older(){  # $1 unit, $2... its files: true when it serves and one of them is newer than its start

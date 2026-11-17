@@ -93,6 +93,26 @@ class UnitNeeds(unittest.TestCase):
         (snap / "m-1.safetensors").write_bytes(b"1")
         self.assertEqual(self.b.needs(self.b.text()), [f"checkpoint RadixArk/Qwen3.8-27B-NVFP4@{REV1}"])
 
+    def test_a_model_named_first_on_its_line(self):
+        # Kolibri's and the Nemotron lanes' units (code review of v1.52.0: unit_needs did not see their checkpoint)
+        text = (f"ExecStart=/bin/bash -c 'exec /usr/bin/docker run -v {self.b.hf}:/root/.cache/huggingface \\\n"
+                f"  {OLD_IMG} \\\n    Aleph-Alpha/Kolibri-1 --revision {REV2} \\\n    --port 30000'\n")
+        self.assertEqual(self.b.needs(text), [f"checkpoint Aleph-Alpha/Kolibri-1@{REV2}"])
+        self.b.ckpt("Aleph-Alpha/Kolibri-1", REV2)
+        self.assertEqual(self.b.needs(text), [])
+
+    def test_a_native_lane_reads_the_cache_its_environment_names(self):
+        # the image and video lanes set HF_HOME: their checkpoint is looked for there, not in the default cache
+        other = self.b.d / "other-disk"
+        snap = other / "hub" / "models--MiniMaxAI--MiniMax-H3" / "snapshots" / REV1
+        snap.mkdir(parents=True)
+        (snap / "model.safetensors").write_bytes(b"w")
+        text = (f"[Service]\nEnvironment=HF_HOME={other}\n"
+                f"ExecStart=/home/x/venv/bin/python -m sglang serve --model-path MiniMaxAI/MiniMax-H3 --revision {REV1}\n")
+        self.assertEqual(self.b.needs(text), [])
+        (snap / "model.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"checkpoint MiniMaxAI/MiniMax-H3@{REV1}"])
+
     def test_a_gguf_part_named_by_its_path(self):
         part = f"{self.b.hf}/hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/{'e' * 40}/UD-IQ3_XXS/m-00001.gguf"
         text = f"ExecStart=/usr/bin/docker run --rm {OLD_IMG} -m {part} --port 30000\n"
@@ -141,6 +161,21 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertEqual(self.b.put(new), "PUT=new")
         self.assertEqual(self.b.unit.read_text(), new)
         self.assertFalse(self.pending.exists())
+
+    def test_the_flash_lanes_waiting_launcher_survives_its_units_put(self):
+        # its wait is its launch script's: the unit that only runs that script clears nothing (code review of v1.52.0)
+        flash = self.b.d / "qwen38-flash.service"
+        flash.write_text("[Service]\nExecStart=launch-flash.sh\n")
+        pend = self.b.config / "pending"
+        pend.mkdir()
+        for f in ("launch-flash.sh", "qwen38-flash.service", "qwen38-flash.service.needs"):
+            (pend / f).write_text("x\n")
+        f = self.b.d / "rendered"
+        f.write_text(flash.read_text())
+        r = self.b.sh(f'P="$(unit_put "{f}" "{flash}")"\necho "PUT=$P"', env={"PENDING_PUT": "1"})
+        self.assertIn("PUT=same", r.stdout, r.stderr)
+        self.assertEqual(sorted(x.name for x in pend.iterdir()),
+                         ["launch-flash.sh", "qwen38-flash.service", "qwen38-flash.service.needs"])
 
     def test_the_same_unit_again_clears_what_waited(self):
         self.assertEqual(self.b.put(self.b.text(img=NEW_IMG)), "PUT=pending")

@@ -127,5 +127,68 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
     def test_a_unit_already_waiting_is_left_as_it_is(self):
         self.assertEqual(self.run_fn(waiting=True), ("newer", "image x\n"))
 
+
+class SideInstall(unittest.TestCase):
+    """install.sh's side_install, which every lane beside the text lane goes through on a run, the box's boot lane
+    included (code review of v1.52.0: the branch for a box booting a side lane called the installers directly)."""
+    FNS = (TEXT[TEXT.index("SIDE_WAITED=\" \""):TEXT.index("side_mode(){")])
+
+    def test_no_installer_of_a_side_lane_is_called_but_through_it(self):
+        import re
+        direct = re.findall(r'"\$REPO_DIR/install-[a-z0-9-]+\.sh" "\$(?:\(side_mode|[A-Z0-9_]+_MODE)', TEXT)
+        self.assertEqual(direct, [])
+
+    def run_side(self, lane="kolibri", mode="--no-smoke", named=0, pending_put=1, waits=False, lacks=False,
+                 runtime_moves=False):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="side-install-"))
+        repo, cfg, etc = d / "repo", d / "config", d / "etc"
+        for x in (repo, cfg, etc):
+            x.mkdir()
+        log = d / "calls"
+        log.write_text("")
+        wait = (f'case "$*" in *--units-only*) mkdir -p "{cfg}/pending"; echo new > "{cfg}/pending/qwen38-{lane}.service"; '
+                f'echo "image x" > "{cfg}/pending/qwen38-{lane}.service.needs" ;; esac\n') if waits else ""
+        inst = repo / f"install-{lane}.sh"
+        inst.write_text(f'#!/bin/bash\necho "install-{lane}.sh $*" >> "{log}"\n' + wait + "exit 0\n")
+        inst.chmod(0o755)
+        (etc / f"qwen38-{lane}.service").write_text("[Service]\nExecStart=old\n")
+        script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"; PENDING_PUT={pending_put}; ALL_WEIGHTS=0\n'
+                  f'lane_title(){{ echo "$1"; }}\nunit_pending_says(){{ echo "image x"; }}\n'
+                  f'unit_needs(){{ {"echo checkpoint gone" if lacks else "true"}; }}\n'
+                  + self.FNS.replace("/etc/systemd/system/", f"{etc}/")
+                  # the runtime's own verdict is tested above: here it waits or not, as asked
+                  + ('side_runtime_waits(){ mkdir -p "$CONFIG_DIR/pending"; cp "' + str(etc) + '/qwen38-$1.service" '
+                     '"$CONFIG_DIR/pending/qwen38-$1.service"; echo "runtime x" > "$CONFIG_DIR/pending/qwen38-$1.service.needs"; }\n'
+                     if runtime_moves else 'side_runtime_waits(){ :; }\n')
+                  + f'side_install {lane} {mode} {named}\necho "WAITED=$SIDE_WAITED"\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return log.read_text().splitlines(), r.stdout
+
+    def test_its_new_unit_waits_and_nothing_more_runs(self):
+        calls, out = self.run_side(waits=True)
+        self.assertEqual(calls, ["install-kolibri.sh --units-only"])
+        self.assertIn("WAITED= kolibri ", out)
+        self.assertIn("the kolibri lane's update waits for its next Load", out)
+
+    def test_a_runtime_that_moves_waits_with_its_unit_untouched(self):
+        calls, out = self.run_side(lane="image", runtime_moves=True)
+        self.assertEqual(calls, [], "not even its units: the new unit would run on the old venv at the next boot")
+        self.assertIn("WAITED= image ", out)
+
+    def test_a_lane_that_lacks_what_its_unit_reads_gets_its_units_only(self):
+        calls, out = self.run_side(lacks=True)
+        self.assertEqual(calls, ["install-kolibri.sh --units-only"])
+        self.assertIn("its units only, and its next Load prepares it", out)
+
+    def test_nothing_waits_nothing_lacks_the_rest_follows(self):
+        calls, _ = self.run_side()
+        self.assertEqual(calls, ["install-kolibri.sh --units-only", "install-kolibri.sh --no-smoke"])
+
+    def test_named_or_on_demand_or_a_new_box_as_before(self):
+        self.assertEqual(self.run_side(named=1, waits=True)[0], ["install-kolibri.sh --no-smoke"])
+        self.assertEqual(self.run_side(mode="--units-only")[0], ["install-kolibri.sh --units-only"])
+        self.assertEqual(self.run_side(pending_put=0, waits=True)[0], ["install-kolibri.sh --no-smoke"])
+
 if __name__ == "__main__":
     unittest.main()

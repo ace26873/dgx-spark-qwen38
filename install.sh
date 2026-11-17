@@ -1673,12 +1673,22 @@ side_begun(){  # $1 lane (image, video, kolibri, nemotron, nemotron-super, flash
 # --with-<lane> and --all-weights update it whole now, as asked.
 SIDE_WAITED=" "
 side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<lane>): runs its installer
+  local unit="/etc/systemd/system/qwen38-$1.service"
   if [ "$2" = --no-smoke ] && [ "${PENDING_PUT:-0}" = 1 ] && [ "$ALL_WEIGHTS" -eq 0 ] && [ "${3:-0}" -eq 0 ]; then
-    "$REPO_DIR/install-$1.sh" --units-only || return 1
+    # a venv whose SGLang moved waits whole, its unit in place untouched: put first, the new unit ran on the old venv
+    # at the lane's next boot (code review of v1.52.0)
     side_runtime_waits "$1"
+    [ -f "$CONFIG_DIR/pending/qwen38-$1.service" ] || "$REPO_DIR/install-$1.sh" --units-only || return 1
     if [ -f "$CONFIG_DIR/pending/qwen38-$1.service" ]; then
       SIDE_WAITED="$SIDE_WAITED$1 "
-      echo "NOTE: the $(lane_title "$1") lane's update waits for its next Load, which downloads what it lacks ($(unit_pending_says "/etc/systemd/system/qwen38-$1.service")); it serves the release it served until then (./install.sh --with-$1 downloads it now)."
+      echo "NOTE: the $(lane_title "$1") lane's update waits for its next Load, which downloads what it lacks ($(unit_pending_says "$unit")); it serves the release it served until then (./install.sh --with-$1 downloads it now)."
+      return 0
+    fi
+    # a lane whose unit lacks what it reads (a checkpoint deleted from Library) cannot serve as it is: its units only,
+    # and its Load prepares it; the rest of its update downloaded it all again (code review of v1.52.0)
+    if [ -n "$(unit_needs "$unit")" ]; then
+      SIDE_WAITED="$SIDE_WAITED$1 "
+      echo "NOTE: the $(lane_title "$1") lane lacks what its unit reads ($(unit_needs "$unit" | paste -sd ';' | sed 's/;/; /g')): its units only, and its next Load prepares it."
       return 0
     fi
   fi
@@ -3610,42 +3620,42 @@ else
   # Since v1.20 a side lane missing here is installed too, unless it was left out
   # (lane_wanted): installed and updated, proved by its first load from the cockpit.
   if [ "$WANT_IMAGE" -eq 1 ]; then
-    "$REPO_DIR/install-image.sh" "$(side_mode image "$WITH_IMAGE")" \
+    side_install image "$(side_mode image "$WITH_IMAGE")" "$WITH_IMAGE" \
       || echo "NOTE: the image lane did not install or update; retry with ./install-image.sh --no-smoke"
   fi
   if [ "$WANT_VIDEO" -eq 1 ]; then
-    "$REPO_DIR/install-video.sh" "$(side_mode video "$WITH_VIDEO")" \
+    side_install video "$(side_mode video "$WITH_VIDEO")" "$WITH_VIDEO" \
       || echo "NOTE: the video lane did not install or update; retry with ./install-video.sh --no-smoke"
   fi
   if [ "$WANT_KOLIBRI" -eq 1 ]; then
-    "$REPO_DIR/install-kolibri.sh" "$(side_mode kolibri "$WITH_KOLIBRI")" \
+    side_install kolibri "$(side_mode kolibri "$WITH_KOLIBRI")" "$WITH_KOLIBRI" \
       || echo "NOTE: the Kolibri-1 lane did not install or update; retry with ./install-kolibri.sh --no-smoke"
   fi
   if [ "$WANT_NEMOTRON" -eq 1 ]; then
-    "$REPO_DIR/install-nemotron.sh" "$(side_mode nemotron "$WITH_NEMOTRON")" \
+    side_install nemotron "$(side_mode nemotron "$WITH_NEMOTRON")" "$WITH_NEMOTRON" \
       || echo "NOTE: the Nemotron 3.5 Bolt lane did not install or update; retry with ./install-nemotron.sh --no-smoke"
   fi
   if [ "$WANT_NEMOTRON_SUPER" -eq 1 ]; then
-    "$REPO_DIR/install-nemotron-super.sh" "$(side_mode nemotron-super "$WITH_NEMOTRON_SUPER")" \
+    side_install nemotron-super "$(side_mode nemotron-super "$WITH_NEMOTRON_SUPER")" "$WITH_NEMOTRON_SUPER" \
       || echo "NOTE: the Nemotron 3.5 Super VL lane did not install or update; retry with ./install-nemotron-super.sh --no-smoke"
   fi
   if [ "$WANT_FLASH_LOCAL" -eq 1 ]; then
-    "$REPO_DIR/install-flash-local.sh" "$(side_mode flash-local "$WITH_FLASH_LOCAL")" \
+    side_install flash-local "$(side_mode flash-local "$WITH_FLASH_LOCAL")" "$WITH_FLASH_LOCAL" \
       || echo "NOTE: the Qwen3.8 Flash-Next FP4-Local lane did not install or update; retry with ./install-flash-local.sh --no-smoke"
   fi
   if [ "$WANT_ORNITH_122B" -eq 1 ]; then
-    "$REPO_DIR/install-ornith-122b.sh" "$(side_mode ornith-122b "$WITH_ORNITH_122B")" \
+    side_install ornith-122b "$(side_mode ornith-122b "$WITH_ORNITH_122B")" "$WITH_ORNITH_122B" \
       || echo "NOTE: the Ornith 1.5 122B lane did not install or update; retry with ./install-ornith-122b.sh --no-smoke"
   fi
   if [ "$WANT_FLASH_UNSLOTH" -eq 1 ]; then
-    if "$REPO_DIR/install-flash-unsloth.sh" "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")"; then
+    if side_install flash-unsloth "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")" "$WITH_FLASH_UNSLOTH"; then
       unsloth_clients_follow
     else
       echo "NOTE: the Qwen3.8 Flash-Next Unsloth GGUF lane did not install or update; retry with ./install-flash-unsloth.sh --no-smoke"
     fi
   fi
   if [ "$WANT_IMAGE_H3" -eq 1 ]; then
-    "$REPO_DIR/install-image-h3.sh" "$(side_mode image-h3 "$WITH_IMAGE_H3")" \
+    side_install image-h3 "$(side_mode image-h3 "$WITH_IMAGE_H3")" "$WITH_IMAGE_H3" \
       || echo "NOTE: the MiniMax-H3-Image lane did not install or update; retry with ./install-image-h3.sh --no-smoke"
   fi
   SERVING_LANE=""

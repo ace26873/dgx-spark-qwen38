@@ -509,10 +509,13 @@ class TheInstallerDecides(unittest.TestCase):
         self.assertNotIn('sudo install -m 644 "$TMP_UNIT"', text, "the unit goes in through unit_put alone")
         # the launcher is installed in the branch where the comparison found a difference,
         # and only there (it also says which of the two happened, since 2026-09-30)
+        # (v1.52.0: between the two, an update whose new launcher reads what the box lacks leaves it waiting in
+        # pending/, the launcher the engine reads untouched)
         self.assertRegex(text, r'if cmp -s "\$TMP_LAUNCH" "\$CONFIG_DIR/launch-flash\.sh"; then\n'
-                               r'\s*echo "launch script unchanged[^\n]*\n\s*else\n'
+                               r'\s*echo "launch script unchanged[^\n]*\n(?:[^\n]*\n)*?\s*else\n'
                                r'\s*install -m 755 "\$TMP_LAUNCH" "\$CONFIG_DIR/launch-flash\.sh"\n')
-        self.assertEqual(text.count('install -m 755 "$TMP_LAUNCH"'), 1, "no other path writes the launcher")
+        self.assertEqual(text.count('install -m 755 "$TMP_LAUNCH" "$CONFIG_DIR/launch-flash.sh"'), 1,
+                         "no other path writes the launcher")
 
     def test_the_restart_itself_is_the_one_the_decision_guards(self):
         self.assertIn('[ "$ENGINE_KEEP" -eq 1 ] || sudo systemctl restart "$UNIT_NAME"',
