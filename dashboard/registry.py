@@ -455,7 +455,11 @@ def apply_repo_deletion(plan: dict) -> int:
     repo_dir = Path(plan["repo_dir"])
     if plan["whole"]:
         import shutil
-        shutil.rmtree(repo_dir)
+        # a repository kept on another disk, its folder a link from the cache (MiniMax-H3 on the reference box): the
+        # folder it links to, then the link (rmtree refuses a link)
+        shutil.rmtree(os.path.realpath(repo_dir))
+        if repo_dir.is_symlink():
+            repo_dir.unlink()
         shutil.rmtree(repo_dir.parent / ".locks" / repo_dir.name, ignore_errors=True)
     else:
         for p in plan["links"] + plan["blobs"]:

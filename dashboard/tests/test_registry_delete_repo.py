@@ -78,6 +78,17 @@ class DeleteRepo(unittest.TestCase):
         self.assertFalse(repo.exists())
         self.assertFalse((self.c.hub / ".locks" / repo.name).exists())
 
+    def test_a_repository_linked_from_another_disk_goes_with_its_link(self):
+        far = Cache(self.root / "interne").repo("h3", {"te.bin": b"z" * 64})
+        link = self.c.hub / far.name
+        os.symlink(far, link)
+        plan = rg.repo_deletion_plan(link)
+        self.assertEqual((plan["whole"], plan["bytes"]), (True, 64))
+        rg.apply_repo_deletion(plan)
+        self.assertFalse(os.path.lexists(link))
+        self.assertFalse(far.exists())
+        self.assertTrue((self.root / "interne" / "hub").is_dir(), "only the repository goes, not its cache")
+
     def test_shared_blob_goes_only_with_its_last_repository(self):
         sha, other = "b" * 64, "c" * 64
         alone = self.c.store(sha, b"y" * 500, ["m"])
