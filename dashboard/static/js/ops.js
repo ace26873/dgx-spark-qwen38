@@ -444,6 +444,8 @@ async function loadRecipes(){
 // Library's Delete of one repository: the server's plan first (what it frees on which disk, what it keeps and why,
 // who reads it now, the Hub's verdict per revision), then the sheet. Read now by anything: said, and no sheet. Not
 // served by the Hub as it is here: said in the sheet, whose button then reads "Delete it anyway" (lose=yes).
+// what another project of the box keeps (~/.config/qwen38/library-keep): said, with no Delete
+const keptTag = who => { const k = el('span', 'muted', `kept for ${who}`); k.title = 'listed in ~/.config/qwen38/library-keep'; return k; };
 function deleteRepoButton(repo, cache){
   const b = el('button', 'btn sm ghost', 'Delete'); b.type = 'button';
   b.setAttribute('aria-label', `Delete ${repo} from the cache`);
@@ -518,7 +520,7 @@ async function scanRegistry(fresh = true){
       if (del && del.bytes != null){ offered.push({repo: m.repo_id, rev: rv.rev, bytes: del.bytes}); s.append(' ', el('span', 'muted', `frees ${fmtGiB(del.bytes)}`)); }
       else if (del && del.refused) s.append(' ', el('span', 'muted', `kept: ${del.refused}`));
       // the whole repository, on its first row: Library's Delete (deleteRepoButton)
-      if (!i) s.append(' ', deleteRepoButton(m.repo_id, m.cache));
+      if (!i) s.append(' ', m.keep ? keptTag(m.keep) : deleteRepoButton(m.repo_id, m.cache));
     }));
     REG_STRAYS.list = offered; REG_STRAYS.bytes = offered.reduce((a, x) => a + x.bytes, 0);
     const rd = $('reg-del'); rd.hidden = !offered.length;
@@ -551,7 +553,7 @@ async function scanRegistry(fresh = true){
     // longer widens its column past the panel and pushes Size and ID out of view on a desk screen
     // one Delete per image, on the first of its names: docker rmi of one name only takes that name away
     const imgSeen = new Set();
-    (d.images || []).forEach(im => { const tr = ti.insertRow(); const n = tr.insertCell(); n.className = 'brk'; n.textContent = im.ref; const a = tr.insertCell(); a.className = 'r num sz'; a.textContent = im.size; const c = tr.insertCell(); c.className = 'r num'; c.textContent = im.id; const x = tr.insertCell(); if (!imgSeen.has(im.id)){ imgSeen.add(im.id); x.append(deleteImageButton(im.id)); } });
+    (d.images || []).forEach(im => { const tr = ti.insertRow(); const n = tr.insertCell(); n.className = 'brk'; n.textContent = im.ref; const a = tr.insertCell(); a.className = 'r num sz'; a.textContent = im.size; const c = tr.insertCell(); c.className = 'r num'; c.textContent = im.id; const x = tr.insertCell(); if (!imgSeen.has(im.id)){ imgSeen.add(im.id); x.append(im.keep ? keptTag(im.keep) : deleteImageButton(im.id)); } });
     if (!ti.rows.length) emptyRow(ti, 4, 'No engine image.');
     labelCells($('reg-images'));
     // the lanes' runtimes and the diffusion runtime's caches: what each holds, on which disk, and its Delete
@@ -561,7 +563,7 @@ async function scanRegistry(fresh = true){
     labelCells($('reg-runtimes'));
     const to = $('reg-other').tBodies[0]; clear(to);
     const others = (d.other_models || []).slice().sort((x, y) => y.disk_bytes - x.disk_bytes);
-    others.forEach(m => { const tr = to.insertRow(); const n = tr.insertCell(); n.textContent = m.repo_id; n.append(' ', deleteRepoButton(m.repo_id, m.cache)); const c = tr.insertCell(); c.className = 'r num sz'; c.textContent = fmtGiB(m.disk_bytes); });
+    others.forEach(m => { const tr = to.insertRow(); const n = tr.insertCell(); n.textContent = m.repo_id; n.append(' ', m.keep ? keptTag(m.keep) : deleteRepoButton(m.repo_id, m.cache)); const c = tr.insertCell(); c.className = 'r num sz'; c.textContent = fmtGiB(m.disk_bytes); });
     if (!others.length) emptyRow(to, 2, 'None.');
     setText('reg-other-tag', others.length ? fmtGiB(others.reduce((a, m) => a + m.disk_bytes, 0)) + ' in ' + others.length : '');
     const strays = (d.models || []).flatMap(m => m.revisions).filter(rv => rv.status === 'stray');

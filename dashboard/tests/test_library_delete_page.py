@@ -141,5 +141,25 @@ class LibrarySaysEachDisk(unittest.TestCase):
         self.assertIn("/mnt/ssd: 1181 GiB free of 1877 GiB (models 303.0 GiB)", r["disks"])
         self.assertEqual(r["runtimes"], [["MiniMax-H3-Image runtime on /", "16.0 GiB", "Delete"]])
 
+
+class LibraryShowsWhatAnotherProjectKeeps(unittest.TestCase):
+    def test_a_kept_repository_and_image_say_who_keeps_them_and_offer_no_delete(self):
+        reg = dict(REG, models=[dict(REG["models"][0], keep="GTA, brouillon de gta-vlm")],
+                   other_models=[dict(REG["other_models"][0], keep=None)],
+                   images=[dict(IMAGES[1], keep="GTA, image de gta-vlm"), dict(IMAGES[0], keep=None)])
+        r = run(self, r"""
+        __fetch = async (url, init) => url.startsWith('/api/recipes') ? __response(200, {builtin: [], custom: [], custom_dir: ''})
+          : url.startsWith('/api/registry') ? __response(200, %s) : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        showView('library'); await __settle(); await __settle();
+        const rows = id => [...$(id).tBodies[0].rows].map(r => ({text: r.textContent, buttons: r.querySelectorAll('button').length}));
+        report({models: rows('reg-models'), other: rows('reg-other'), images: rows('reg-images')});
+        """ % json.dumps(reg))
+        self.assertIn("kept for GTA, brouillon de gta-vlm", r["models"][0]["text"])
+        self.assertEqual([x["buttons"] for x in r["models"]], [0, 0])
+        self.assertEqual(r["other"][0]["buttons"], 1)
+        self.assertIn("kept for GTA, image de gta-vlm", r["images"][0]["text"])
+        self.assertEqual([x["buttons"] for x in r["images"]], [0, 1])
+
 if __name__ == "__main__":
     unittest.main()

@@ -166,5 +166,20 @@ class DeleteImage(unittest.TestCase):
         self.assertTrue(any("not an engine image of this stack" in ln for ln in body["lines"]), body["lines"])
 
 
+    def test_what_another_project_keeps_has_no_delete(self):
+        keep = self.tmp / "config" / "library-keep"
+        self.addCleanup(lambda: keep.exists() and keep.unlink())
+        for line in (DIGEST + "  # GTA", DIGEST[:len("eugr/spark-vllm-b12x@sha256:") + 12] + " # GTA",
+                     "a7f76ae9f18c # GTA", FULL + "  # GTA"):
+            keep.write_text(line + "\n")
+            code, body = self.act()
+            self.assertEqual(body["status"], "failed", (line, body))
+            self.assertTrue(any("kept for GTA (library-keep)" in ln for ln in body["lines"]), body["lines"])
+        self.assertEqual(self.rmi, [])
+        # a digest by fewer than 12 characters names no image
+        keep.write_text(DIGEST[:len("eugr/spark-vllm-b12x@sha256:") + 6] + " # GTA\n")
+        code, body = self.act()
+        self.assertEqual(body["status"], "done", body)
+
 if __name__ == "__main__":
     unittest.main()

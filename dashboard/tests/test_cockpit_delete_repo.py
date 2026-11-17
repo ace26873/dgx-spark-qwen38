@@ -322,5 +322,19 @@ class DeleteRepo(unittest.TestCase):
         self.assertEqual(len(plan["revisions"]), 4, plan)
         self.assertLess(time.time() - t0, 1.2, "four revisions asked one after the other")
 
+    def test_what_another_project_keeps_has_no_delete(self):
+        keep = self.tmp / "config" / "library-keep"
+        keep.write_text(f"{DSPARK}  # GTA, brouillon de gta-vlm\n# a comment line\n\n")
+        self.addCleanup(keep.unlink)
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(self.repo.exists())
+        self.assertTrue(any("kept for GTA, brouillon de gta-vlm (library-keep)" in ln for ln in body["lines"]),
+                        body["lines"])
+        view = self.cp.registry_view(True)
+        mine = next(m for m in view["models"] if m["repo_id"] == DSPARK)
+        self.assertEqual(mine["keep"], "GTA, brouillon de gta-vlm")
+        self.assertIsNone(self.cp.registry_snapshot().get("models")[0].get("keep"), "the scan's cache is not changed")
+
 if __name__ == "__main__":
     unittest.main()

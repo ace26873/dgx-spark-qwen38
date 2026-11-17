@@ -5994,6 +5994,40 @@ def _repo_dir(cache: str, repo_id: str) -> Path:
     return Path(cache) / "hub" / ("models--" + repo_id.replace("/", "--"))
 
 
+# What other work on the box keeps (decision 1414 of Hasan, 2026-11-17): CONFIG_DIR/library-keep, one repository
+# (owner/name) or image (a name, a digest reference, an id) per line, then "# who uses it". Any project of the box writes
+# its own lines: the GTA session's gta-vlm serves RadixArk's 27B, its draft and the 27B lane's image even when no lane
+# of this stack loads them. Library shows them kept, with no Delete, and the server refuses their Delete.
+def library_keep() -> dict:
+    """{name: who keeps it} of CONFIG_DIR/library-keep; empty when there is none."""
+    try:
+        text = (CONFIG_DIR / "library-keep").read_text(errors="replace")
+    except OSError:
+        return {}
+    out = {}
+    for ln in text.splitlines():
+        name, _, why = ln.partition("#")
+        if name.strip():
+            out[name.strip()] = why.strip() or "listed in library-keep"
+    return out
+
+
+def kept_for(names, image_id: str | None = None, keep: dict | None = None) -> str | None:
+    """Who keeps one of these names (a repository's, or an image's names), or this image id, by library-keep: a name
+    whole, a digest reference by 12 hexadecimal characters of its digest or more, an id by 12 or more."""
+    keep = library_keep() if keep is None else keep
+    for k, why in keep.items():
+        if k in names:
+            return why
+        if "@sha256:" in k and len(k.split("@sha256:", 1)[1]) >= 12 and any(n.startswith(k) for n in names):
+            return why
+        hexid = (image_id or "").split(":")[-1]
+        kk = k.split(":", 1)[1] if k.startswith("sha256:") else k
+        if hexid and re.fullmatch(r"[0-9a-f]{12,64}", kk) and (hexid.startswith(kk) or kk.startswith(hexid)):
+            return why
+    return None
+
+
 def scanned_repos() -> dict:
     """{(cache, repo_id)} of the last scan, managed or not: what a Delete may name."""
     reg = registry_snapshot()
@@ -6131,6 +6165,9 @@ def repo_delete_plan(cache: str, repo_id: str, hub: bool = True) -> dict:
     reg = registry_snapshot(max_age=0.0)
     if (cache, repo_id) not in {(m["cache"], m["repo_id"]) for m in reg.get("models", []) + reg.get("other_models", [])}:
         return {"refused": "not a repository of the caches the lanes read"}
+    who = kept_for([repo_id])
+    if who:
+        return {"refused": f"kept for {who} (library-keep)"}
     d = _repo_dir(cache, repo_id)
     keep, why = repo_keep(repo_id, reg)
     plan = rg.repo_deletion_plan(d, keep or None)
@@ -6223,6 +6260,9 @@ def image_plan(image: str, registry_check: bool = True) -> dict:
     names = tags + digests
     if not any(rg.ENGINE_IMAGE_RE.match(n) or n.startswith("qwen38-pinned:") for n in names):
         return {"refused": "not an engine image of this stack"}
+    who = kept_for(names, full)
+    if who:
+        return {"refused": f"kept for {who} (library-keep)"}
     out = {"image": image, "id": full, "names": names, "bytes": None, "containers": [], "units": [], "reloads": [],
            "registry": []}
     out["containers"] = [ln for ln in run(["docker", "ps", "-a", "--filter", f"ancestor={full}", "--format",
@@ -6416,6 +6456,11 @@ def registry_view(fresh: bool) -> dict:
     """Library's registry: the scan, and the runtimes and disks beside it."""
     data = dict(registry_snapshot(max_age=0.0 if fresh else 300.0))
     data.update(storage_snapshot(max_age=0.0 if fresh else STORAGE_TTL))
+    # what library-keep keeps, said on its row: read now, as another project may have just written it
+    keep = library_keep()
+    for key in ("models", "other_models"):
+        data[key] = [{**m, "keep": kept_for([m["repo_id"]], keep=keep)} for m in data.get(key, [])]
+    data["images"] = [{**i, "keep": kept_for([i["ref"]], i.get("id"), keep=keep)} for i in data.get("images", [])]
     return data
 
 

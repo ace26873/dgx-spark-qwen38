@@ -197,6 +197,16 @@ themes.
   or the registry again, and says the disk's free space after. A lane whose checkpoint, image or runtime went shows
   "not downloaded" or "not prepared", and its Load gets it back.
 
+  **What another project of the box keeps.** `~/.config/qwen38/library-keep` names, one per line, a repository
+  (`owner/name`) or an image (one of its names, a digest reference by 12 characters of its digest or more, or its id),
+  then `# who uses it`. Library shows each "kept for ..." with no Delete, and the server refuses its Delete. Any
+  project that shares the box writes its own lines:
+
+  ```
+  RadixArk/Qwen3.8-27B-NVFP4  # GTA, the live streams' brain
+  lmsysorg/sglang@sha256:e3a4f06001a29542fc4a8638536d9ffc5eb9c9942b08603c09b19a56eae4a1ae  # GTA
+  ```
+
 On a phone the rail is a drawer behind the menu button, controls are 44 px
 targets, and the Agent view opens fullscreen (see "On a phone" below): the whole
 box is operable from a hand.
