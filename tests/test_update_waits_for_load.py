@@ -73,5 +73,59 @@ echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ON
         self.assertIn("STATE PENDING_PUT=1 WAITS_LOAD=0 UNITS_ONLY=0", self.run_block(lane="flash", draft=False))
 
 
+
+class ARuntimeThatMovesWaitsToo(unittest.TestCase):
+    """The image, MiniMax-H3-Image and video lanes' venv is built again when its pinned SGLang wheel or source moved:
+    gigabytes of wheels, which an update leaves to the lane's Load (side_runtime_waits)."""
+    FN = TEXT[TEXT.index("side_runtime_waits(){"):TEXT.index("\n}\n", TEXT.index("side_runtime_waits(){")) + 3]
+
+    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True, waiting=False):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="runtime-waits-"))
+        repo, cfg, lanes, etc = d / "repo", d / "config", d / "lanes", d / "etc"
+        for x in (repo, cfg, lanes, etc):
+            x.mkdir()
+        (repo / f"install-{lane}.sh").write_text('WHEEL="${SGLANG_DIFFUSION_WHEEL:-0.5.22}"\n'
+                                                 f'PIN="${{SGLANG_DIFFUSION_PIN:-{pin_source}}}"\n')
+        (etc / f"qwen38-{lane}.service").write_text("[Service]\nExecStart=old\n")
+        ldir = lanes / lane
+        if venv:
+            (ldir / "venv" / "bin").mkdir(parents=True)
+            (ldir / "venv" / "bin" / "python").write_text("#!/bin/sh\n")
+            (ldir / "venv" / "bin" / "python").chmod(0o755)
+        else:
+            ldir.mkdir()
+        (ldir / "sglang-wheel").write_text(note + "\n")
+        if source:
+            (ldir / "sglang-source").write_text(source + "\n")
+        if waiting:
+            (cfg / "pending").mkdir()
+            (cfg / "pending" / f"qwen38-{lane}.service").write_text("newer")
+            (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text("image x\n")
+        script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"\nside_lane_dir(){{ echo "{lanes}/$1"; }}\n'
+                  + self.FN.replace("/etc/systemd/system/", f"{etc}/") + f'\nside_runtime_waits {lane}\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        f = cfg / "pending" / f"qwen38-{lane}.service"
+        return (f.read_text(), (cfg / "pending" / f"qwen38-{lane}.service.needs").read_text()) if f.exists() else None
+
+    def test_a_wheel_that_moved_waits_with_the_unit_in_place(self):
+        unit, needs = self.run_fn()
+        self.assertEqual(unit, "[Service]\nExecStart=old\n")
+        self.assertEqual(needs, "runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n")
+
+    def test_a_source_that_moved_waits(self):
+        unit, needs = self.run_fn(lane="image-h3", note="0.5.22", source="d" * 40)
+        self.assertEqual(needs, f"runtime SGLang source {'e' * 12}\n")
+
+    def test_nothing_moved_nothing_waits(self):
+        self.assertIsNone(self.run_fn(note="0.5.22", source="e" * 40))
+
+    def test_a_venv_not_built_and_a_text_lane_are_not_this_case(self):
+        self.assertIsNone(self.run_fn(venv=False))
+        self.assertIsNone(self.run_fn(lane="kolibri"))
+
+    def test_a_unit_already_waiting_is_left_as_it_is(self):
+        self.assertEqual(self.run_fn(waiting=True), ("newer", "image x\n"))
+
 if __name__ == "__main__":
     unittest.main()

@@ -1675,6 +1675,7 @@ SIDE_WAITED=" "
 side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<lane>): runs its installer
   if [ "$2" = --no-smoke ] && [ "${PENDING_PUT:-0}" = 1 ] && [ "$ALL_WEIGHTS" -eq 0 ] && [ "${3:-0}" -eq 0 ]; then
     "$REPO_DIR/install-$1.sh" --units-only || return 1
+    side_runtime_waits "$1"
     if [ -f "$CONFIG_DIR/pending/qwen38-$1.service" ]; then
       SIDE_WAITED="$SIDE_WAITED$1 "
       echo "NOTE: the $(lane_title "$1") lane's update waits for its next Load, which downloads what it lacks ($(unit_pending_says "/etc/systemd/system/qwen38-$1.service")); it serves the release it served until then (./install.sh --with-$1 downloads it now)."
@@ -1684,6 +1685,28 @@ side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<la
   "$REPO_DIR/install-$1.sh" "$2"
 }
 side_waited(){ case "$SIDE_WAITED" in *" $1 "*) return 0 ;; esac; return 1; }  # $1 lane: its update waits for its Load
+# The image, MiniMax-H3-Image and video lanes run a venv of their own, which their installer builds again when its
+# pinned SGLang wheel or source moved (the notes sglang-wheel and sglang-source in the lane's folder): gigabytes of
+# wheels. Such an update waits for the lane's Load too: its unit in place is noted as waiting (the same file), with the
+# runtime it lacks, and that Load's preparation builds it (its installer's --prepare, whose unit_put clears the wait).
+side_runtime_waits(){  # $1 lane
+  local inst="$REPO_DIR/install-$1.sh" dir wheel pin had unit="/etc/systemd/system/qwen38-$1.service" lacks=""
+  case "$1" in image|image-h3|video) ;; *) return 0 ;; esac
+  [ -f "$unit" ] && [ ! -f "$CONFIG_DIR/pending/qwen38-$1.service" ] || return 0
+  dir="$(side_lane_dir "$1")"
+  [ -x "$dir/venv/bin/python" ] || return 0              # not built: its first Load builds it, as before
+  wheel="$({ grep -m1 -oE '^WHEEL="\$\{[A-Z0-9_]+:-[^}]+\}"' "$inst" || true; } | sed -E 's/.*:-([^}]+)\}"/\1/')"
+  pin="$({ grep -m1 -oE '^PIN="\$\{[A-Z0-9_]+:-[0-9a-f]{40}\}"' "$inst" || true; } | sed -E 's/.*:-([0-9a-f]{40})\}"/\1/')"
+  had="$(cat "$dir/sglang-wheel" 2>/dev/null || true)"
+  [ -z "$wheel" ] || [ "$had" = "$wheel" ] || lacks="runtime sglang[diffusion] $wheel (it runs $had)"
+  if [ -n "$pin" ] && [ -f "$dir/sglang-source" ] && [ "$(cat "$dir/sglang-source")" != "$pin" ]; then
+    lacks="${lacks:+$lacks; }runtime SGLang source ${pin:0:12}"
+  fi
+  [ -n "$lacks" ] || return 0
+  mkdir -p "$CONFIG_DIR/pending"
+  cp "$unit" "$CONFIG_DIR/pending/qwen38-$1.service"
+  printf '%s\n' "$lacks" > "$CONFIG_DIR/pending/qwen38-$1.service.needs"
+}
 side_mode(){  # $1 lane, $2 --with-<lane> given: the installer's option for this run
   if [ "$ALL_WEIGHTS" -eq 1 ] || [ "$2" -eq 1 ] || side_begun "$1"; then echo --no-smoke; else echo --units-only; fi
 }
