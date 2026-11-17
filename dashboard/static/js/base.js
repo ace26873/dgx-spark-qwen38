@@ -871,12 +871,15 @@ function laneJourneySteps(target){
   // an update that waits for this Load (decision 1408): its preparation fetches what the new unit lacks, the step after
   // puts the unit in place; the restart below applies it
   const pend = (F.pending || {})[unit];
-  if (lane && (F.lanesReady || {})[lane] === false)
+  // the 27B's and the flash lane's waiting unit or launcher goes in place by apply_pending (their switch rewrites only
+  // the target); a lane beside them takes its new unit from its switch, which renders it and fetches its checkpoint
+  const applies = !!pend && (unit === U27 || unit === UFLASH);
+  if (lane && ((F.lanesReady || {})[lane] === false || pend))
     steps.push({name: 'prepare', params: {target},
       title: pend ? `Download what the update of ${LANE_NAME[unit]} needs` : `Build the runtime of ${LANE_NAME[unit]}`,
       desc: pend ? `What its new unit reads and this box lacks${pend.length ? ': ' + pend.join('; ') : ''}, with no sudo. It serves meanwhile.`
         : `Its first Load: ${LANE_RUNTIME[lane]}, with no sudo.` + (lane === 'flash' || lane === '27b' ? '' : ' The next step fetches its checkpoint.')});
-  if (pend)
+  if (applies)
     steps.push({name: 'apply_pending', params: {unit}, title: `Put in place the update ${LANE_NAME[unit]} waited for`,
       desc: `Its new unit replaces the one it served with${pend.length ? ', now that the box has what it lacked: ' + pend.join('; ') : ''}. Nothing restarts yet.`});
   // The Load of the lane that serves this very target, with an update owed to it, is the
@@ -884,7 +887,7 @@ function laneJourneySteps(target){
   // it (a lane started as installed is not the boot lane) or switch it back, which no update
   // asked for (found in review, 2026-10-17). The lane's card asks the same of it (lanes.js).
   const sv0 = servingEngine();
-  if (sv0 && sv0[0] === unit && laneTarget(unit) === target && (updateOwed(unit) || pend))
+  if (sv0 && sv0[0] === unit && laneTarget(unit) === target && (updateOwed(unit) || applies))
     return steps.concat(!WINDOW_CLIENTS.has(unit) ? [] : bootUnit() === unit ? [clientsStep(unit, target)] : [clientsOnlyStep(unit, target)],
                         [{name: 'unit', params: {verb: 'restart', unit}, title: `Restart ${LANE_NAME[unit]} on what the update installed`,
              desc: `It answers again in ${readyIn(unit)}.` + (isImageLane(unit) || unit === VIDEO_UNIT ? ' A generation in flight is lost.' : '')}]);
@@ -898,11 +901,13 @@ function laneJourneySteps(target){
   const whole = !lane || (F.lanesStartable || {})[lane] !== false;
   const switchAt = steps.length;
   if (enabled !== unit || (curTarget && curTarget !== target) || (!curTarget && LANE_TARGETS[unit].length > 1 && target !== LANE_TARGETS[unit][0])
-      || !whole)
+      || !whole || (pend && !applies))
     // for a boot lane that lacks a file, the step fetches or copies it: up to 102 GB, not a check
     steps.push({name: 'switch', params: {target},
-      title: whole || enabled !== unit ? `Point the boot at ${TARGET_NAME[target]}` : `Bring back what ${LANE_NAME[unit]} lacks`,
-      desc: whole ? 'Verifies the checkpoint and makes this lane the one enabled at boot. Nothing restarts.'
+      title: pend && !applies ? `Put the update of ${LANE_NAME[unit]} in place`
+        : whole || enabled !== unit ? `Point the boot at ${TARGET_NAME[target]}` : `Bring back what ${LANE_NAME[unit]} lacks`,
+      desc: pend && !applies ? 'Fetches the checkpoint its new unit reads, puts that unit in place and makes this lane the one enabled at boot. Nothing restarts.'
+        : whole ? 'Verifies the checkpoint and makes this lane the one enabled at boot. Nothing restarts.'
         : 'Fetches what its checkpoint lacks' + (unit === FLASH_LOCAL_UNIT ? ' and copies its n-gram table again (up to 102 GB to fetch, 32 GB to copy)' : '')
           + ', and makes this lane the one enabled at boot. Nothing restarts.'});
   const pointed = steps.length > switchAt;

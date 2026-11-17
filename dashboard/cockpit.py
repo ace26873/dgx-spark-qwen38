@@ -3296,10 +3296,6 @@ def lane_prepared(lane: str):
         text = unit.read_text(errors="replace")
     except OSError:
         return None
-    # an update left its new unit waiting for its Load (lanes.sh's unit_put, decision 1408): the lane serves what it
-    # served, and its Load prepares what that unit lacks, then puts it in place (apply_pending)
-    if (PENDING_DIR / unit.name).is_file():
-        return False
     if lane in ("flash", "27b"):
         img = engine_image(text)
         if not (img and run(["docker", "image", "inspect", "--format", "{{.Id}}", img],
@@ -3368,10 +3364,26 @@ def job_apply_pending(job: Job):
         return True, [f"no update waits for {unit}"], {"ok": True}
     # the flash lane's serving command is its launcher, the user's file: what waits is that launcher (install.sh)
     launch = PENDING_DIR / "launch-flash.sh" if unit == "qwen38-flash.service" else None
+    # what waits was rendered against the unit in place at the update: a switch since (another target, another window)
+    # rewrote that unit, and putting the waiting one over it would undo the switch (code review of v1.52.0)
+    in_place = CONFIG_DIR / "launch-flash.sh" if launch is not None else UNIT_DIR / unit
+    base = PENDING_DIR / (unit + ".base")
+    try:
+        now = hashlib.sha256(in_place.read_bytes()).hexdigest()
+        stale = base.is_file() and base.read_text().split()[0] != now
+    except (OSError, IndexError):
+        stale = True
+    if stale:
+        for f in (src, launch, PENDING_DIR / (unit + ".needs"), base):
+            if f is not None:
+                f.unlink(missing_ok=True)
+        return False, [f"{unit} changed since the update that waited for it (a switch): that update was dropped; "
+                       "./install.sh writes it again"], {"ok": False}
     r = subprocess.run(["bash", "-c", 'set -u; . "$1/lanes.sh"; unit_needs "$2"', "x", str(REPO_DIR),
                         str(launch if launch and launch.is_file() else src)],
                        capture_output=True, text=True, timeout=120)
-    lacks = [ln for ln in r.stdout.splitlines() if ln.strip()]
+    # its checkpoint is the switch's to fetch and check, the step after this one (any target the Load asks for)
+    lacks = [ln for ln in r.stdout.splitlines() if ln.strip() and not ln.startswith("checkpoint ")]
     if r.returncode != 0 or lacks:
         return False, [f"{unit}'s update still lacks: " + ("; ".join(lacks) or r.stderr.strip()[:200])
                        + " (its Load prepares it first)"], {"ok": False}
@@ -3383,8 +3395,8 @@ def job_apply_pending(job: Job):
             os.chmod(tmp, 0o755)
             os.replace(tmp, CONFIG_DIR / "launch-flash.sh")
             launch.unlink()
-        src.unlink(missing_ok=True)
-        (PENDING_DIR / (unit + ".needs")).unlink(missing_ok=True)
+        for f in (src, PENDING_DIR / (unit + ".needs"), base):
+            f.unlink(missing_ok=True)
         audit({"kind": "pending_applied", "unit": unit})
         return True, [f"{unit}: its new launch script is in place; its restart applies it"], {"ok": True}
     stage = CONFIG_DIR / f"{unit}.switch-stage"
@@ -3395,8 +3407,8 @@ def job_apply_pending(job: Job):
         if not answered(out):
             return False, lines + [f"{' '.join(argv[2:])} failed: {str(out).strip()[:200]}"], {"ok": False}
     stage.unlink(missing_ok=True)
-    src.unlink(missing_ok=True)
-    (PENDING_DIR / (unit + ".needs")).unlink(missing_ok=True)
+    for f in (src, PENDING_DIR / (unit + ".needs"), base):
+        f.unlink(missing_ok=True)
     audit({"kind": "pending_applied", "unit": unit})
     return True, lines + [f"{unit}: the update that waited for its Load is in place; its restart applies it"], {"ok": True}
 
@@ -6664,11 +6676,10 @@ def job_delete_runtime(job: Job):
                   else f"the {item} lane's next Load builds it again"], {"ok": True, "bytes": size}
 
 
-# the units whose new unit can wait for their Load: those an exact sudoers line lets the cockpit put in place from
-# their fixed staging path (dashboard/sudoers-cockpit.template)
-PENDING_UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service",
-                 "qwen38-kolibri.service", "qwen38-nemotron.service", "qwen38-nemotron-super.service",
-                 "qwen38-flash-local.service", "qwen38-ornith-122b.service", "qwen38-flash-unsloth.service")
+# the lanes whose waiting unit the cockpit puts in place: the 27B's (its exact sudoers line from its fixed staging path)
+# and the flash lane's launcher (the user's file). Their switch rewrites only the target; a lane beside them takes its
+# new unit from its switch, which renders it and fetches its checkpoint (code review of v1.52.0)
+PENDING_UNITS = ("qwen38-sglang.service", "qwen38-flash.service")
 ACTIONS["apply_pending"] = {
     "danger": "medium",
     "params": {"unit": list(PENDING_UNITS)},

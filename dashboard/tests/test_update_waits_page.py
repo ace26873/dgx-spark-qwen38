@@ -20,7 +20,7 @@ def page(test, pending):
     const now = Date.now() / 1000;
     apply({config: {data: CONFIG, ts: now}, units: {data: units, ts: now},
            update: {data: {installed: 'v1.51.0'}, ts: now},
-           lanes_ready: {data: {'27b': %s}, ts: now},
+           lanes_ready: {data: {'27b': true}, ts: now},
            pending: {data: %s, ts: now},
            lifecycle: {data: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}), ts: now}});
     showView('lanes');
@@ -29,8 +29,7 @@ def page(test, pending):
                  badge: txt('bdg-lanes'), name: LANE_NAME['qwen38-sglang.service']};
     askJourney('stock');
     report(Object.assign(out, {open: !$('scrim').hidden, steps: [...$('sh-journey').children].map(li => li.textContent)}));
-    """ % ("false" if pending else "true",
-           ("{'qwen38-sglang.service': %s}" % __import__("json").dumps(LACKS)) if pending else "{}"))
+    """ % (("{'qwen38-sglang.service': %s}" % __import__("json").dumps(LACKS)) if pending else "{}"))
 
 
 class AnUpdateWaitsForItsLoad(unittest.TestCase):
@@ -60,6 +59,39 @@ class AnUpdateWaitsForItsLoad(unittest.TestCase):
         self.assertNotIn("An update waits", r["pick"])
         self.assertEqual(r["badge"], "")
 
+
+
+class ALaneBesideWaitsForItsLoad(unittest.TestCase):
+    """FP4-Local (the reference box's boot lane), its update waiting: its Load prepares it, then its switch renders its
+    new unit, fetches its checkpoint and puts it in place, then it restarts. No apply_pending, which its switch does
+    not need (code review of v1.52.0: the journey skipped the switch, and apply_pending refused for want of the
+    checkpoint)."""
+
+    def test_its_load_prepares_then_switches_then_restarts(self):
+        lacks = ["image eugr/spark-vllm-b12x@sha256:" + "c" * 64, "checkpoint nvidia/Qwen3.8-Flash-Next-FP4-Local@" + "3" * 40]
+        r = run(self, r"""
+        const units = JSON.parse(JSON.stringify(UNITS));
+        units.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
+        units.units['qwen38-flash-local.service'] = {active: 'active', enabled: 'enabled'};
+        const now = Date.now() / 1000;
+        apply({config: {data: CONFIG, ts: now}, units: {data: units, ts: now},
+               update: {data: {installed: 'v1.51.0'}, ts: now},
+               lanes_ready: {data: {'flash-local': true}, ts: now}, lanes_startable: {data: {'flash-local': true}, ts: now},
+               pending: {data: {'qwen38-flash-local.service': %s}, ts: now},
+               lifecycle: {data: life({'qwen38-flash-local.service': eng('ready', {target: 'flash-local'}),
+                                       'qwen38-sglang.service': eng('stopped', {target: 'stock'})}), ts: now}});
+        showView('lanes');
+        askJourney('flash-local');
+        report({open: !$('scrim').hidden, steps: [...$('sh-journey').children].map(li => li.textContent),
+                name: LANE_NAME['qwen38-flash-local.service']});
+        """ % __import__("json").dumps(lacks))
+        steps = r["steps"]
+        self.assertTrue(r["open"], r)
+        self.assertIn("prepare-lane.sh flash-local", steps[0])
+        self.assertTrue(any(f"Put the update of {r['name']} in place" in s and "switch-model.sh flash-local" in s
+                            for s in steps), steps)
+        self.assertFalse(any("apply" in s.lower() and "waited for" in s for s in steps), steps)
+        self.assertIn("systemctl restart qwen38-flash-local.service", steps[-1])
 
 if __name__ == "__main__":
     unittest.main()

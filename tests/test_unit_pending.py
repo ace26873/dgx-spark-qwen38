@@ -134,6 +134,10 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertEqual(int(self.b.unit.stat().st_mtime), 1_700_000_000)
         self.assertEqual(self.pending.read_text(), new)
         self.assertEqual(pathlib.Path(str(self.pending) + ".needs").read_text(), f"image {NEW_IMG}\n")
+        # the unit in place it was rendered against (a switch since makes it stale: the cockpit's apply_pending)
+        import hashlib
+        self.assertEqual(pathlib.Path(str(self.pending) + ".base").read_text().strip(),
+                         hashlib.sha256(self.b.unit.read_bytes()).hexdigest())
 
     def test_what_it_lacks_is_said_in_one_line(self):
         self.assertEqual(self.b.put(self.b.text(img=NEW_IMG, rev=REV2)), "PUT=pending")
@@ -148,6 +152,7 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertEqual(self.b.unit.read_text(), new)
         self.assertFalse(self.pending.exists())
         self.assertFalse(pathlib.Path(str(self.pending) + ".needs").exists())
+        self.assertFalse(pathlib.Path(str(self.pending) + ".base").exists())
 
     def test_a_run_that_does_not_ask_for_it_puts_the_unit_in_place_as_before(self):
         new = self.b.text(img=NEW_IMG)
@@ -206,6 +211,15 @@ class PrepareReadsTheWaitingUnit(unittest.TestCase):
                               else "UNIT=/etc/systemd/system/qwen38-sglang.service", r.stdout)
                 if waiting:
                     self.assertIn("preparing what its new unit reads (image x)", r.stdout)
+
+
+class TheSwitchPutsALaneBesidesNewUnit(unittest.TestCase):
+    def test_each_unit_its_switch_puts_in_place_clears_what_waited(self):
+        # a lane beside the text lane takes its new unit from its switch, which renders it (code review of v1.52.0)
+        import re
+        text = (REPO / "switch-model.sh").read_text()
+        puts = re.findall(r'sudo install -m 644 "\$(KOL|NEM|NSV|FLL|ORN|FLU|IMG)_STAGE" "\$([A-Z0-9_]+)"\n\s*unit_pending_clear "\$\2"', text)
+        self.assertEqual(len(puts), 7, puts)
 
 if __name__ == "__main__":
     unittest.main()

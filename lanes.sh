@@ -252,6 +252,8 @@ unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, 
   mkdir -p "$d" || return 1
   cp "$1" "$d/$n.tmp" && mv "$d/$n.tmp" "$d/$n" || return 1
   unit_needs "$1" > "$d/$n.needs" || return 1
+  # the unit in place it was rendered against: a switch since makes it stale (the cockpit's apply_pending checks)
+  sha256sum "$2" 2>/dev/null | cut -d' ' -f1 > "$d/$n.base" || true
 }
 unit_pending_says(){  # $1 where a unit goes: what its unit waiting in $CONFIG_DIR/pending lacks, in one line
   paste -sd ';' "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs" 2>/dev/null | sed 's/;/; /g'
@@ -259,7 +261,8 @@ unit_pending_says(){  # $1 where a unit goes: what its unit waiting in $CONFIG_D
 unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for it any more
   # the flash lane's wait is its launch script's (install.sh): its unit, which only runs that script, clears nothing
   [ "$(basename "$1")" = qwen38-flash.service ] && [ -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/launch-flash.sh" ] && return 0
-  rm -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1")" "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs"
+  rm -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1")" "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs" \
+        "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").base"
 }
 lane_serves_older(){  # $1 unit, $2... its files: true when it serves and one of them is newer than its start
   local unit="$1" started f; shift

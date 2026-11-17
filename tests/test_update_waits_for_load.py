@@ -33,6 +33,7 @@ class UpdateWaits(unittest.TestCase):
             (etc / "qwen38-sglang.service").write_text("x")
         script = f"""
 set -euo pipefail
+CONFIG_DIR={d}; . "{REPO}/lanes.sh"
 LANE={lane}; UNIT_NAME=qwen38-sglang.service; ALL_WEIGHTS={all_weights}; UNITS_ONLY={units_only}; NO_SERVICE={no_service}
 TEXT_NAMED={named}; KEEP_MODEL_VERBATIM={verbatim}; IMAGE={IMAGE}; FLASH_IMAGE={IMAGE}; HF_CACHE={hf}
 MODEL_REPO=RadixArk/Qwen3.8-27B-NVFP4; MODEL_REV={REV}; DRAFT2_REPO=maurienne-ai/Draft; DRAFT2_REV={DREV}
@@ -49,7 +50,7 @@ echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ON
     def test_an_update_that_lacks_the_new_pins_waits_for_the_load(self):
         out = self.run_block(image=False, ckpt=False, draft=False)
         self.assertIn("STATE PENDING_PUT=1 WAITS_LOAD=1 UNITS_ONLY=1", out)
-        self.assertIn(f"its image {'a' * 64}, RadixArk/Qwen3.8-27B-NVFP4 at 1111111, its draft maurienne-ai/Draft at ddddddd", out)
+        self.assertIn(f"image {IMAGE}; checkpoint RadixArk/Qwen3.8-27B-NVFP4@{REV}; draft maurienne-ai/Draft@{DREV}", out)
         self.assertIn("keeps serving what it served until its next Load", out)
 
     def test_an_update_whose_pins_are_all_here_runs_whole(self):

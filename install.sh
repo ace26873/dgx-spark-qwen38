@@ -1891,17 +1891,20 @@ if [ -f "/etc/systemd/system/$UNIT_NAME" ] && [ "$ALL_WEIGHTS" -eq 0 ]; then PEN
 export PENDING_PUT
 if [ "$PENDING_PUT" -eq 1 ] && [ "$UNITS_ONLY" -eq 0 ] && [ "$NO_SERVICE" -eq 0 ] && [ "$TEXT_NAMED" -eq 0 ] \
    && [ "$KEEP_MODEL_VERBATIM" -eq 0 ] && text_lane_prepared "$LANE"; then
+  # what its new pins read, written as its unit names them and asked as every unit is (lanes.sh's unit_needs): one test
+  # for the run and for the unit it would write, not two that could disagree (code review of v1.52.0)
   _wimg="$IMAGE"; [ "$LANE" = flash ] && _wimg="$FLASH_IMAGE"
-  docker image inspect "$_wimg" >/dev/null 2>&1 || WAITS_WHAT="${WAITS_WHAT}its image ${_wimg##*@sha256:}, "
-  ckpt_cached "$HF_CACHE/hub/models--${MODEL_REPO//\//--}" "$MODEL_REV" || WAITS_WHAT="${WAITS_WHAT}$MODEL_REPO at ${MODEL_REV:0:7}, "
-  if [ "$LANE" = 27b ] && [ -n "${DRAFT2_REPO:-}" ]; then
-    _wd="$HF_CACHE/hub/models--${DRAFT2_REPO//\//--}"; _wr="${DRAFT2_REV:-main}"
-    [ -f "$_wd/refs/$_wr" ] && _wr="$(cat "$_wd/refs/$_wr")"
-    { [ -f "$_wd/snapshots/$_wr/config.json" ] && ls "$_wd/snapshots/$_wr"/*.safetensors >/dev/null 2>&1; } \
-      || WAITS_WHAT="${WAITS_WHAT}its draft $DRAFT2_REPO at ${DRAFT2_REV:0:7}, "
-  fi
+  _wunit="$(mktemp)"
+  { printf -- '-v %s:/root/.cache/huggingface \\\n  %s \\\n' "$HF_CACHE" "$_wimg"
+    printf '  python3 -m sglang.launch_server --model-path %s --revision %s' "$MODEL_REPO" "$MODEL_REV"
+    if [ "$LANE" = 27b ] && [ -n "${DRAFT2_REPO:-}" ]; then
+      printf ' --speculative-draft-model-path %s --speculative-draft-model-revision %s' "$DRAFT2_REPO" "${DRAFT2_REV:-main}"
+    fi
+    printf ' \\\n'; } > "$_wunit"
+  WAITS_WHAT="$(unit_needs "$_wunit" | paste -sd ';' | sed 's/;/; /g')"
+  rm -f "$_wunit"
   if [ -n "$WAITS_WHAT" ]; then
-    WAITS_LOAD=1; UNITS_ONLY=1; WAITS_WHAT="${WAITS_WHAT%, }"
+    WAITS_LOAD=1; UNITS_ONLY=1
     echo "NOTE: the ${LANE/27b/27B} lane's update needs downloads ($WAITS_WHAT): this run fetches none, its units only;"
     echo "      it keeps serving what it served until its next Load from the cockpit, which downloads them and puts its new"
     echo "      unit in place (./install.sh --with-${LANE} downloads them now instead)."
@@ -3416,7 +3419,8 @@ if [ "$LANE" = "flash" ]; then
   # said as it is: an update that changed nothing here read "wrote" all the same
   if cmp -s "$TMP_LAUNCH" "$CONFIG_DIR/launch-flash.sh"; then
     echo "launch script unchanged: $CONFIG_DIR/launch-flash.sh"
-    rm -f "$CONFIG_DIR/pending/launch-flash.sh"
+    rm -f "$CONFIG_DIR/pending/launch-flash.sh" "$CONFIG_DIR/pending/qwen38-flash.service" \
+          "$CONFIG_DIR/pending/qwen38-flash.service.needs" "$CONFIG_DIR/pending/qwen38-flash.service.base"
   elif [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$CONFIG_DIR/launch-flash.sh" ] && [ -n "$(unit_needs "$TMP_LAUNCH")" ] \
        && [ -z "$(unit_needs "$CONFIG_DIR/launch-flash.sh")" ]; then
     # the flash lane's serving command is its launcher (lanes.sh's unit_put says why a new one waits): kept as it is,
@@ -3424,6 +3428,7 @@ if [ "$LANE" = "flash" ]; then
     mkdir -p "$CONFIG_DIR/pending"
     install -m 755 "$TMP_LAUNCH" "$CONFIG_DIR/pending/launch-flash.sh"
     unit_needs "$TMP_LAUNCH" > "$CONFIG_DIR/pending/qwen38-flash.service.needs"
+    sha256sum "$CONFIG_DIR/launch-flash.sh" | cut -d' ' -f1 > "$CONFIG_DIR/pending/qwen38-flash.service.base"
     cp "/etc/systemd/system/qwen38-flash.service" "$CONFIG_DIR/pending/qwen38-flash.service" 2>/dev/null \
       || cp "$TMP_LAUNCH" "$CONFIG_DIR/pending/qwen38-flash.service"
     echo "its new launch script waits for its Load, the one in place kept: it lacks $(unit_pending_says qwen38-flash.service) (decision 1408)"

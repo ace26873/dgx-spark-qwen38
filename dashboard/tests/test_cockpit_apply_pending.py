@@ -65,6 +65,11 @@ class ApplyPending(unittest.TestCase):
         self.pdir.mkdir(parents=True)
         (self.pdir / UNIT).write_text("[Service]\nExecStart=new\n")
         (self.pdir / (UNIT + ".needs")).write_text("image lmsysorg/sglang@sha256:" + "b" * 64 + "\n")
+        # the unit in place the waiting one was rendered against (its sha256 in <unit>.base, lanes.sh)
+        self.in_place = self.cp.UNIT_DIR / UNIT
+        self.in_place.write_text("[Service]\nExecStart=old\n")
+        import hashlib
+        (self.pdir / (UNIT + ".base")).write_text(hashlib.sha256(self.in_place.read_bytes()).hexdigest() + "\n")
         self.lacks, self.calls = "", []
         real_sp = subprocess.run
 
@@ -94,15 +99,28 @@ class ApplyPending(unittest.TestCase):
     def test_what_waits_is_read_with_what_it_lacks(self):
         self.assertEqual(self.cp.pending_units(), {UNIT: ["image lmsysorg/sglang@sha256:" + "b" * 64]})
 
-    def test_a_lane_whose_update_waits_is_not_prepared(self):
-        unit = self.cp.UNIT_PATHS[UNIT]
-        unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text("[Service]\nExecStart=old\n")
-        self.addCleanup(unit.unlink)
-        self.assertIs(self.cp.lane_prepared("27b"), False)
+    def test_a_lane_whose_update_waits_stays_built(self):
+        # it serves, or can start, the release it served: its Load prepares the update (the page's journey), and its
+        # Start as installed, its runtime's line and Library's Download stay (code review of v1.52.0)
+        src = (self.cp.REPO_DIR / "dashboard" / "cockpit.py").read_text()
+        body = src[src.index("def lane_prepared(lane: str):"):src.index("# ---- An update that waits for its Load")]
+        self.assertNotIn("PENDING_DIR", body)
+
+    def test_a_waiting_unit_rendered_before_a_switch_is_dropped_not_put(self):
+        self.in_place.write_text("[Service]\nExecStart=switched to another target\n")
+        job = self.act()
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.cp.pending_units(), {})
+        self.assertTrue(any("changed since the update" in ln for ln in job.lines), job.lines)
+
+    def test_the_checkpoint_is_the_switchs_to_fetch(self):
+        self.lacks = "checkpoint RadixArk/Qwen3.8-27B-NVFP4@" + "2" * 40 + "\n"
+        job = self.act()
+        self.assertEqual(job.status, "done", job.lines)
 
     def test_a_unit_that_still_lacks_something_is_not_put_in_place(self):
-        self.lacks = "checkpoint RadixArk/Qwen3.8-27B-NVFP4@" + "2" * 40 + "\n"
+        self.lacks = "image lmsysorg/sglang@sha256:" + "b" * 64 + "\n"
         job = self.act()
         self.assertEqual(job.status, "failed", job.lines)
         self.assertEqual(self.calls, [])
@@ -123,9 +141,8 @@ class ApplyPending(unittest.TestCase):
 
     def test_every_unit_that_can_wait_has_its_sudoers_line(self):
         sudoers = (DASH / "sudoers-cockpit.template").read_text()
-        for unit in self.cp.PENDING_UNITS:
-            if unit == "qwen38-flash.service":
-                continue        # its launcher waits, the user's file: no sudo (test below)
+        self.assertEqual(self.cp.PENDING_UNITS, ("qwen38-sglang.service", "qwen38-flash.service"))
+        for unit in ("qwen38-sglang.service",):     # the flash lane's launcher is the user's file: no sudo (below)
             with self.subTest(unit=unit):
                 self.assertIn(f"/usr/bin/install -m 644 __HOME__/.config/qwen38/{unit}.switch-stage /etc/systemd/system/{unit}",
                               sudoers)

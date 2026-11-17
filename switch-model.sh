@@ -201,6 +201,7 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
     fi
     diff "$KOL_STAGE" "$KOLIBRI_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
+    unit_pending_clear "$KOLIBRI_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     rm -f "$KOL_STAGE"
     KOL_REWRITTEN=1
   fi
@@ -404,8 +405,10 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
     # one exact command per lane, as the cockpit's sudoers allowlist names it
     if [ "$CHOICE" = "nemotron" ]; then
       sudo install -m 644 "$NEM_STAGE" "$NEMOTRON_UNIT"
+      unit_pending_clear "$NEMOTRON_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     else
       sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
+      unit_pending_clear "$NEMOTRON_SUPER_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     fi
     rm -f "$NEM_LANE_STAGE"
     NEM_REWRITTEN=1
@@ -548,6 +551,7 @@ if [ "$CHOICE" = "flash-local" ]; then
     if ! cmp -s "$FLL_STAGE" "$FLASH_LOCAL_UNIT"; then
       diff "$FLL_STAGE" "$FLASH_LOCAL_UNIT" || true   # show exactly what changes
       sudo install -m 644 "$FLL_STAGE" "$FLASH_LOCAL_UNIT"
+      unit_pending_clear "$FLASH_LOCAL_UNIT"   # its new unit is in place: an update that waited for this Load is applied
       FLL_REWRITTEN=1
     fi
     rm -f "$FLL_STAGE"
@@ -694,6 +698,7 @@ if [ "$CHOICE" = "ornith-122b" ]; then
   if ! cmp -s "$ORN_STAGE" "$ORNITH_122B_UNIT"; then
     diff "$ORN_STAGE" "$ORNITH_122B_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$ORN_STAGE" "$ORNITH_122B_UNIT"
+    unit_pending_clear "$ORNITH_122B_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     ORN_REWRITTEN=1
   fi
   rm -f "$ORN_STAGE"
@@ -814,6 +819,7 @@ if [ "$CHOICE" = "flash-unsloth" ] || [ "$CHOICE" = "flash-unsloth-iq3" ]; then
     if ! cmp -s "$FLU_STAGE" "$FLASH_UNSLOTH_UNIT"; then
       diff "$FLU_STAGE" "$FLASH_UNSLOTH_UNIT" || true   # show exactly what changes
       sudo install -m 644 "$FLU_STAGE" "$FLASH_UNSLOTH_UNIT"
+      unit_pending_clear "$FLASH_UNSLOTH_UNIT"   # its new unit is in place: an update that waited for this Load is applied
       FLU_REWRITTEN=1
     fi
     rm -f "$FLU_STAGE"
@@ -999,6 +1005,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
     fi
     diff "$IMG_STAGE" "$IMAGE_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
+    unit_pending_clear "$IMAGE_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     rm -f "$IMG_STAGE"
     IMG_REWRITTEN=1
     if [ "$IMG_MODEL" = "$IMAGE_TURBO_PIN" ] && [ "$IMG_CUR" != "$IMAGE_MODEL_PIN" ]; then
