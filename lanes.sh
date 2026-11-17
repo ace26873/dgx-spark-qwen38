@@ -247,6 +247,9 @@ unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, 
   cp "$1" "$d/$n.tmp" && mv "$d/$n.tmp" "$d/$n" || return 1
   unit_needs "$1" > "$d/$n.needs" || return 1
 }
+unit_pending_says(){  # $1 where a unit goes: what its unit waiting in $CONFIG_DIR/pending lacks, in one line
+  paste -sd ';' "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs" 2>/dev/null | sed 's/;/; /g'
+}
 unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for it any more
   rm -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1")" "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs"
 }

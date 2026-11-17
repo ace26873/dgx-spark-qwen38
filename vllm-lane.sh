@@ -216,6 +216,7 @@ vlane_put_unit(){  # $1 the rendered unit, $2... what else the lane's start read
   shift
   case "$put" in
     same) echo "unit unchanged" ;;
+    pending) echo "its new unit waits for its Load, the one in place kept: it lacks $(unit_pending_says "$INSTALLED") (decision 1408)" ;;
     deps) sudo systemctl daemon-reload
           echo "unit updated: only the lines naming the other lanes changed, which the lane does not read" ;;
     *)    sudo systemctl daemon-reload

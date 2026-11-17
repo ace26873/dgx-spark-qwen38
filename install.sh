@@ -1827,6 +1827,35 @@ if [ "$SIDE_BOOT" -gt 0 ]; then
     UNITS_ONLY=1
   fi
 fi
+# An update downloads nothing large (decisions 1404 and 1408 to 1410 of Hasan, 2026-11-16 and 17): weights, drafts,
+# engine images and runtimes come at a lane's Load from the cockpit, or its Download in Library. On a box where this
+# lane's unit is in place, every unit this run writes goes through lanes.sh's unit_put with PENDING_PUT=1: a new unit
+# that reads what the box lacks waits in $CONFIG_DIR/pending while the lane can serve as it is. This lane, when it can
+# serve and its new pins are not all here (the image, the target whole at its revision, the 27B's draft), gets its
+# units only: none of its downloads, the unit in place untouched (it serves the release it served, at its next boot
+# too), its update waiting for its Load. --with-<lane> and --all-weights download now, as asked; a new box downloads its
+# lane (1410).
+PENDING_PUT=0; WAITS_LOAD=0; WAITS_WHAT=""
+if [ -f "/etc/systemd/system/$UNIT_NAME" ] && [ "$ALL_WEIGHTS" -eq 0 ]; then PENDING_PUT=1; fi
+export PENDING_PUT
+if [ "$PENDING_PUT" -eq 1 ] && [ "$UNITS_ONLY" -eq 0 ] && [ "$NO_SERVICE" -eq 0 ] && [ "$TEXT_NAMED" -eq 0 ] \
+   && [ "$KEEP_MODEL_VERBATIM" -eq 0 ] && text_lane_prepared "$LANE"; then
+  _wimg="$IMAGE"; [ "$LANE" = flash ] && _wimg="$FLASH_IMAGE"
+  docker image inspect "$_wimg" >/dev/null 2>&1 || WAITS_WHAT="${WAITS_WHAT}its image ${_wimg##*@sha256:}, "
+  ckpt_cached "$HF_CACHE/hub/models--${MODEL_REPO//\//--}" "$MODEL_REV" || WAITS_WHAT="${WAITS_WHAT}$MODEL_REPO at ${MODEL_REV:0:7}, "
+  if [ "$LANE" = 27b ] && [ -n "${DRAFT2_REPO:-}" ]; then
+    _wd="$HF_CACHE/hub/models--${DRAFT2_REPO//\//--}"; _wr="${DRAFT2_REV:-main}"
+    [ -f "$_wd/refs/$_wr" ] && _wr="$(cat "$_wd/refs/$_wr")"
+    { [ -f "$_wd/snapshots/$_wr/config.json" ] && ls "$_wd/snapshots/$_wr"/*.safetensors >/dev/null 2>&1; } \
+      || WAITS_WHAT="${WAITS_WHAT}its draft $DRAFT2_REPO at ${DRAFT2_REV:0:7}, "
+  fi
+  if [ -n "$WAITS_WHAT" ]; then
+    WAITS_LOAD=1; UNITS_ONLY=1; WAITS_WHAT="${WAITS_WHAT%, }"
+    echo "NOTE: the ${LANE/27b/27B} lane's update needs downloads ($WAITS_WHAT): this run fetches none, its units only;"
+    echo "      it keeps serving what it served until its next Load from the cockpit, which downloads them and puts its new"
+    echo "      unit in place (./install.sh --with-${LANE} downloads them now instead)."
+  fi
+fi
 # Measured where the weights actually land: HF_CACHE may live on another disk,
 # and then free space under $HOME says nothing (the error message used to send
 # people there while measuring here).
@@ -2004,6 +2033,7 @@ if [ "$UNITS_ONLY" -eq 1 ]; then
   if [ -n "$ATS_CANNOT" ]; then step "2/10 The Flash-Next image: not pulled, as this GPU cannot start the flash lane"
   elif [ "$LEFT_OUT" -eq 1 ] && [ "$LANE" = "flash" ]; then step "2/10 The Flash-Next image: not pulled, as the flash lane is $LEFT_WHY (its next Load pulls what it lacks)"
   elif [ "$LEFT_OUT" -eq 1 ]; then step "2/10 The SGLang image: not pulled, as the 27B lane is $LEFT_WHY (its next Load pulls what it lacks)"
+  elif [ "$WAITS_LOAD" -eq 1 ]; then step "2/10 The image: not pulled now, as the ${LANE/27b/27B} lane's update waits for its next Load (decision 1408)"
   elif [ "$LANE" = "flash" ]; then step "2/10 The Flash-Next image: pulled at the lane's first Load (~16 GB to download, 35 GB on disk)"
   else step "2/10 The SGLang image: pulled at the lane's first Load (~15 GB to download)"; fi
   PULLED_IMAGE="$PULL_TARGET"
@@ -2057,6 +2087,7 @@ if [ "$UNITS_ONLY" -eq 1 ]; then
   if [ -n "$ATS_CANNOT" ]; then step "4/10 The Flash-Next checkpoint: not fetched, as this GPU cannot start the flash lane"
   elif [ "$LEFT_OUT" -eq 1 ] && [ "$LANE" = "flash" ]; then step "4/10 The Flash-Next checkpoint: not fetched, as the flash lane is $LEFT_WHY (its next Load fetches what it lacks)"
   elif [ "$LEFT_OUT" -eq 1 ]; then step "4/10 The checkpoints (the target and its DFlash2 draft): not fetched, as the 27B lane is $LEFT_WHY (its next Load fetches what it lacks)"
+  elif [ "$WAITS_LOAD" -eq 1 ]; then step "4/10 The checkpoints: not fetched now, as the ${LANE/27b/27B} lane's update waits for its next Load ($WAITS_WHAT)"
   elif [ "$LANE" = "flash" ]; then step "4/10 The Flash-Next checkpoint: fetched at the lane's first Load (~136 GB)"
   else step "4/10 The checkpoints (the target and its DFlash2 draft): fetched at the lane's first Load (~24 GB, ~33 for an FP8 target)"; fi
 elif [ "$LANE" = "flash" ]; then
@@ -3347,6 +3378,7 @@ apply_context_configs              # the configs, then at once the unit that rea
 # only in the lines naming the other lanes keeps its date (lanes.sh unit_put)
 UNIT_PUT="$(unit_put "$TMP_UNIT" "/etc/systemd/system/$UNIT_NAME")"
 [ "$UNIT_PUT" != deps ] || echo "unit updated: only the lines naming the other lanes changed, which the engine does not read"
+[ "$UNIT_PUT" != pending ] || echo "its new unit waits for its Load, the one in place kept: it lacks $(unit_pending_says "/etc/systemd/system/$UNIT_NAME") (decision 1408)"
 rm -f "$TMP_UNIT"
 # Cross-engine switch: exactly one serving unit may start at boot. The other
 # engine's unit (if present) is disabled now and stopped at step 9, right

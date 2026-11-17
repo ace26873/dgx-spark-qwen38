@@ -115,6 +115,11 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertEqual(self.pending.read_text(), new)
         self.assertEqual(pathlib.Path(str(self.pending) + ".needs").read_text(), f"image {NEW_IMG}\n")
 
+    def test_what_it_lacks_is_said_in_one_line(self):
+        self.assertEqual(self.b.put(self.b.text(img=NEW_IMG, rev=REV2)), "PUT=pending")
+        r = self.b.sh(f'unit_pending_says "{self.b.unit}"')
+        self.assertEqual(r.stdout.strip(), f"image {NEW_IMG}; checkpoint RadixArk/Qwen3.8-27B-NVFP4@{REV2}")
+
     def test_once_the_box_has_it_all_the_unit_goes_in_place_and_nothing_waits(self):
         new = self.b.text(img=NEW_IMG)
         self.assertEqual(self.b.put(new), "PUT=pending")

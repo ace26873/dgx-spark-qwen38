@@ -224,6 +224,7 @@ install_service(){
   fi
   UNIT_PUT="$(unit_put "$RENDER" "$INSTALLED")"
   case "$UNIT_PUT" in
+    pending) echo "its new unit waits for its Load, the one in place kept: it lacks $(unit_pending_says "$INSTALLED") (decision 1408)" ;;
     same) echo "unit unchanged"
           sudo chmod 644 "$INSTALLED" ;;   # a unit installed before this fix is still 0600
     deps) sudo systemctl daemon-reload

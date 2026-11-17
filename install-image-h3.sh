@@ -231,6 +231,7 @@ install_service(){
   # cockpit, failed quietly on a 0600 one (install-image.sh says when).
   UNIT_PUT="$(unit_put "$RENDER" "$INSTALLED")"
   case "$UNIT_PUT" in
+    pending) echo "its new unit waits for its Load, the one in place kept: it lacks $(unit_pending_says "$INSTALLED") (decision 1408)" ;;
     same) echo "unit unchanged"
           sudo chmod 644 "$INSTALLED" ;;
     deps) sudo systemctl daemon-reload
