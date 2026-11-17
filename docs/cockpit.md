@@ -197,6 +197,12 @@ themes.
   or the registry again, and says the disk's free space after. A lane whose checkpoint, image or runtime went shows
   "not downloaded" or "not prepared", and its Load gets it back.
 
+  **An update that waits for a lane's Load (v1.52.0).** An update downloads nothing large: when a lane's new release
+  reads an image, a checkpoint, a draft or a runtime the box lacks, its new unit waits in `~/.config/qwen38/pending/`
+  and the lane serves the release it served, at its next boot too. Its card says "An update waits for its Load, which
+  downloads ...", and the Lanes view's badge reads "update". Its Load downloads what it lacks, puts the new unit in place
+  (the 27B's by the cockpit, from its fixed staging path; a lane beside it by its own switch) and restarts the lane.
+
   **What another project of the box keeps.** `~/.config/qwen38/library-keep` names, one per line, a repository
   (`owner/name`) or an image (one of its names, a digest reference by 12 characters of its digest or more, or its id),
   then `# who uses it`. Library shows each "kept for ..." with no Delete, and the server refuses its Delete. Any
