@@ -239,6 +239,8 @@ def job_phrase(action: str, params: dict) -> str:
         return "fit the opencode limits to this engine"
     if action == "delete_strays":
         return "delete the stray revisions from the model caches"
+    if action == "delete_repo":
+        return f"delete {p.get('repo', '')} from the model cache"
     if action == "fetch":
         return f"download the {p.get('target', '')} checkpoint"
     if action == "clients":
@@ -4135,7 +4137,7 @@ def run_job(job: Job):
         # (found in review, 2026-10-15). After the lock: read while it was held (a quarter of a
         # second), the page that saw the job end started its next step on a lock still taken,
         # and was told busy (found in review of that fix, the same day).
-        if job.action in ("prepare", "switch", "fetch", "delete_strays"):
+        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo"):
             with REGISTRY_LOCK:      # a scan running now would write its own date over it
                 REGISTRY_CACHE["ts"] = 0.0
             for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable)):
@@ -5972,6 +5974,196 @@ def job_delete_strays(job: Job):
     return True, lines, {"ok": True, "deleted": gone, "bytes": freed}
 
 
+# ---- Library's Delete of a whole repository (Hasan, 2026-11-16: decisions 1402 and 1404) --------------------------
+# Any repository of a cache the lanes read, a lane's checkpoint, a drafter or another model: what it frees on which
+# disk, whether the Hub still serves it as it is here, what keeps reading it. A lane whose checkpoint goes is "not
+# downloaded" in Library, and its next Load downloads it again (decision 1404: weights come at a Load, or a Download).
+HUB_TIMEOUT_S = 20.0
+PROC = Path("/proc")     # the processes repo_readers reads (a test gives its own)
+
+
+def _repo_dir(cache: str, repo_id: str) -> Path:
+    return Path(cache) / "hub" / ("models--" + repo_id.replace("/", "--"))
+
+
+def scanned_repos() -> dict:
+    """{(cache, repo_id)} of the last scan, managed or not: what a Delete may name."""
+    reg = registry_snapshot()
+    return {(m["cache"], m["repo_id"]) for m in reg.get("models", []) + reg.get("other_models", [])}
+
+
+class _Scanned(list):
+    """A closed set of a parameter, read from the last scan when a value is checked: the repositories it listed, or
+    the caches the lanes read. Listed empty by /api/actions, as the set is the scan's."""
+
+    def __init__(self, read):
+        super().__init__()
+        self._read = read
+
+    def __contains__(self, value):
+        try:
+            return isinstance(value, str) and value in self._read()
+        except Exception:  # noqa: BLE001 (a scan that fails accepts nothing)
+            return False
+
+
+def repo_readers(repo_id: str) -> list[str]:
+    """Who reads a repository now, each said once: a lane unit active or starting that names it; a running
+    container whose command, arguments or environment name it (another project's too: the GTA session's gta-vlm
+    serves RadixArk's 27B from this cache, 2026-11-17); a process whose command line names it, or that holds one of
+    its files open (those this user may read: an engine runs in its container as root, which the two checks before
+    see)."""
+    folder = "models--" + repo_id.replace("/", "--")
+    out = []
+    for unit in UNITS:
+        path = UNIT_DIR / unit
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if (repo_id in text or folder in text) and run(["systemctl", "is-active", unit]).strip() in (
+                "active", "activating", "reloading", "deactivating"):
+            out.append(f"{unit}, which serves or starts")
+    ids = run(["docker", "ps", "-q", "--no-trunc"], timeout=10).split()
+    if ids:
+        for ln in run(["docker", "inspect", "--format",
+                       "{{.Name}} {{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}", *ids],
+                      timeout=10).splitlines():
+            if repo_id in ln or folder in ln:
+                out.append(f"the container {ln.split(' ', 1)[0].lstrip('/')}")
+    me = os.getpid()
+    for proc in PROC.iterdir():
+        if not proc.name.isdigit() or int(proc.name) == me:
+            continue
+        try:
+            cmd = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        hit = repo_id in cmd or folder in cmd
+        if not hit:
+            try:
+                hit = any(folder in os.readlink(fd) for fd in (proc / "fd").iterdir())
+            except OSError:
+                pass
+        if hit:
+            out.append(f"process {proc.name} ({cmd.split(' ', 1)[0].rsplit('/', 1)[-1][:40]})")
+    return list(dict.fromkeys(out))
+
+
+def repo_keep(repo_id: str, reg: dict) -> tuple[list, list]:
+    """The part of a repository a lane loads alone, kept by its Delete while that lane's checkpoint is whole here:
+    MiniMax-H3's text_encoder/, which MiniMax-H3-Image loads (the cleanup of 2026-11-16 kept it by hand). (patterns,
+    why)"""
+    whole = {t["target"] for t in reg.get("targets", []) if t.get("state") == "complete"}
+    keep, why = [], []
+    for t, dvar in TARGET_DRAFT_PIN.items():
+        allow = TARGET_DRAFT_ALLOW.get(t)
+        if allow and rg.PIN_MODELS.get(dvar) == repo_id and rg.PIN_MODELS.get(TARGET_PIN[t]) != repo_id and t in whole:
+            keep += [p for p in allow if p not in keep]
+            why.append(f"{', '.join(allow)}, which the {t} lane loads")
+    return keep, why
+
+
+def repo_reloads(repo_id: str) -> list[str]:
+    """The installed targets whose next Load downloads this repository again: its checkpoint, or its drafter's."""
+    out = []
+    for t, var in TARGET_PIN.items():
+        if repo_id in (rg.PIN_MODELS.get(var), rg.PIN_MODELS.get(TARGET_DRAFT_PIN.get(t, ""))) and target_unit(t).exists():
+            out.append(t)
+    return list(dict.fromkeys(out))
+
+
+def hub_verdict(repo_id: str, snap: Path) -> dict:
+    """registry.upstream_verdict of one cached revision against the Hub's file list for it, or {"error": why}: a
+    revision the Hub no longer has, a gated or vanished repository, no network."""
+    try:
+        j = _get_json(f"https://huggingface.co/api/models/{repo_id}/revision/{snap.name}?blobs=true",
+                      timeout=HUB_TIMEOUT_S)
+    except urllib.error.HTTPError as e:
+        return {"error": {401: "the Hub asks for a login to list it (gated or private)",
+                          403: "the Hub asks for a login to list it (gated or private)",
+                          404: "the Hub no longer has this revision"}.get(e.code, f"the Hub answered {e.code}")}
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"the Hub could not be asked: {str(e)[:80]}"}
+    return rg.upstream_verdict(snap, j.get("siblings") or [])
+
+
+def repo_delete_plan(cache: str, repo_id: str, hub: bool = True) -> dict:
+    """What Library's Delete of one repository does, as the page shows it before and the job does it after: the
+    bytes it frees on which disk, what it keeps and why, who reads it now (each a refusal), the installed lanes whose
+    next Load downloads it again, and for each cached revision whether the Hub still serves it as it is here."""
+    reg = registry_snapshot(max_age=0.0)
+    if (cache, repo_id) not in {(m["cache"], m["repo_id"]) for m in reg.get("models", []) + reg.get("other_models", [])}:
+        return {"refused": "not a repository of the caches the lanes read"}
+    d = _repo_dir(cache, repo_id)
+    keep, why = repo_keep(repo_id, reg)
+    plan = rg.repo_deletion_plan(d, keep or None)
+    if "refused" in plan:
+        return plan
+    out = {"repo": repo_id, "cache": cache, "plan": plan, "bytes": plan["bytes"], "mount": plan["mount"],
+           "kept_bytes": plan["kept_bytes"], "kept_why": why, "readers": repo_readers(repo_id),
+           "reloads": repo_reloads(repo_id), "revisions": []}
+    snaps = d / "snapshots"
+    for snap in sorted(snaps.iterdir()) if snaps.is_dir() else []:
+        row = {"rev": snap.name}
+        if hub:
+            row.update(hub_verdict(repo_id, snap))
+        out["revisions"].append(row)
+    out["identical"] = bool(out["revisions"]) and all(r.get("identical") for r in out["revisions"])
+    return out
+
+
+def disk_free(path) -> int:
+    try:
+        st = os.statvfs(path)
+        return st.f_bavail * st.f_frsize
+    except OSError:
+        return -1
+
+
+def job_delete_repo(job: Job):
+    """Library's Delete of one repository, planned again now: refused while anything reads it, and, when the Hub does
+    not serve every cached revision as it is here, unless the page said the loss was seen (lose=yes). Then the plan,
+    and the disk's free space before and after."""
+    p = job.params
+    plan = repo_delete_plan(p["cache"], p["repo"])
+    if "refused" in plan:
+        return False, [f"kept {p['repo']}: {plan['refused']}"], {"ok": False}
+    if plan["readers"]:
+        return False, [f"kept {p['repo']}: read now by " + "; ".join(plan["readers"])], {"ok": False}
+    if not plan["identical"] and p["lose"] != "yes":
+        why = "; ".join(f"{r['rev'][:10]}: " + (r.get("error") or ", ".join(
+            (r.get("differs") or []) + (r.get("absent") or []) + (r.get("unverified") or []))[:200])
+            for r in plan["revisions"] if not r.get("identical")) or "no revision to compare"
+        return False, [f"kept {p['repo']}: the Hub does not serve it as it is here ({why}); its Delete says so and "
+                       "asks again"], {"ok": False}
+    mount = plan["mount"]
+    before = disk_free(mount)
+    rg.apply_repo_deletion(plan["plan"])
+    after = disk_free(mount)
+    with REGISTRY_LOCK:
+        REGISTRY_CACHE.update(ts=0.0, data=None)
+    lines = [f"deleted {p['repo']} from {p['cache']}: {plan['bytes'] / 1e9:.2f} GB planned, "
+             f"{(after - before) / 1e9:.2f} GB more free on {mount} ({after / 2**30:.0f} GiB free)"]
+    if plan["kept_why"]:
+        lines.append(f"kept {plan['kept_bytes'] / 1e9:.2f} GB of it: " + "; ".join(plan["kept_why"]))
+    if plan["reloads"]:
+        lines.append("the next Load of " + ", ".join(plan["reloads"]) + " downloads it again")
+    audit({"kind": "repo_deleted", "repo": p["repo"], "cache": p["cache"], "bytes": plan["bytes"],
+           "freed": after - before, "lose": p["lose"], "identical": plan["identical"]})
+    return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": after - before}
+
+
+# lose: "yes" once the page showed that the Hub does not serve it as it is here, and that was confirmed
+ACTIONS["delete_repo"] = {
+    "danger": "medium",
+    "params": {"repo": _Scanned(lambda: {r for _c, r in scanned_repos()}), "cache": _Scanned(lambda: lane_caches()),
+               "lose": ["no", "yes"]},
+    "argv": None,
+    "timeout": 1800,
+}
+
+
 def job_gpu_clock(job: Job):
     """Cap the GPU clock at one of the caps the cockpit offers, or lift the cap: the cap's exact argv
     (GPU_CLOCK_ARGV), then, once nvidia-smi has done it, the choice kept for the cockpit's next start
@@ -6059,7 +6251,7 @@ def gpu_clock_at_start():
 
 JOB_FUNCS = {"flush_cache": job_flush_cache, "abort_all": job_abort_all,
              "smoke": job_smoke, "diag_bundle": job_diag_bundle,
-             "delete_strays": job_delete_strays, "gpu_clock": job_gpu_clock}
+             "delete_strays": job_delete_strays, "delete_repo": job_delete_repo, "gpu_clock": job_gpu_clock}
 
 
 
@@ -6418,7 +6610,7 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
         data = {"pins": pins, "managed_repos": sorted(set(rg.PIN_MODELS.values())), "caches": caches,
                 "targets": targets,
                 "models": [m for m in models if m["managed"]],
-                "other_models": [{"repo_id": m["repo_id"],
+                "other_models": [{"repo_id": m["repo_id"], "cache": m["cache"],
                                   "disk_bytes": m["disk_bytes"]}
                                  for m in models if not m["managed"]],
                 "images": [i for i in images if i["engine"]],
@@ -6629,6 +6821,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(registry_snapshot(max_age=0.0 if fresh else 300.0))
             except Exception as e:  # noqa: BLE001 (isolated endpoint)
                 return self.send_json({"error": str(e)[:200]}, 500)
+        if path == "/api/registry/plan":
+            # what Library's Delete of one repository would do, the Hub asked: shown before it is confirmed
+            q = urllib.parse.parse_qs(query)
+            repo, cache = q.get("repo", [""])[0], q.get("cache", [""])[0]
+            try:
+                plan = repo_delete_plan(cache, repo)
+            except Exception as e:  # noqa: BLE001 (isolated endpoint)
+                return self.send_json({"error": str(e)[:200]}, 500)
+            plan.pop("plan", None)
+            return self.send_json(plan, 200 if "refused" not in plan else 409)
         if path == "/api/recipes":
             try:
                 if fresh:
