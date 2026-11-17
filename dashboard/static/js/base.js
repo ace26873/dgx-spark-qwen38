@@ -535,6 +535,7 @@ const ACTION_PHRASE = {
   smoke: () => 'run a smoke generation', diag_bundle: () => 'write a diagnostics bundle',
   fit_opencode: () => 'fit the opencode limits to this engine',
   delete_strays: () => 'delete the stray revisions from the model caches',
+  delete_repo: p => `delete ${p.repo || 'a repository'} from the model cache`,
   fetch: p => `download the checkpoint of ${TARGET_NAME[p.target] || p.target || 'a target'}`,
   clients: p => `set the clients for the window of ${TARGET_NAME[p.target] || p.target || 'a lane'}`,
   prepare: p => `build the runtime of the ${laneOfTarget(p.target) || ''} lane`,
@@ -631,6 +632,8 @@ const EXPLAIN = {
   gpu_clock: p => gpuCapExplain(p.cap)};
 // the stray revisions the last scan of the checkpoints offered to delete (Library, scanRegistry)
 const REG_STRAYS = {list: [], bytes: 0};
+// Library's Delete of one repository: the plan the server made for it (GET /api/registry/plan), which the sheet shows
+const REG_DELETE = {plan: null};
 // the lane a Load's target belongs to, by prepare-lane.sh's names (the cockpit's target_lane)
 const laneOfTarget = t => SIDE_LANE[TARGET_UNIT(t)];
 EXPLAIN.prepare = p => {
@@ -647,17 +650,26 @@ EXPLAIN.delete_strays = () => {
     + `, ${fmtGiB(s.bytes)} in all: each one's snapshot and the blobs only it links to. No pin, no installed unit and no ref names them, `
     + 'so no lane reads them, and a blob another revision shares stays. The cockpit scans again when you confirm, and deletes only what is still stray.';
 };
+EXPLAIN.delete_repo = p => {
+  const d = REG_DELETE.plan || {}, kept = (d.kept_why || []).length;
+  return `Removes ${p.repo} from ${d.cache || 'its cache'}: ${fmtGiB(d.bytes)} freed on ${d.mount || 'its disk'}`
+    + (kept ? `, keeping ${fmtGiB(d.kept_bytes)} of it (${d.kept_why.join('; ')})` : '') + '. '
+    + (d.identical ? `The Hub still serves ${(d.revisions || []).length === 1 ? 'this revision' : 'each of its revisions'} exactly as it is here: a download gets it back. ` : '')
+    + 'No lane, container or process reads it now, and a blob another repository shares stays. '
+    + 'The cockpit plans it again when you confirm, asks the Hub again, and deletes only then.';
+};
 const TITLE = {unit: p => `${cap1(p.verb)} ${laneLabel(p.unit)}`, switch: p => `Point the boot at ${TARGET_NAME[p.target] || p.target}`,
   flush_cache: () => 'Flush the engine cache', abort_all: () => 'Abort every generation in flight', smoke: () => 'Run a smoke generation',
   diag_bundle: () => 'Write a diagnostics bundle', fit_opencode: () => 'Fit the opencode limits',
   delete_strays: () => 'Delete the stray revisions',
+  delete_repo: p => `Delete ${String(p.repo || '').split('/').pop()}`,
   fetch: p => `Download ${TARGET_NAME[p.target] || p.target}`,
   clients: p => `Set the clients for the window of ${TARGET_NAME[p.target] || p.target}`,
   prepare: p => `Build the ${laneOfTarget(p.target)} lane's runtime`,
   gpu_clock: p => p.cap === 'none' ? 'Lift the GPU clock cap' : `Cap the GPU clock at ${gpuCapName(p.cap)}`};
 const VERB = {unit: p => cap1(p.verb) + ' ' + (LANE_NAME[p.unit] || laneLabel(p.unit)), switch: () => 'Point the boot', flush_cache: () => 'Flush',
   abort_all: () => 'Abort all', smoke: () => 'Run the probe', diag_bundle: () => 'Write the bundle', fit_opencode: () => 'Fit the limits',
-  delete_strays: () => 'Delete them', fetch: () => 'Download', clients: () => 'Set the clients', prepare: () => 'Build it',
+  delete_strays: () => 'Delete them', delete_repo: p => p.lose === 'yes' ? 'Delete it anyway' : 'Delete it', fetch: () => 'Download', clients: () => 'Set the clients', prepare: () => 'Build it',
   gpu_clock: p => p.cap === 'none' ? 'Lift the cap' : `Cap at ${gpuCapName(p.cap)}`};
 // the GPU clock cap runs as a python job on the server, which hands the page each cap's exact command (its
 // config); the sheet shows that command, not the job's name, unless this machine has no nvidia-smi (ops.js, GC),

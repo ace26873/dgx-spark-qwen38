@@ -441,6 +441,34 @@ async function loadRecipes(){
   }catch(e){ setText('rcp-line', 'Could not load the recipes: ' + e.message); setText(b, 'Retry'); }
   finally{ b.disabled = false; }
 }
+// Library's Delete of one repository: the server's plan first (what it frees on which disk, what it keeps and why,
+// who reads it now, the Hub's verdict per revision), then the sheet. Read now by anything: said, and no sheet. Not
+// served by the Hub as it is here: said in the sheet, whose button then reads "Delete it anyway" (lose=yes).
+function deleteRepoButton(repo, cache){
+  const b = el('button', 'btn sm ghost', 'Delete'); b.type = 'button';
+  b.setAttribute('aria-label', `Delete ${repo} from the cache`);
+  b.addEventListener('click', () => askDeleteRepo(repo, cache, b));
+  return b;
+}
+async function askDeleteRepo(repo, cache, b){
+  const was = b.textContent; b.disabled = true; setText(b, 'Checking…');
+  try{
+    const r = await fetch('/api/registry/plan?repo=' + encodeURIComponent(repo) + '&cache=' + encodeURIComponent(cache)); if (r.status === 401) return login();
+    const d = await r.json();
+    if (d.refused) return toast(`${repo} stays: ${d.refused}.`, 'warn');
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    if ((d.readers || []).length) return toast(`${repo} is read now by ${d.readers.join('; ')}: stop that first.`, 'warn');
+    REG_DELETE.plan = d;
+    const what = {differs: 'served otherwise', absent: 'not served', unverified: 'too large to check by its content'};
+    const warns = (d.revisions || []).filter(rv => !rv.identical).map(rv => `Revision ${rv.rev.slice(0, 10)}: `
+      + (rv.error || Object.keys(what).flatMap(k => (rv[k] || []).map(f => `${f} ${what[k]}`)).join(', '))
+      + '. The Hub may not give it back as it is here: deleting it can lose it for good.');
+    if (!(d.revisions || []).length) warns.push('No revision of it to compare with the Hub: deleting it can lose it for good.');
+    if ((d.reloads || []).length) warns.push(`The next Load of ${d.reloads.map(t => TARGET_NAME[t] || t).join(', ')} downloads it again.`);
+    askAction('delete_repo', {repo, cache, lose: d.identical ? 'no' : 'yes'}, warns, {danger: true});
+  }catch(e){ toast('Could not plan the delete: ' + e.message, 'err'); }
+  finally{ b.disabled = false; setText(b, was); }
+}
 // fresh: Scan reads the cache again; opening the view shows the server's own read, which the
 // recipes' load has just refreshed
 async function scanRegistry(fresh = true){
@@ -460,6 +488,8 @@ async function scanRegistry(fresh = true){
       const del = rv.delete;
       if (del && del.bytes != null){ offered.push({repo: m.repo_id, rev: rv.rev, bytes: del.bytes}); s.append(' ', el('span', 'muted', `frees ${fmtGiB(del.bytes)}`)); }
       else if (del && del.refused) s.append(' ', el('span', 'muted', `kept: ${del.refused}`));
+      // the whole repository, on its first row: Library's Delete (deleteRepoButton)
+      if (!i) s.append(' ', deleteRepoButton(m.repo_id, m.cache));
     }));
     REG_STRAYS.list = offered; REG_STRAYS.bytes = offered.reduce((a, x) => a + x.bytes, 0);
     const rd = $('reg-del'); rd.hidden = !offered.length;
@@ -495,7 +525,7 @@ async function scanRegistry(fresh = true){
     labelCells($('reg-images'));
     const to = $('reg-other').tBodies[0]; clear(to);
     const others = (d.other_models || []).slice().sort((x, y) => y.disk_bytes - x.disk_bytes);
-    others.forEach(m => { const tr = to.insertRow(); tr.insertCell().textContent = m.repo_id; const c = tr.insertCell(); c.className = 'r num sz'; c.textContent = fmtGiB(m.disk_bytes); });
+    others.forEach(m => { const tr = to.insertRow(); const n = tr.insertCell(); n.textContent = m.repo_id; n.append(' ', deleteRepoButton(m.repo_id, m.cache)); const c = tr.insertCell(); c.className = 'r num sz'; c.textContent = fmtGiB(m.disk_bytes); });
     if (!others.length) emptyRow(to, 2, 'None.');
     setText('reg-other-tag', others.length ? fmtGiB(others.reduce((a, m) => a + m.disk_bytes, 0)) + ' in ' + others.length : '');
     const strays = (d.models || []).flatMap(m => m.revisions).filter(rv => rv.status === 'stray');
@@ -538,7 +568,7 @@ async function scanInventory(){
 // made elsewhere left Library saying what was there before (found in review, 2026-10-15).
 on('job_finished', j => {
   if (['switch', 'unit', 'prepare'].includes(j.action)) LOADED.recipes = false;
-  if (['switch', 'prepare', 'fetch', 'delete_strays'].includes(j.action)) LOADED.registry = false;
+  if (['switch', 'prepare', 'fetch', 'delete_strays', 'delete_repo'].includes(j.action)) LOADED.registry = false;
   if (activeView === 'library'){ if (!LOADED.recipes) loadRecipes(); if (!LOADED.registry) scanRegistry(); }
 });
 // the registry with them: the checkpoints, what each lane can load (its Download), the images
