@@ -296,6 +296,154 @@ def deletion_plan(repo_dir: Path, rev: str) -> dict:
     return {"snapshot": str(target), "blobs": only, "bytes": size}
 
 
+def mount_of(path) -> str:
+    """The mount point a path's bytes live on: the longest mount of /proc/self/mounts that holds its real path (the
+    box's own disk, or the SSD a cache was moved to). What a deletion frees is said for that disk."""
+    real = os.path.realpath(path)
+    best = "/"
+    try:
+        with open("/proc/self/mounts", encoding="utf-8", errors="replace") as f:
+            for ln in f:
+                parts = ln.split()
+                if len(parts) < 2:
+                    continue
+                mp = parts[1].replace("\\040", " ")
+                if (real == mp or real.startswith(mp.rstrip("/") + "/")) and len(mp) > len(best):
+                    best = mp
+    except OSError:
+        pass
+    return best
+
+
+def _hop(link: Path) -> str | None:
+    """The path a symbolic link names, made absolute beside it (not resolved further)."""
+    try:
+        return os.path.normpath(os.path.join(link.parent, os.readlink(link)))
+    except OSError:
+        return None
+
+
+def _refs_lines(refs: Path) -> list[str] | None:
+    """The lines of a shared blob's .refs (the repository blobs that link to it, from the cache root), None when it
+    cannot be read: a reader that cannot tell who else uses a blob keeps it."""
+    try:
+        return [ln.strip() for ln in refs.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
+    """What deleting a repository of a Hugging Face cache removes, and the bytes that frees.
+
+    keep: patterns (as allowed() reads them) of the snapshot paths another lane still reads in it (MiniMax-H3's
+    text_encoder/, which MiniMax-H3-Image loads): those links, the blobs they reach and what names those blobs stay.
+    Each real file is counted and removed once: the repository's own blob, or the blob of the cache's shared store
+    (hub/blobs/<xx>/<sha256>) a repository blob links to. A shared blob goes only when every line of its .refs is a
+    repository blob that goes: another repository's line keeps it (the scan counted it in both, and frees it in
+    neither). Nothing is removed here: apply_repo_deletion does it, from a plan made just before.
+    {"refused": why} for a folder that is not a repository, or one a download is writing to now."""
+    repo_dir = Path(repo_dir)
+    snaps, blobs_dir = repo_dir / "snapshots", repo_dir / "blobs"
+    if not repo_dir.name.startswith(("models--", "datasets--", "spaces--")) or not (snaps.is_dir() or blobs_dir.is_dir()):
+        return {"refused": "not a repository of this cache"}
+    now = time.time()
+    if blobs_dir.is_dir():
+        for b in blobs_dir.iterdir():
+            try:
+                if b.name.endswith(".incomplete") and now - b.stat().st_mtime < ACTIVE_S:
+                    return {"refused": "a download is writing to it now"}
+            except OSError:
+                pass
+    hub = repo_dir.parent
+    store = os.path.normpath(os.path.realpath(hub / "blobs"))
+    own = os.path.normpath(os.path.realpath(blobs_dir))
+    links, kept = [], []
+    for snap in sorted(snaps.iterdir()) if snaps.is_dir() else []:
+        for base, _dirs, files in os.walk(snap):
+            for fn in files:
+                p = Path(base) / fn
+                (kept if keep and allowed(str(p.relative_to(snap)), keep) else links).append(p)
+    kept_hops = {_hop(p) for p in kept if p.is_symlink()}
+    kept_real = {os.path.realpath(p) for p in kept}
+    gone = []
+    for b in sorted(blobs_dir.iterdir()) if blobs_dir.is_dir() else []:
+        if os.path.normpath(str(b)) not in kept_hops and os.path.realpath(b) not in kept_real:
+            gone.append(str(b))
+    gone_set = {os.path.normpath(g) for g in gone}
+    seen, size, kept_bytes, shared, rewrite = set(), 0, 0, [], {}
+    for g in gone:
+        real = os.path.realpath(g)
+        try:
+            st = os.stat(real)
+        except OSError:
+            continue                                    # a link to nothing: it goes, it frees nothing
+        key = (st.st_dev, st.st_ino)
+        parent = os.path.dirname(real)
+        if os.path.dirname(parent) == store:            # the shared store: by what its .refs says
+            lines = _refs_lines(Path(real + ".refs"))
+            if not lines:
+                continue                                # no owner said: kept, counted nowhere
+            mine = [ln for ln in lines if os.path.normpath(str(hub / ln)) in gone_set]
+            if len(mine) == len(lines):
+                if key not in seen:
+                    seen.add(key)
+                    size += st.st_size
+                    shared.append(real)
+            elif mine:
+                rewrite[real + ".refs"] = [ln for ln in lines if ln not in mine]
+            continue
+        if parent != own or key in seen:
+            continue                                    # not this cache's file (a link out of it): only the link goes
+        seen.add(key)
+        size += st.st_size
+    for p in kept:
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if (st.st_dev, st.st_ino) not in seen:
+            seen.add((st.st_dev, st.st_ino))
+            kept_bytes += st.st_size
+    return {"repo_dir": str(repo_dir), "whole": not kept, "links": [str(p) for p in links] if kept else [],
+            "blobs": gone, "shared": shared, "refs_rewrite": rewrite, "bytes": size, "kept_bytes": kept_bytes,
+            "mount": mount_of(repo_dir)}
+
+
+def apply_repo_deletion(plan: dict) -> int:
+    """Carry out a repo_deletion_plan: the whole repository folder (links, never what they point at) and its lock
+    folder, or only the links and blobs the plan names when part of it is kept; then the shared blobs it owned alone,
+    with their .refs and .lock, and the .refs of a shared blob it shared, without its lines. The bytes the plan
+    counted."""
+    repo_dir = Path(plan["repo_dir"])
+    if plan["whole"]:
+        import shutil
+        shutil.rmtree(repo_dir)
+        shutil.rmtree(repo_dir.parent / ".locks" / repo_dir.name, ignore_errors=True)
+    else:
+        for p in plan["links"] + plan["blobs"]:
+            try:
+                os.unlink(p)
+            except FileNotFoundError:
+                pass
+        snaps = repo_dir / "snapshots"
+        for d in sorted((d for d in snaps.rglob("*") if d.is_dir() and not d.is_symlink()),
+                        key=lambda d: -len(d.parts)):
+            if not any(d.iterdir()):
+                d.rmdir()
+    for b in plan["shared"]:
+        for f in (b, b + ".refs", b + ".lock"):
+            try:
+                os.unlink(f)
+            except FileNotFoundError:
+                pass
+    for refs, lines in plan["refs_rewrite"].items():
+        tmp = refs + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("".join(ln + "\n" for ln in lines))
+        os.replace(tmp, refs)
+    return plan["bytes"]
+
+
 def classify(models: list[dict], pins: dict[str, str]) -> list[dict]:
     """Mark every cached revision pinned (by which var) or stray."""
     # the first variable that pins a revision names it: two may pin one (MiniMax-H3's commit, the video lane's checkpoint
