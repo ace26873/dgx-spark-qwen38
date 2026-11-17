@@ -435,7 +435,8 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
         if (st.st_dev, st.st_ino) not in seen:
             seen.add((st.st_dev, st.st_ino))
             kept_bytes += st.st_size
-    folder = unwritable([os.path.realpath(repo_dir)] + [os.path.dirname(s) for s in shared])
+    # the cache's own folder too, whose entry for the repository goes (a link to another disk: the link)
+    folder = unwritable([os.path.realpath(repo_dir), repo_dir] + [os.path.dirname(s) for s in shared])
     if folder:
         return {"refused": f"this user may not change {folder} (another user's, root's?): nothing is deleted"}
     return {"repo_dir": str(repo_dir), "whole": not kept, "links": [str(p) for p in links] if kept else [],
@@ -508,6 +509,11 @@ def apply_repo_deletion(plan: dict) -> int:
     return plan["bytes"]
 
 
+# The files the installers write in a snapshot, from the Hub's own: YaRN's config.json (patch-yarn.py, the original kept
+# as config.json.pre-yarn) and the fp8 KV declaration of config.json and hf_quant_config.json (patch-kv.py). Any other
+# file that differs from the Hub's is a change the Hub cannot give back (code review of v1.51.0: an edited
+# tokenizer_config.json read as rewritten, and its Delete said the Hub served it all as it is here).
+INSTALLER_REWRITES = ("config.json", "hf_quant_config.json")
 # A file of a snapshot hashed whole to compare it with the Hub: a config the installers rewrote, or a small file a
 # tool cached under another name than its git id (NVIDIA Sync's launcher names them by sha256: the disk cleanup of
 # 2026-11-16 read them "different" until their content was hashed). A larger one is not read: it stays unverified.
@@ -565,7 +571,7 @@ def upstream_verdict(snap: Path, siblings: list[dict]) -> dict:
                 continue
             if set(_hashes(p)) & ids:
                 out["same"] += 1
-            elif not p.is_symlink() and rel == name:
+            elif not p.is_symlink() and rel in INSTALLER_REWRITES:
                 out["rewritten"].append(rel)
             else:
                 out["differs"].append(rel)

@@ -156,6 +156,17 @@ class DeleteRepo(unittest.TestCase):
         self.assertIn("may not change", plan.get("refused", ""), plan)
         self.assertTrue((locked / "w.bin").exists())
 
+    def test_the_cache_folder_of_a_linked_repository_must_be_writable_too(self):
+        far = Cache(self.root / "interne").repo("h3", {"te.bin": b"z" * 64})
+        link = self.c.hub / far.name
+        os.symlink(far, link)
+        os.chmod(self.c.hub, 0o555)
+        self.addCleanup(os.chmod, self.c.hub, 0o755)
+        if os.access(self.c.hub, os.W_OK):
+            self.skipTest("run as root: every folder is writable")
+        self.assertIn("may not change", rg.repo_deletion_plan(link).get("refused", ""))
+        self.assertTrue((far / "blobs").is_dir(), "nothing went")
+
     def test_a_download_in_progress_is_refused(self):
         repo = self.c.repo("m", {"config.json": b"{}"})
         part = repo / "blobs" / ("e" * 64 + ".incomplete")
@@ -223,6 +234,16 @@ class UpstreamVerdict(unittest.TestCase):
         self.written("config.json.pre-yarn", b'{"rope": "other"}')
         v = rg.upstream_verdict(self.snap, [self.sib("config.json", orig, lfs=False)])
         self.assertEqual((v["differs"], v["identical"]), (["config.json.pre-yarn"], False))
+
+    def test_a_file_changed_here_that_no_installer_writes_is_a_loss(self):
+        # a tokenizer config or a chat template edited in place: the Hub cannot give it back
+        self.written("tokenizer_config.json", b'{"edited": true}')
+        v = rg.upstream_verdict(self.snap, [self.sib("tokenizer_config.json", b'{"edited": false}', lfs=False)])
+        self.assertEqual((v["rewritten"], v["differs"], v["identical"]), ([], ["tokenizer_config.json"], False))
+        # what patch-kv.py writes is rewritten here
+        self.written("hf_quant_config.json", b'{"kv": "FP8"}')
+        v = rg.upstream_verdict(self.snap, [self.sib("hf_quant_config.json", b'{"kv": null}', lfs=False)])
+        self.assertEqual(v["rewritten"], ["hf_quant_config.json"])
 
     def test_a_linked_blob_the_hub_no_longer_serves(self):
         self.linked("model.safetensors", b"old" * 10)

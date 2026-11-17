@@ -826,6 +826,12 @@ class ActionRegistry(Base):
             for key, allowed in spec["params"].items():
                 self.assertIsInstance(allowed, (list, tuple, set, frozenset),
                                       f"{name}.{key} is not a closed set")
+                if isinstance(allowed, self.cp._Scanned):
+                    # Library's Deletes (v1.51.0): a name the last scan listed, read when the value is checked, and
+                    # nothing else: no path, no name of the test's own (its scan lists nothing)
+                    for v in ("x", "../..", "/etc", "a/b", "", None, 1):
+                        self.assertNotIn(v, allowed, f"{name}.{key} accepts {v!r}")
+                    continue
                 self.assertTrue(len(allowed) > 0, f"{name}.{key} allows nothing")
                 self.assertLess(len(allowed), 200, f"{name}.{key} is not a small enum")
 

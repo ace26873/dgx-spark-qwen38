@@ -17,6 +17,7 @@ import base64
 import calendar
 import hashlib
 import hmac
+import concurrent.futures
 import http.server
 import importlib.util
 import json
@@ -4145,6 +4146,8 @@ def run_job(job: Job):
         if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo", "delete_image", "delete_runtime"):
             with REGISTRY_LOCK:      # a scan running now would write its own date over it
                 REGISTRY_CACHE["ts"] = 0.0
+            with STORAGE_LOCK:
+                STORAGE_CACHE["ts"] = 0.0
             for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable)):
                 snap = fn()
                 with STATE_LOCK:
@@ -6012,31 +6015,18 @@ class _Scanned(list):
             return False
 
 
-def repo_readers(repo_id: str) -> list[str]:
-    """Who reads a repository now, each said once: a lane unit active or starting that names it; a running
-    container whose command, arguments or environment name it (another project's too: the GTA session's gta-vlm
-    serves RadixArk's 27B from this cache, 2026-11-17); a process whose command line names it, or that holds one of
-    its files open (those this user may read: an engine runs in its container as root, which the two checks before
-    see)."""
-    folder = "models--" + repo_id.replace("/", "--")
-    out = []
-    for unit in UNITS:
-        path = UNIT_DIR / unit
-        try:
-            text = path.read_text(errors="replace")
-        except OSError:
-            continue
-        if (repo_id in text or folder in text) and run(["systemctl", "is-active", unit]).strip() in (
-                "active", "activating", "reloading", "deactivating"):
-            out.append(f"{unit}, which serves or starts")
-    ids = run(["docker", "ps", "-q", "--no-trunc"], timeout=10).split()
-    if ids:
-        for ln in run(["docker", "inspect", "--format",
-                       "{{.Name}} {{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}", *ids],
-                      timeout=10).splitlines():
-            if repo_id in ln or folder in ln:
-                out.append(f"the container {ln.split(' ', 1)[0].lstrip('/')}")
-    me = os.getpid()
+def names_in(text: str, name: str) -> bool:
+    """Whether a text names a repository, a folder or an image whole, not as the start of a longer one: Qwen/Qwen3.8-27B
+    is not named by a unit that serves Qwen/Qwen3.8-27B-FP8 (code review of v1.51.0)."""
+    return re.search(r"(?<![A-Za-z0-9._-])" + re.escape(name) + r"(?![A-Za-z0-9._-])", text) is not None
+
+
+def processes_reading(match) -> list[str]:
+    """The processes this user may read whose command line, open files or mapped files match (match(text) for the
+    command line, match(path) for each file): a checkpoint loaded by mmap keeps no file open, only its mapping (code
+    review of v1.51.0). An engine in its container runs as root, whose files this user may not read: its unit and its
+    container say it."""
+    out, me = [], os.getpid()
     for proc in PROC.iterdir():
         if not proc.name.isdigit() or int(proc.name) == me:
             continue
@@ -6044,14 +6034,55 @@ def repo_readers(repo_id: str) -> list[str]:
             cmd = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
         except OSError:
             continue
-        hit = repo_id in cmd or folder in cmd
+        hit = match(cmd)
         if not hit:
             try:
-                hit = any(folder in os.readlink(fd) for fd in (proc / "fd").iterdir())
+                hit = any(match(os.readlink(fd)) for fd in (proc / "fd").iterdir())
+            except OSError:
+                pass
+        if not hit:
+            try:
+                with open(proc / "maps", encoding="utf-8", errors="replace") as f:
+                    hit = any(len(parts) == 6 and match(parts[5].strip()) for parts in (ln.split(None, 5) for ln in f))
             except OSError:
                 pass
         if hit:
             out.append(f"process {proc.name} ({cmd.split(' ', 1)[0].rsplit('/', 1)[-1][:40]})")
+    return out
+
+
+def repo_readers(repo_id: str, real: str | None = None, shared=()) -> list[str]:
+    """Who reads a repository now, each said once: a lane unit active or starting that names it; a running
+    container whose command, arguments or environment name it (another project's too: the GTA session's gta-vlm
+    serves RadixArk's 27B from this cache, 2026-11-17); a process whose command line names it, or that holds or maps
+    one of its files: by its folder's name, by its real folder when the cache links it from another disk, or by a
+    blob of the shared store the Delete would remove (a mapping shows the file it reached)."""
+    folder = "models--" + repo_id.replace("/", "--")
+    names = {os.path.basename(s) for s in shared}
+
+    def named(text):
+        return names_in(text, repo_id) or names_in(text, folder)
+
+    def match(s):
+        return named(s) or bool(real and (s == real or s.startswith(real + "/"))) or os.path.basename(s) in names
+    out = []
+    for unit in UNITS:
+        path = UNIT_DIR / unit
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if named(text) and run(["systemctl", "is-active", unit]).strip() in (
+                "active", "activating", "reloading", "deactivating"):
+            out.append(f"{unit}, which serves or starts")
+    ids = run(["docker", "ps", "-q", "--no-trunc"], timeout=10).split()
+    if ids:
+        for ln in run(["docker", "inspect", "--format",
+                       "{{.Name}} {{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}", *ids],
+                      timeout=10).splitlines():
+            if named(ln):
+                out.append(f"the container {ln.split(' ', 1)[0].lstrip('/')}")
+    out += processes_reading(match)
     return list(dict.fromkeys(out))
 
 
@@ -6106,14 +6137,18 @@ def repo_delete_plan(cache: str, repo_id: str, hub: bool = True) -> dict:
     if "refused" in plan:
         return plan
     out = {"repo": repo_id, "cache": cache, "plan": plan, "bytes": plan["bytes"], "mount": plan["mount"],
-           "kept_bytes": plan["kept_bytes"], "kept_why": why, "readers": repo_readers(repo_id),
+           "kept_bytes": plan["kept_bytes"], "kept_why": why,
+           "readers": repo_readers(repo_id, os.path.realpath(d), plan["shared"]),
            "reloads": repo_reloads(repo_id), "revisions": []}
     snaps = d / "snapshots"
-    for snap in sorted(snaps.iterdir()) if snaps.is_dir() else []:
-        row = {"rev": snap.name}
-        if hub:
-            row.update(hub_verdict(repo_id, snap))
-        out["revisions"].append(row)
+    snaps = sorted(snaps.iterdir()) if snaps.is_dir() else []
+    # the Hub asked for each revision at once: one after the other, a slow Hub held the page's "Checking..." up to
+    # 20 s a revision (code review of v1.51.0)
+    verdicts = [{}] * len(snaps)
+    if hub and snaps:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(snaps))) as ex:
+            verdicts = list(ex.map(lambda s: hub_verdict(repo_id, s), snaps))
+    out["revisions"] = [{"rev": s.name, **v} for s, v in zip(snaps, verdicts)]
     out["identical"] = bool(out["revisions"]) and all(r.get("identical") for r in out["revisions"])
     return out
 
@@ -6142,21 +6177,25 @@ def job_delete_repo(job: Job):
             for r in plan["revisions"] if not r.get("identical")) or "no revision to compare"
         return False, [f"kept {p['repo']}: the Hub does not serve it as it is here ({why}); its Delete says so and "
                        "asks again"], {"ok": False}
-    mount = plan["mount"]
-    before = disk_free(mount)
+    # each disk it touches: the repository's folder can be on one, the cache's shared store on another (code review
+    # of v1.51.0)
+    mounts = list(dict.fromkeys([plan["mount"]] + [rg.mount_of(os.path.dirname(s)) for s in plan["plan"]["shared"]]))
+    before = {m: disk_free(m) for m in mounts}
     rg.apply_repo_deletion(plan["plan"])
-    after = disk_free(mount)
+    after = {m: disk_free(m) for m in mounts}
     with REGISTRY_LOCK:
         REGISTRY_CACHE.update(ts=0.0, data=None)
+    freed = sum(after[m] - before[m] for m in mounts)
     lines = [f"deleted {p['repo']} from {p['cache']}: {plan['bytes'] / 1e9:.2f} GB planned, "
-             f"{(after - before) / 1e9:.2f} GB more free on {mount} ({after / 2**30:.0f} GiB free)"]
+             + ", ".join(f"{(after[m] - before[m]) / 1e9:.2f} GB more free on {m} ({after[m] / 2**30:.0f} GiB free)"
+                         for m in mounts)]
     if plan["kept_why"]:
         lines.append(f"kept {plan['kept_bytes'] / 1e9:.2f} GB of it: " + "; ".join(plan["kept_why"]))
     if plan["reloads"]:
         lines.append("the next Load of " + ", ".join(plan["reloads"]) + " downloads it again")
     audit({"kind": "repo_deleted", "repo": p["repo"], "cache": p["cache"], "bytes": plan["bytes"],
-           "freed": after - before, "lose": p["lose"], "identical": plan["identical"]})
-    return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": after - before}
+           "freed": freed, "lose": p["lose"], "identical": plan["identical"]})
+    return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": freed}
 
 
 # ---- Library's Delete of an engine image ---------------------------------------------------------------------------
@@ -6240,13 +6279,19 @@ def job_delete_image(job: Job):
         return False, [f"kept {p['image']}: no registry serves it now and no lane builds it; its Delete says so and "
                        "asks again"], {"ok": False}
     before = disk_free(plan["mount"])
-    rm = run(["docker", "rmi", *plan["names"]], timeout=600, merge_err=True)
+    # one name at a time: untagging an image's last tag takes its digest references with it, and a docker rmi that
+    # named them too ended in "No such image" with the image gone (code review of v1.51.0). Done when it is gone.
+    lines = []
+    for name in plan["names"]:
+        lines += [ln for ln in str(run(["docker", "rmi", name], timeout=600, merge_err=True)).splitlines() if ln.strip()]
+    gone = not answered(run(["docker", "image", "inspect", "--format", "{{.Id}}", plan["id"]], timeout=10))
     after = disk_free(plan["mount"])
     with REGISTRY_LOCK:
         REGISTRY_CACHE.update(ts=0.0, data=None)
-    lines = [ln for ln in str(rm).splitlines() if ln.strip()][-12:]
-    if not answered(rm):
-        return False, lines + [f"docker rmi failed: {(after - before) / 1e9:.2f} GB freed on {plan['mount']}"], {"ok": False}
+    lines = lines[-12:]
+    if not gone:
+        return False, lines + [f"the image is still here after docker rmi of each of its names: "
+                               f"{(after - before) / 1e9:.2f} GB freed on {plan['mount']}"], {"ok": False}
     lines.append(f"deleted the image {plan['id'][7:19]} ({', '.join(plan['names'])}): "
                  f"{(after - before) / 1e9:.2f} GB more free on {plan['mount']} ({after / 2**30:.0f} GiB free)")
     if plan["reloads"]:
@@ -6270,8 +6315,10 @@ ACTIONS["delete_image"] = {
 # (prepare-lane.sh); the diffusion runtime writes two caches at its first start, outside the lanes' folders (lanes.sh,
 # video_first_start_caches: 30 GB on the reference box, 2026-11-17). Deleted, the runtime is "not prepared" and the
 # lane's next Load builds it again (lane_prepared); the caches are written again at the next start, which takes longer.
-# What a lane made stays: its outputs/ (the images and videos generated).
-RUNTIME_KEEP = ("outputs",)
+# Only what the lane's installer put there goes, as uninstall.sh removes it: the folder (IMAGE_LANE_DIR and the
+# others) can be shared with other work, and removing the rest of it took that work with it (found in review,
+# 2026-09-24; code review of v1.51.0). What a lane made stays: its outputs/ (the images and videos generated).
+RUNTIME_ENTRIES = ("venv", "sglang", "sglang-wheel", "sglang-source", "runtime-changed")
 
 
 def runtime_paths(item: str) -> tuple[list, str | None]:
@@ -6286,10 +6333,7 @@ def runtime_paths(item: str) -> tuple[list, str | None]:
         d = Path(m.group(1).strip()) if m else d
     except OSError:
         pass
-    try:
-        return [p for p in sorted(d.iterdir()) if p.name not in RUNTIME_KEEP], unit.name
-    except OSError:
-        return [], unit.name
+    return [d / e for e in RUNTIME_ENTRIES], unit.name
 
 
 def tree_bytes(paths) -> int:
@@ -6347,7 +6391,32 @@ def disk_rows(caches: list, runtimes: list) -> list[dict]:
         except OSError:
             pass
     return sorted(disks.values(), key=lambda d: d["mount"])
+
+
 DIFFUSION_UNITS = ("qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service")
+# Library's runtimes and disks, apart from the registry's scan: they walk the venvs (hundreds of thousands of files,
+# 1.75 s on the reference box) and ask docker, which every Delete's plan, rescanning the registry, did again under its
+# lock (code review of v1.51.0). Read by Library's view only, kept STORAGE_TTL.
+STORAGE_CACHE: dict = {"ts": 0.0, "data": None}
+STORAGE_LOCK = threading.Lock()
+STORAGE_TTL = 120.0
+
+
+def storage_snapshot(max_age: float = STORAGE_TTL) -> dict:
+    with STORAGE_LOCK:
+        if STORAGE_CACHE["data"] is not None and time.time() - STORAGE_CACHE["ts"] < max_age:
+            return STORAGE_CACHE["data"]
+        rows = runtime_rows()
+        data = {"runtimes": rows, "disks": disk_rows(lane_caches(), rows)}
+        STORAGE_CACHE.update(ts=time.time(), data=data)
+        return data
+
+
+def registry_view(fresh: bool) -> dict:
+    """Library's registry: the scan, and the runtimes and disks beside it."""
+    data = dict(registry_snapshot(max_age=0.0 if fresh else 300.0))
+    data.update(storage_snapshot(max_age=0.0 if fresh else STORAGE_TTL))
+    return data
 
 
 def runtime_rows() -> list[dict]:
@@ -6374,6 +6443,11 @@ def job_delete_runtime(job: Job):
     paths = [p for p in paths if os.path.lexists(p)]
     if not paths:
         return True, [f"nothing of the {item} runtime is on this box"], {"ok": True, "bytes": 0}
+    # and no process runs from it or reads it, a lane started by hand from its venv included (code review of v1.51.0)
+    under = [re.compile(re.escape(str(p)) + r"(?=/|\s|$)") for p in paths]
+    procs = processes_reading(lambda s: any(u.search(s) for u in under))
+    if procs:
+        return False, [f"kept the {item} runtime: used by " + "; ".join(procs)], {"ok": False}
     folder = rg.unwritable(paths)
     if folder:
         return False, [f"kept the {item} runtime: this user may not change {folder} (another user's, root's?)"], \
@@ -6857,7 +6931,6 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                     state = state if state == dstate or (files is not None and state == "absent") else "incomplete"
             targets.append({"target": t, "repo": repo, "rev": rev, "state": state,
                             "installed": target_unit(t).exists()})
-        rt_rows = runtime_rows()
         data = {"pins": pins, "managed_repos": sorted(set(rg.PIN_MODELS.values())), "caches": caches,
                 "targets": targets,
                 "models": [m for m in models if m["managed"]],
@@ -6865,8 +6938,6 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                                   "disk_bytes": m["disk_bytes"]}
                                  for m in models if not m["managed"]],
                 "images": [i for i in images if i["engine"]],
-                "runtimes": rt_rows,
-                "disks": disk_rows(caches, rt_rows),
                 "partial": partial,
                 "pins_lost": read["pins_lost"],
                 "ts": time.time()}
@@ -7071,7 +7142,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/registry":
             try:
                 # "scan" has to mean scan: the button sends refresh=1 and bypasses the cache
-                return self.send_json(registry_snapshot(max_age=0.0 if fresh else 300.0))
+                return self.send_json(registry_view(fresh))
             except Exception as e:  # noqa: BLE001 (isolated endpoint)
                 return self.send_json({"error": str(e)[:200]}, 500)
         if path == "/api/registry/plan":

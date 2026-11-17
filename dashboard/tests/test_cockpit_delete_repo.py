@@ -197,6 +197,9 @@ class DeleteRepo(unittest.TestCase):
         (d / "sglang-wheel").write_text("sglang-0.5.22\n")
         (d / "outputs").mkdir()
         (d / "outputs" / "cat.png").write_bytes(b"png")
+        # IMAGE_LANE_DIR can be a folder shared with other work: only what the installer put there goes
+        (d / "work").mkdir()
+        (d / "work" / "notes.txt").write_text("mine")
         rows = {r["item"]: r for r in self.cp.runtime_rows()}
         self.assertIn("image", rows)
         self.assertGreaterEqual(rows["image"]["bytes"], 5000)
@@ -209,7 +212,8 @@ class DeleteRepo(unittest.TestCase):
         self.active.clear()
         code, body = self.runtime("image")
         self.assertEqual((code, body["status"]), (202, "done"), body)
-        self.assertEqual(sorted(x.name for x in d.iterdir()), ["outputs"])
+        self.assertEqual(sorted(x.name for x in d.iterdir()), ["outputs", "work"])
+        self.assertEqual((d / "work" / "notes.txt").read_text(), "mine")
         self.assertEqual((d / "outputs" / "cat.png").read_bytes(), b"png")
         self.assertTrue(any("next Load builds it again" in ln for ln in body["lines"]), body["lines"])
 
@@ -230,6 +234,93 @@ class DeleteRepo(unittest.TestCase):
     def test_only_a_known_item(self):
         self.assertEqual(self.runtime("../../etc")[0], 400)
 
+
+    def test_a_process_running_from_a_runtime_keeps_it(self):
+        d = self.tmp / ".local" / "share" / "qwen38-image"
+        shutil.rmtree(d, ignore_errors=True)
+        (d / "venv" / "bin").mkdir(parents=True)
+        (d / "venv" / "bin" / "python").write_bytes(b"p")
+        proc = self.tmp / "proc" / "777"
+        proc.mkdir()
+        (proc / "cmdline").write_bytes(str(d / "venv" / "bin" / "python").encode() + b"\0-m\0sglang\0")
+        code, body = self.runtime("image")
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue((d / "venv").exists())
+        self.assertTrue(any("process 777" in ln for ln in body["lines"]), body["lines"])
+
+    def test_a_process_that_maps_a_shared_blob_it_owns_keeps_it(self):
+        # a checkpoint loaded by mmap keeps no file open, only its mapping, of the file the links reached
+        sha = "d" * 64
+        store = self.hub / "blobs" / sha[:2] / sha
+        store.parent.mkdir(parents=True)
+        store.write_bytes(b"s" * 20)
+        (store.parent / (sha + ".refs")).write_text(f"models--RadixArk--Qwen3.8-27B-DSpark/blobs/{sha}\n")
+        os.symlink(os.path.relpath(store, self.repo / "blobs"), self.repo / "blobs" / sha)
+        os.symlink(f"../../blobs/{sha}", self.repo / "snapshots" / self.rev / "s.safetensors")
+        self.hub_files[DSPARK].append(sibling("s.safetensors", b"s" * 20))
+        proc = self.tmp / "proc" / "888"
+        proc.mkdir()
+        (proc / "cmdline").write_bytes(b"python3\0notebook.py\0")
+        (proc / "maps").write_text(f"7f00-7f10 r--s 00000000 00:00 1   /data/hub/blobs/{sha[:2]}/{sha}\n")
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(any("process 888" in ln for ln in body["lines"]), body["lines"])
+        self.assertTrue(store.exists())
+
+    def test_a_longer_name_that_starts_with_it_is_not_it(self):
+        (self.tmp / "units" / "qwen38-sglang.service").write_text(f"ExecStart=... --model-path {DSPARK}2 --revision x\n")
+        self.active.add("qwen38-sglang.service")
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "done", body)
+
+    def test_each_disk_it_touches_says_what_it_freed(self):
+        sha = "e" * 64
+        store = self.hub / "blobs" / sha[:2] / sha
+        store.parent.mkdir(parents=True)
+        store.write_bytes(b"s" * 20)
+        (store.parent / (sha + ".refs")).write_text(f"models--RadixArk--Qwen3.8-27B-DSpark/blobs/{sha}\n")
+        os.symlink(os.path.relpath(store, self.repo / "blobs"), self.repo / "blobs" / sha)
+        os.symlink(f"../../blobs/{sha}", self.repo / "snapshots" / self.rev / "s.safetensors")
+        self.hub_files[DSPARK].append(sibling("s.safetensors", b"s" * 20))
+        real_mount, real_free = self.cp.rg.mount_of, self.cp.disk_free
+        self.cp.rg.mount_of = lambda path: "/store" if "/hub/blobs/" in os.path.realpath(path) + "/" else "/repos"
+        free = {"/store": 100, "/repos": 1000}
+        self.cp.disk_free = lambda m: free[m] + (1000 if not self.repo.exists() else 0)
+        self.addCleanup(setattr, self.cp.rg, "mount_of", real_mount)
+        self.addCleanup(setattr, self.cp, "disk_free", real_free)
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "done", body)
+        self.assertIn("on /repos", body["lines"][0])
+        self.assertIn("on /store", body["lines"][0])
+
+    def test_the_registry_scan_walks_no_runtime_and_library_still_shows_them(self):
+        calls = []
+        real = self.cp.runtime_rows
+        self.cp.runtime_rows = lambda: calls.append(1) or real()
+        self.addCleanup(setattr, self.cp, "runtime_rows", real)
+        self.cp.registry_snapshot(max_age=0.0)
+        self.cp.repo_delete_plan(self.cache, DSPARK, hub=False)
+        self.assertEqual(calls, [], "a Delete's plan rescans the registry: it walked the venvs too")
+        view = self.cp.registry_view(True)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("runtimes", view)
+        self.assertIn("disks", view)
+
+    def test_the_hub_is_asked_for_every_revision_at_once(self):
+        revs = [c * 40 for c in "1234"]
+        for r in revs:
+            fake_repo(self.hub, {r: {"m.bin": b"o"}}, name="models--someone--four") if r == revs[0] else None
+        repo = self.hub / "models--someone--four"
+        for r in revs[1:]:
+            (repo / "snapshots" / r).mkdir(parents=True)
+        def slow(url, timeout=5.0):
+            time.sleep(0.4)
+            return {"siblings": [sibling("m.bin", b"o")]}
+        self.cp._get_json = slow
+        t0 = time.time()
+        plan = self.cp.repo_delete_plan(self.cache, OTHER.replace("other-model", "four"))
+        self.assertEqual(len(plan["revisions"]), 4, plan)
+        self.assertLess(time.time() - t0, 1.2, "four revisions asked one after the other")
 
 if __name__ == "__main__":
     unittest.main()

@@ -64,6 +64,7 @@ class DeleteImage(unittest.TestCase):
         (self.tmp / "units").mkdir()
         self.names = ["qwen38-pinned:flash-local-03a956544e9f", "qwen38-pinned:ornith-122b-03a956544e9f", DIGEST]
         self.containers, self.active, self.served, self.rmi = [], set(), True, []
+        self.gone = lambda: not self.names
         for lane in ("flash-local", "ornith-122b"):
             (self.tmp / "units" / f"qwen38-{lane}.service").write_text(f"ExecStart=/usr/bin/docker run --rm {DIGEST}\n")
         self.cp.run = self.fake_run
@@ -73,7 +74,7 @@ class DeleteImage(unittest.TestCase):
 
     def fake_run(self, argv, timeout=5.0, merge_err=False, errors="strict"):
         if argv[:3] == ["docker", "image", "inspect"]:
-            if argv[-1] != "a7f76ae9f18c" or self.rmi:
+            if argv[-1] not in ("a7f76ae9f18c", FULL) or self.gone():
                 return ran("", ok=False)
             tags = [n for n in self.names if "@" not in n]
             return ran(f"{FULL}|{json.dumps(tags)}|{json.dumps([n for n in self.names if '@' in n])}\n")
@@ -88,8 +89,21 @@ class DeleteImage(unittest.TestCase):
         if argv[:2] == ["docker", "info"]:
             return ran("/var/lib/docker\n")
         if argv[:2] == ["docker", "rmi"]:
+            # docker's own way: a name of an image gone is "No such image" and fails the whole command; untagging
+            # an image's last tag takes its digest references with it, and the image
             self.rmi.append(argv[2:])
-            return ran("Untagged: ...\nDeleted: ...\n")
+            out, ok = [], True
+            for name in argv[2:]:
+                if self.gone() or name not in self.names:
+                    out.append(f"Error response from daemon: No such image: {name}")
+                    ok = False
+                    continue
+                self.names.remove(name)
+                out.append(f"Untagged: {name}")
+                if not [n for n in self.names if "@" not in n]:
+                    self.names.clear()
+                    out.append("Deleted: " + FULL)
+            return ran("\n".join(out) + "\n", ok=ok)
         return ran("")
 
     def act(self, lose="no", image="a7f76ae9f18c"):
@@ -106,7 +120,9 @@ class DeleteImage(unittest.TestCase):
     def test_every_name_goes_and_the_lanes_that_ran_it_are_said(self):
         code, body = self.act()
         self.assertEqual((code, body["status"]), (202, "done"), body)
-        self.assertEqual(self.rmi, [self.names], "one docker rmi of every name, never -f")
+        self.assertEqual(self.rmi, [["qwen38-pinned:flash-local-03a956544e9f"], ["qwen38-pinned:ornith-122b-03a956544e9f"],
+                                    [DIGEST]], "a docker rmi of each name in turn, never -f")
+        self.assertTrue(self.gone())
         self.assertEqual(body["result"]["bytes"], 17_770_000_000)
         self.assertTrue(any("flash-local" in ln and "ornith-122b" in ln and "pulls or builds it again" in ln
                             for ln in body["lines"]), body["lines"])

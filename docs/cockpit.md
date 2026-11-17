@@ -184,12 +184,15 @@ themes.
   - **An engine image**, with every name it has here (FP4-Local and Ornith run one image), by `docker rmi`, never `-f`:
     it frees the layers no other image has (docker's own count), and the sheet says whether its registry still serves
     its digest, or its lane builds it here.
-  - **A lane's runtime** (the image, MiniMax-H3-Image and video lanes' venvs; what the lane made, its `outputs/`, stays)
+  - **A lane's runtime** (the image, MiniMax-H3-Image and video lanes' venvs: only what its installer put there, as
+    `uninstall.sh` removes it, since the lane's folder can be shared with other work; what the lane made, its
+    `outputs/`, stays)
     and **the diffusion runtime's caches** of its first start: the lane's next Load builds it again, the next start
     writes them again.
 
   A Delete is refused while anything reads what it would remove: a lane that serves or starts with it, a running
-  container (another project's too), a process whose command line names it or that holds one of its files, and for an
+  container (another project's too), a process whose command line names it, or that holds or maps one of its files (a
+  checkpoint loaded by mmap keeps only its mapping), and for an
   image any container that starts from it, a stopped one too. The job plans again when it is confirmed, asks the Hub
   or the registry again, and says the disk's free space after. A lane whose checkpoint, image or runtime went shows
   "not downloaded" or "not prepared", and its Load gets it back.
