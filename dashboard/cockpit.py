@@ -239,6 +239,8 @@ def job_phrase(action: str, params: dict) -> str:
         return "fit the opencode limits to this engine"
     if action == "delete_strays":
         return "delete the stray revisions from the model caches"
+    if action == "delete_image":
+        return f"delete the engine image {p.get('image', '')}"
     if action == "delete_repo":
         return f"delete {p.get('repo', '')} from the model cache"
     if action == "fetch":
@@ -4137,7 +4139,7 @@ def run_job(job: Job):
         # (found in review, 2026-10-15). After the lock: read while it was held (a quarter of a
         # second), the page that saw the job end started its next step on a lock still taken,
         # and was told busy (found in review of that fix, the same day).
-        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo"):
+        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo", "delete_image"):
             with REGISTRY_LOCK:      # a scan running now would write its own date over it
                 REGISTRY_CACHE["ts"] = 0.0
             for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable)):
@@ -6154,6 +6156,112 @@ def job_delete_repo(job: Job):
     return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": after - before}
 
 
+# ---- Library's Delete of an engine image ---------------------------------------------------------------------------
+# An image of this stack (registry.ENGINE_IMAGE_RE, or a lane's local tag qwen38-pinned:<lane>-<12 hex>, lanes.sh), with
+# every name it has here: two lanes can run one image (Qwen3.8 Flash-Next FP4-Local and Ornith), and docker rmi of one
+# name only takes that name away. What it frees is what docker counts as its own (system df's unique size: the layers
+# no other image has; 194 GB were announced for the cleanup of 2026-11-16 and 153.5 freed, by adding sizes shared).
+IMAGE_BUILT_HERE = ("qwen38-kolibri:", "qwen38-nemotron:")
+
+
+def image_plan(image: str, registry_check: bool = True) -> dict:
+    """What Library's Delete of one engine image does: its names here, the bytes only it holds, the containers that
+    start from it (each a refusal, a stopped one too: docker keeps its layers), the lane units that run it (one that
+    serves is a refusal; the others' next Load pulls or builds it again), and whether the registry still serves each
+    of its digests, or its lane builds it here."""
+    line = run(["docker", "image", "inspect", "--format", "{{.Id}}|{{json .RepoTags}}|{{json .RepoDigests}}", image],
+               timeout=10).strip()
+    if line.count("|") != 2:
+        return {"refused": "no such image on this box"}
+    full, tags, digests = line.split("|")
+    try:
+        tags, digests = json.loads(tags) or [], json.loads(digests) or []
+    except ValueError:
+        return {"refused": "docker did not say its names"}
+    names = tags + digests
+    if not any(rg.ENGINE_IMAGE_RE.match(n) or n.startswith("qwen38-pinned:") for n in names):
+        return {"refused": "not an engine image of this stack"}
+    out = {"image": image, "id": full, "names": names, "bytes": None, "containers": [], "units": [], "reloads": [],
+           "registry": []}
+    out["containers"] = [ln for ln in run(["docker", "ps", "-a", "--filter", f"ancestor={full}", "--format",
+                                           "{{.Names}} ({{.State}})"], timeout=10).splitlines() if ln.strip()]
+    hexes = {d.split("@sha256:", 1)[1] for d in digests if "@sha256:" in d}
+    for unit in UNITS:
+        try:
+            text = (UNIT_DIR / unit).read_text(errors="replace")
+        except OSError:
+            continue
+        if any(n in text for n in names) or any(h in text for h in hexes):
+            state = run(["systemctl", "is-active", unit]).strip()
+            if state in ("active", "activating", "reloading", "deactivating"):
+                out["units"].append(f"{unit}, which serves or starts")
+            else:
+                out["reloads"].append(unit)
+    try:
+        for r in json.loads(run(["docker", "system", "df", "-v", "--format", "{{json .Images}}"], timeout=180) or "[]"):
+            if r.get("ID") == full:
+                out["bytes"] = rg.parse_docker_size(r.get("UniqueSize", ""))
+                break
+    except ValueError:
+        pass
+    built = [n for n in tags if n.startswith(IMAGE_BUILT_HERE)]
+    if built:
+        out["registry"].append({"name": built[0], "served": True, "how": "built here by its lane's preparation"})
+    elif registry_check:
+        for d in digests:
+            ok = answered(run(["docker", "buildx", "imagetools", "inspect", "--format", "{{json .Manifest.Digest}}", d],
+                              timeout=60))
+            out["registry"].append({"name": d, "served": bool(ok)})
+    out["obtainable"] = any(r["served"] for r in out["registry"])
+    out["mount"] = rg.mount_of(run(["docker", "info", "--format", "{{.DockerRootDir}}"], timeout=10).strip() or "/")
+    return out
+
+
+def engine_image_ids() -> set:
+    """The ids of the engine images the last scan listed (Library's images): what an image's Delete may name."""
+    return {i["id"] for i in registry_snapshot().get("images", [])}
+
+
+def job_delete_image(job: Job):
+    """Library's Delete of one engine image, planned again now: refused while a container starts from it or a lane
+    that runs it serves; refused when no registry serves it and no lane builds it, unless the page said so and that
+    was confirmed (lose=yes). Then docker rmi of each of its names (never -f), and the disk's free space after."""
+    p = job.params
+    plan = image_plan(p["image"])
+    if "refused" in plan:
+        return False, [f"kept {p['image']}: {plan['refused']}"], {"ok": False}
+    if plan["containers"] or plan["units"]:
+        return False, [f"kept {p['image']}: used by " + "; ".join(plan["units"] + [f"the container {c}" for c in
+                                                                                   plan["containers"]])], {"ok": False}
+    if not plan["obtainable"] and p["lose"] != "yes":
+        return False, [f"kept {p['image']}: no registry serves it now and no lane builds it; its Delete says so and "
+                       "asks again"], {"ok": False}
+    before = disk_free(plan["mount"])
+    rm = run(["docker", "rmi", *plan["names"]], timeout=600, merge_err=True)
+    after = disk_free(plan["mount"])
+    with REGISTRY_LOCK:
+        REGISTRY_CACHE.update(ts=0.0, data=None)
+    lines = [ln for ln in str(rm).splitlines() if ln.strip()][-12:]
+    if not answered(rm):
+        return False, lines + [f"docker rmi failed: {(after - before) / 1e9:.2f} GB freed on {plan['mount']}"], {"ok": False}
+    lines.append(f"deleted the image {plan['id'][7:19]} ({', '.join(plan['names'])}): "
+                 f"{(after - before) / 1e9:.2f} GB more free on {plan['mount']} ({after / 2**30:.0f} GiB free)")
+    if plan["reloads"]:
+        lines.append("the next Load of " + ", ".join(u.replace(".service", "") for u in plan["reloads"])
+                     + " pulls or builds it again")
+    audit({"kind": "image_deleted", "id": plan["id"], "names": plan["names"], "bytes": plan["bytes"],
+           "freed": after - before, "lose": p["lose"]})
+    return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": after - before}
+
+
+ACTIONS["delete_image"] = {
+    "danger": "medium",
+    "params": {"image": _Scanned(lambda: engine_image_ids()), "lose": ["no", "yes"]},
+    "argv": None,
+    "timeout": 900,
+}
+
+
 # lose: "yes" once the page showed that the Hub does not serve it as it is here, and that was confirmed
 ACTIONS["delete_repo"] = {
     "danger": "medium",
@@ -6251,7 +6359,8 @@ def gpu_clock_at_start():
 
 JOB_FUNCS = {"flush_cache": job_flush_cache, "abort_all": job_abort_all,
              "smoke": job_smoke, "diag_bundle": job_diag_bundle,
-             "delete_strays": job_delete_strays, "delete_repo": job_delete_repo, "gpu_clock": job_gpu_clock}
+             "delete_strays": job_delete_strays, "delete_repo": job_delete_repo,
+             "delete_image": job_delete_image, "gpu_clock": job_gpu_clock}
 
 
 
@@ -6830,6 +6939,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001 (isolated endpoint)
                 return self.send_json({"error": str(e)[:200]}, 500)
             plan.pop("plan", None)
+            return self.send_json(plan, 200 if "refused" not in plan else 409)
+        if path == "/api/registry/image-plan":
+            # what Library's Delete of one engine image would do, the registry asked: shown before it is confirmed
+            iid = urllib.parse.parse_qs(query).get("id", [""])[0]
+            if iid not in engine_image_ids():
+                return self.send_json({"refused": "not an engine image the last scan listed"}, 409)
+            try:
+                plan = image_plan(iid)
+            except Exception as e:  # noqa: BLE001 (isolated endpoint)
+                return self.send_json({"error": str(e)[:200]}, 500)
             return self.send_json(plan, 200 if "refused" not in plan else 409)
         if path == "/api/recipes":
             try:

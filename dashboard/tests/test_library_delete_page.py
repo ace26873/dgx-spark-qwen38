@@ -75,5 +75,51 @@ class LibraryDeletesARepository(unittest.TestCase):
         self.assertTrue(r["open"])
 
 
+IMAGES = [{"ref": "eugr/spark-vllm-b12x@sha256:" + "03" * 32, "size": "18.2GB", "id": "a7f76ae9f18c", "engine": True},
+          {"ref": "lmsysorg/sglang@sha256:" + "e3" * 32, "size": "36.5GB", "id": "fd8439732b16", "engine": True},
+          {"ref": "lmsysorg/sglang:v0.5.22", "size": "36.5GB", "id": "fd8439732b16", "engine": True}]
+IPLAN = {"image": "a7f76ae9f18c", "names": ["qwen38-pinned:flash-local-03a956544e", IMAGES[0]["ref"]],
+         "bytes": 17_770_000_000, "containers": [], "units": [], "reloads": ["qwen38-flash-local.service"],
+         "registry": [{"name": IMAGES[0]["ref"], "served": True}], "obtainable": True, "mount": "/"}
+
+
+def click_image(test, plan, row=0):
+    reg = dict(REG, images=IMAGES)
+    return run(test, r"""
+    __fetch = async (url, init) => url.startsWith('/api/recipes') ? __response(200, {builtin: [], custom: [], custom_dir: ''})
+      : url.startsWith('/api/registry/image-plan') ? __response(%d, %s)
+      : url.startsWith('/api/registry') ? __response(200, %s) : new Promise(() => {});
+    feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+    showView('library'); await __settle(); await __settle();
+    const rows = [...$('reg-images').tBodies[0].rows].map(r => r.querySelectorAll('button').length);
+    $('reg-images').tBodies[0].rows[%d].querySelector('button').click(); await __settle(); await __settle();
+    report({rows, open: !$('scrim').hidden, title: txt('sh-title'), lede: txt('sh-lede'), warns: txt('sh-warns'),
+            go: txt('sh-go'), toast: toastText(),
+            asked: __fetches.map(f => f.url).filter(u => u.startsWith('/api/registry/image-plan'))});
+    """ % (409 if "refused" in plan else 200, json.dumps(plan), json.dumps(reg), row))
+
+
+class LibraryDeletesAnEngineImage(unittest.TestCase):
+    def test_one_delete_per_image_and_its_plan_in_the_sheet(self):
+        r = click_image(self, IPLAN)
+        self.assertEqual(r["rows"], [1, 1, 0], "one Delete per image, on the first of its names")
+        self.assertEqual(r["asked"], ["/api/registry/image-plan?id=a7f76ae9f18c"])
+        self.assertTrue(r["open"], r)
+        self.assertEqual((r["title"], r["go"]), ("Delete the image a7f76ae9f18c", "Delete it"))
+        self.assertIn("16.5 GiB freed on /", r["lede"])
+        self.assertIn("a pull gets it back", r["lede"])
+        self.assertIn("pulls or builds it again", r["warns"])
+
+    def test_a_container_or_a_serving_lane_gets_no_sheet(self):
+        r = click_image(self, dict(IPLAN, containers=["gta-vlm (running)"]))
+        self.assertFalse(r["open"])
+        self.assertIn("the container gta-vlm (running)", r["toast"])
+
+    def test_an_image_no_registry_serves_is_deleted_anyway_only_said_so(self):
+        r = click_image(self, dict(IPLAN, obtainable=False, registry=[{"name": IMAGES[0]["ref"], "served": False}]))
+        self.assertEqual(r["go"], "Delete it anyway")
+        self.assertIn("lose it for good", r["warns"])
+
+
 if __name__ == "__main__":
     unittest.main()

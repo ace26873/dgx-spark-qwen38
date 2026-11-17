@@ -116,6 +116,18 @@ def parse_docker_images(lines: list[str]) -> list[dict]:
     return rows
 
 
+DOCKER_SIZE_RE = re.compile(r"^([0-9.]+)\s*(B|kB|KB|MB|GB|TB|PB)$")
+
+
+def parse_docker_size(text: str) -> int | None:
+    """Bytes of a size as docker prints it (go-units, powers of 1000: "1.838kB", "639MB", "33.92GB", "0B"); None
+    when it reads otherwise."""
+    m = DOCKER_SIZE_RE.match((text or "").strip())
+    if not m:
+        return None
+    return int(float(m.group(1)) * {"B": 1, "kB": 1e3, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12, "PB": 1e15}[m.group(2)])
+
+
 # A blob huggingface_hub is still writing has been written to within this long.
 ACTIVE_S = 600
 

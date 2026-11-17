@@ -213,7 +213,8 @@ class LibrarysEngineImagesFitTheirPanel(unittest.TestCase):
         showView('library'); await __settle(); await __settle();
         report([...$('reg-images').tBodies[0].rows[0].cells].map(c => ({text: c.textContent, cls: c.className})));
         """ % json.dumps(reg))
-        self.assertEqual([c["text"] for c in r], [ref, "24.4GB", "bc7762f87a5e"])
+        # and its Delete, in a column of its own (storage, v1.51.0): the name keeps its cell to itself
+        self.assertEqual([c["text"] for c in r], [ref, "24.4GB", "bc7762f87a5e", "Delete"])
         name = r[0]["cls"].split()
         # a rule under no @media: the phone's stacked rows already break anywhere, the desk did not
         breaks = [sel for sel, media, decl in css_rules() if not media and re.search(r"overflow-wrap:\s*anywhere", decl)

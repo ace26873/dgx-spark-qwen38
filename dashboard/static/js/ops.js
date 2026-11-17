@@ -469,6 +469,31 @@ async function askDeleteRepo(repo, cache, b){
   }catch(e){ toast('Could not plan the delete: ' + e.message, 'err'); }
   finally{ b.disabled = false; setText(b, was); }
 }
+// Library's Delete of an engine image: the server's plan first (its names, the bytes only it holds, the containers
+// and the serving lanes that keep it, whether its registry still serves it or its lane builds it), then the sheet
+function deleteImageButton(id){
+  const b = el('button', 'btn sm ghost', 'Delete'); b.type = 'button';
+  b.setAttribute('aria-label', `Delete the engine image ${id}`);
+  b.addEventListener('click', () => askDeleteImage(id, b));
+  return b;
+}
+async function askDeleteImage(id, b){
+  const was = b.textContent; b.disabled = true; setText(b, 'Checking…');
+  try{
+    const r = await fetch('/api/registry/image-plan?id=' + encodeURIComponent(id)); if (r.status === 401) return login();
+    const d = await r.json();
+    if (d.refused) return toast(`The image ${id} stays: ${d.refused}.`, 'warn');
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    const users = (d.units || []).concat((d.containers || []).map(c => 'the container ' + c));
+    if (users.length) return toast(`The image ${id} is used by ${users.join('; ')}: stop that first.`, 'warn');
+    REG_DELETE.image = d;
+    const warns = [];
+    if (!d.obtainable) warns.push('No registry serves it now and no lane builds it: deleting it can lose it for good.');
+    if ((d.reloads || []).length) warns.push(`The next Load of ${d.reloads.map(u => LANE_NAME[u] || laneLabel(u)).join(', ')} pulls or builds it again.`);
+    askAction('delete_image', {image: id, lose: d.obtainable ? 'no' : 'yes'}, warns, {danger: true});
+  }catch(e){ toast('Could not plan the delete: ' + e.message, 'err'); }
+  finally{ b.disabled = false; setText(b, was); }
+}
 // fresh: Scan reads the cache again; opening the view shows the server's own read, which the
 // recipes' load has just refreshed
 async function scanRegistry(fresh = true){
@@ -520,8 +545,10 @@ async function scanRegistry(fresh = true){
     const ti = $('reg-images').tBodies[0]; clear(ti);
     // an image named by its digest is one word of 70 characters: allowed to break anywhere, it no
     // longer widens its column past the panel and pushes Size and ID out of view on a desk screen
-    (d.images || []).forEach(im => { const tr = ti.insertRow(); const n = tr.insertCell(); n.className = 'brk'; n.textContent = im.ref; const a = tr.insertCell(); a.className = 'r num sz'; a.textContent = im.size; const c = tr.insertCell(); c.className = 'r num'; c.textContent = im.id; });
-    if (!ti.rows.length) emptyRow(ti, 3, 'No engine image.');
+    // one Delete per image, on the first of its names: docker rmi of one name only takes that name away
+    const imgSeen = new Set();
+    (d.images || []).forEach(im => { const tr = ti.insertRow(); const n = tr.insertCell(); n.className = 'brk'; n.textContent = im.ref; const a = tr.insertCell(); a.className = 'r num sz'; a.textContent = im.size; const c = tr.insertCell(); c.className = 'r num'; c.textContent = im.id; const x = tr.insertCell(); if (!imgSeen.has(im.id)){ imgSeen.add(im.id); x.append(deleteImageButton(im.id)); } });
+    if (!ti.rows.length) emptyRow(ti, 4, 'No engine image.');
     labelCells($('reg-images'));
     const to = $('reg-other').tBodies[0]; clear(to);
     const others = (d.other_models || []).slice().sort((x, y) => y.disk_bytes - x.disk_bytes);
@@ -568,7 +595,7 @@ async function scanInventory(){
 // made elsewhere left Library saying what was there before (found in review, 2026-10-15).
 on('job_finished', j => {
   if (['switch', 'unit', 'prepare'].includes(j.action)) LOADED.recipes = false;
-  if (['switch', 'prepare', 'fetch', 'delete_strays', 'delete_repo'].includes(j.action)) LOADED.registry = false;
+  if (['switch', 'prepare', 'fetch', 'delete_strays', 'delete_repo', 'delete_image'].includes(j.action)) LOADED.registry = false;
   if (activeView === 'library'){ if (!LOADED.recipes) loadRecipes(); if (!LOADED.registry) scanRegistry(); }
 });
 // the registry with them: the checkpoints, what each lane can load (its Download), the images
