@@ -327,6 +327,25 @@ def mount_of(path) -> str:
     return best
 
 
+def unwritable(paths) -> str | None:
+    """The first folder under the given paths (themselves included, and their parents, whose entries a deletion
+    removes) that this user may not change: a deletion that met one half way would leave a repository or a venv
+    broken, so it is refused before anything goes. An engine that runs as root in its container can leave root's
+    folders in a cache it mounts."""
+    for p in paths:
+        p = Path(p)
+        for d in [p.parent] + ([p] if p.is_dir() and not p.is_symlink() else []):
+            if not os.access(d, os.W_OK | os.X_OK):
+                return str(d)
+        if p.is_dir() and not p.is_symlink():
+            for base, dirs, _files in os.walk(p):
+                for name in dirs:
+                    d = os.path.join(base, name)
+                    if not os.path.islink(d) and not os.access(d, os.W_OK | os.X_OK):
+                        return d
+    return None
+
+
 def _hop(link: Path) -> str | None:
     """The path a symbolic link names, made absolute beside it (not resolved further)."""
     try:
@@ -416,6 +435,9 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
         if (st.st_dev, st.st_ino) not in seen:
             seen.add((st.st_dev, st.st_ino))
             kept_bytes += st.st_size
+    folder = unwritable([os.path.realpath(repo_dir)] + [os.path.dirname(s) for s in shared])
+    if folder:
+        return {"refused": f"this user may not change {folder} (another user's, root's?): nothing is deleted"}
     return {"repo_dir": str(repo_dir), "whole": not kept, "links": [str(p) for p in links] if kept else [],
             "blobs": gone, "shared": shared, "refs_rewrite": rewrite, "bytes": size, "kept_bytes": kept_bytes,
             "mount": mount_of(repo_dir)}

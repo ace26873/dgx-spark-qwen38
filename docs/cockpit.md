@@ -163,14 +163,36 @@ themes.
   frees, or why it stays (a ref names it, and a load by name reads it), and one button
   deletes the ones it offers, after a sheet that names each. Each goes with its
   snapshot and the blobs only it links to, never a blob another revision shares; the
-  job scans again before it deletes, and the page sends no name and no path. It is the
-  one cleanup the page runs; the rest of the reclaim stays a command. Below, each target a
+  job scans again before it deletes, and the page sends no name and no path. Below, each target a
   Load can switch to says whether its checkpoint is on disk (whole for what its lane
   serves), begun or not downloaded, and Download fetches it where its lane is installed and built:
   `./switch-model.sh <target> --fetch`, the switch's own fetch (the cache first, resumable,
   its room checked), which changes nothing else, no unit, no boot, no engine. The Load of FP4-Local or of the Unsloth
   GGUF lane while it serves without being the boot lane sets the clients' limits for the window its unit starts with,
   `./switch-model.sh <target> --clients`, and nothing else: no unit, no boot, and opencode's default model stays.
+- **Storage (v1.51.0).** Library opens on each disk the stack uses: what is free, and what the models, Docker's
+  images (every project's, as `docker system df` counts them) and the lanes' runtimes hold there. The models are
+  counted on the disk each file really is (a repository folder can be a link to another disk), a blob that two
+  repositories share once. Everything that takes room has a Delete, each after a sheet that shows the server's plan:
+  - **A repository** of a cache the lanes read (a lane's checkpoint, a drafter, another model): what it frees on which
+    disk, and, for each cached revision, whether the Hub still serves every file as it is here (the configs the
+    installers rewrite, such as YaRN's `config.json`, read as rewritten here, the original kept beside them is what is
+    compared). When it does not, the sheet names what would be lost and its button reads "Delete it anyway". A blob of
+    the cache's shared store goes only when every repository its `.refs` names goes. The part a lane loads alone stays:
+    MiniMax-H3's `text_encoder/`, while MiniMax-H3-Image's checkpoint is whole. The lanes whose next Load downloads it
+    again are named.
+  - **An engine image**, with every name it has here (FP4-Local and Ornith run one image), by `docker rmi`, never `-f`:
+    it frees the layers no other image has (docker's own count), and the sheet says whether its registry still serves
+    its digest, or its lane builds it here.
+  - **A lane's runtime** (the image, MiniMax-H3-Image and video lanes' venvs; what the lane made, its `outputs/`, stays)
+    and **the diffusion runtime's caches** of its first start: the lane's next Load builds it again, the next start
+    writes them again.
+
+  A Delete is refused while anything reads what it would remove: a lane that serves or starts with it, a running
+  container (another project's too), a process whose command line names it or that holds one of its files, and for an
+  image any container that starts from it, a stopped one too. The job plans again when it is confirmed, asks the Hub
+  or the registry again, and says the disk's free space after. A lane whose checkpoint, image or runtime went shows
+  "not downloaded" or "not prepared", and its Load gets it back.
 
 On a phone the rail is a drawer behind the menu button, controls are 44 px
 targets, and the Agent view opens fullscreen (see "On a phone" below): the whole

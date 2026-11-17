@@ -6374,6 +6374,10 @@ def job_delete_runtime(job: Job):
     paths = [p for p in paths if os.path.lexists(p)]
     if not paths:
         return True, [f"nothing of the {item} runtime is on this box"], {"ok": True, "bytes": 0}
+    folder = rg.unwritable(paths)
+    if folder:
+        return False, [f"kept the {item} runtime: this user may not change {folder} (another user's, root's?)"], \
+            {"ok": False}
     size, mount = tree_bytes(paths), rg.mount_of(paths[0])
     before = disk_free(mount)
     for p in paths:

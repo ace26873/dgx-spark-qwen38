@@ -145,6 +145,17 @@ class DeleteRepo(unittest.TestCase):
         rg.apply_repo_deletion(plan)
         self.assertEqual(outside.read_bytes(), b"t" * 700)
 
+    def test_a_folder_this_user_may_not_change_refuses_before_anything_goes(self):
+        repo = self.c.repo("m", {"config.json": b"{}", "sub/w.bin": b"w" * 10})
+        locked = repo / "snapshots" / REV / "sub"
+        os.chmod(locked, 0o555)
+        self.addCleanup(os.chmod, locked, 0o755)
+        if os.access(locked, os.W_OK):
+            self.skipTest("run as root: every folder is writable")
+        plan = rg.repo_deletion_plan(repo)
+        self.assertIn("may not change", plan.get("refused", ""), plan)
+        self.assertTrue((locked / "w.bin").exists())
+
     def test_a_download_in_progress_is_refused(self):
         repo = self.c.repo("m", {"config.json": b"{}"})
         part = repo / "blobs" / ("e" * 64 + ".incomplete")
