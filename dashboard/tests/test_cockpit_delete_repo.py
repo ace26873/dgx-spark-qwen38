@@ -178,5 +178,58 @@ class DeleteRepo(unittest.TestCase):
         self.assertEqual(self.cp.repo_keep(DSPARK, {"targets": [{"target": "image-h3", "state": "complete"}]})[0], [])
 
 
+    def runtime(self, item, lose=None):
+        code, body = self.cp.start_action("delete_runtime", {"item": item})
+        if code == 202:
+            job = self.cp.JOBS[body["job"]]
+            for _ in range(200):
+                if job.status != "running":
+                    break
+                time.sleep(0.05)
+            body["status"], body["lines"], body["result"] = job.status, job.lines, job.result
+        return code, body
+
+    def test_a_lanes_runtime_goes_and_what_it_made_stays(self):
+        d = self.tmp / ".local" / "share" / "qwen38-image"
+        shutil.rmtree(d, ignore_errors=True)
+        (d / "venv" / "bin").mkdir(parents=True)
+        (d / "venv" / "bin" / "python").write_bytes(b"p" * 5000)
+        (d / "sglang-wheel").write_text("sglang-0.5.22\n")
+        (d / "outputs").mkdir()
+        (d / "outputs" / "cat.png").write_bytes(b"png")
+        rows = {r["item"]: r for r in self.cp.runtime_rows()}
+        self.assertIn("image", rows)
+        self.assertGreaterEqual(rows["image"]["bytes"], 5000)
+        self.assertNotIn(str(d / "outputs"), rows["image"]["paths"])
+        # its lane serves: kept
+        self.active.add(self.unit.name)
+        code, body = self.runtime("image")
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue((d / "venv").exists())
+        self.active.clear()
+        code, body = self.runtime("image")
+        self.assertEqual((code, body["status"]), (202, "done"), body)
+        self.assertEqual(sorted(x.name for x in d.iterdir()), ["outputs"])
+        self.assertEqual((d / "outputs" / "cat.png").read_bytes(), b"png")
+        self.assertTrue(any("next Load builds it again" in ln for ln in body["lines"]), body["lines"])
+
+    def test_the_diffusion_caches_wait_for_every_diffusion_lane_to_stop(self):
+        spill = self.tmp / ".cache" / "sglang" / "diffusion" / "host_spill"
+        spill.mkdir(parents=True, exist_ok=True)
+        (spill / "w.bin").write_bytes(b"w" * 100)
+        self.active.add("qwen38-video.service")
+        code, body = self.runtime("diffusion-caches")
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(spill.exists())
+        self.active.clear()
+        code, body = self.runtime("diffusion-caches")
+        self.assertEqual(body["status"], "done", body)
+        self.assertFalse(spill.exists())
+        self.assertTrue((self.tmp / ".cache" / "sglang" / "diffusion").exists(), "only the caches go")
+
+    def test_only_a_known_item(self):
+        self.assertEqual(self.runtime("../../etc")[0], 400)
+
+
 if __name__ == "__main__":
     unittest.main()

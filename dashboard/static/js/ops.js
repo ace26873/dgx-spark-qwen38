@@ -550,6 +550,11 @@ async function scanRegistry(fresh = true){
     (d.images || []).forEach(im => { const tr = ti.insertRow(); const n = tr.insertCell(); n.className = 'brk'; n.textContent = im.ref; const a = tr.insertCell(); a.className = 'r num sz'; a.textContent = im.size; const c = tr.insertCell(); c.className = 'r num'; c.textContent = im.id; const x = tr.insertCell(); if (!imgSeen.has(im.id)){ imgSeen.add(im.id); x.append(deleteImageButton(im.id)); } });
     if (!ti.rows.length) emptyRow(ti, 4, 'No engine image.');
     labelCells($('reg-images'));
+    // the lanes' runtimes and the diffusion runtime's caches: what each holds, on which disk, and its Delete
+    const tr2 = $('reg-runtimes').tBodies[0]; clear(tr2);
+    (d.runtimes || []).forEach(rt => { const tr = tr2.insertRow(); const n = tr.insertCell(); n.textContent = RUNTIME_NAME[rt.item] || rt.item; n.append(' ', el('span', 'muted', `on ${rt.mount}`)); const s = tr.insertCell(); s.className = 'r num sz'; s.textContent = fmtGiB(rt.bytes); const x = tr.insertCell(); const b5 = el('button', 'btn sm ghost', 'Delete'); b5.type = 'button'; b5.setAttribute('aria-label', `Delete the ${RUNTIME_NAME[rt.item] || rt.item}`); b5.addEventListener('click', () => { REG_DELETE.runtime = rt; askAction('delete_runtime', {item: rt.item}, [], {danger: true}); }); x.append(b5); });
+    if (!tr2.rows.length) emptyRow(tr2, 3, 'None on this box.');
+    labelCells($('reg-runtimes'));
     const to = $('reg-other').tBodies[0]; clear(to);
     const others = (d.other_models || []).slice().sort((x, y) => y.disk_bytes - x.disk_bytes);
     others.forEach(m => { const tr = to.insertRow(); const n = tr.insertCell(); n.textContent = m.repo_id; n.append(' ', deleteRepoButton(m.repo_id, m.cache)); const c = tr.insertCell(); c.className = 'r num sz'; c.textContent = fmtGiB(m.disk_bytes); });
@@ -595,7 +600,7 @@ async function scanInventory(){
 // made elsewhere left Library saying what was there before (found in review, 2026-10-15).
 on('job_finished', j => {
   if (['switch', 'unit', 'prepare'].includes(j.action)) LOADED.recipes = false;
-  if (['switch', 'prepare', 'fetch', 'delete_strays', 'delete_repo', 'delete_image'].includes(j.action)) LOADED.registry = false;
+  if (['switch', 'prepare', 'fetch', 'delete_strays', 'delete_repo', 'delete_image', 'delete_runtime'].includes(j.action)) LOADED.registry = false;
   if (activeView === 'library'){ if (!LOADED.recipes) loadRecipes(); if (!LOADED.registry) scanRegistry(); }
 });
 // the registry with them: the checkpoints, what each lane can load (its Download), the images

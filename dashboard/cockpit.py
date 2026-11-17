@@ -26,6 +26,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import threading
 import time
@@ -239,6 +240,8 @@ def job_phrase(action: str, params: dict) -> str:
         return "fit the opencode limits to this engine"
     if action == "delete_strays":
         return "delete the stray revisions from the model caches"
+    if action == "delete_runtime":
+        return f"delete the {p.get('item', '')} runtime"
     if action == "delete_image":
         return f"delete the engine image {p.get('image', '')}"
     if action == "delete_repo":
@@ -4139,7 +4142,7 @@ def run_job(job: Job):
         # (found in review, 2026-10-15). After the lock: read while it was held (a quarter of a
         # second), the page that saw the job end started its next step on a lock still taken,
         # and was told busy (found in review of that fix, the same day).
-        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo", "delete_image"):
+        if job.action in ("prepare", "switch", "fetch", "delete_strays", "delete_repo", "delete_image", "delete_runtime"):
             with REGISTRY_LOCK:      # a scan running now would write its own date over it
                 REGISTRY_CACHE["ts"] = 0.0
             for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable)):
@@ -6262,6 +6265,107 @@ ACTIONS["delete_image"] = {
 }
 
 
+# ---- Library's Delete of a lane's runtime, or of the diffusion runtime's caches ----------------------------------------
+# The image, MiniMax-H3-Image and video lanes run a venv of their own (8 to 17 GiB), built as the user at their first Load
+# (prepare-lane.sh); the diffusion runtime writes two caches at its first start, outside the lanes' folders (lanes.sh,
+# video_first_start_caches: 30 GB on the reference box, 2026-11-17). Deleted, the runtime is "not prepared" and the
+# lane's next Load builds it again (lane_prepared); the caches are written again at the next start, which takes longer.
+# What a lane made stays: its outputs/ (the images and videos generated).
+RUNTIME_KEEP = ("outputs",)
+
+
+def runtime_paths(item: str) -> tuple[list, str | None]:
+    """(the paths a Delete of item removes, the unit that must not serve meanwhile or None for the caches)."""
+    if item == "diffusion-caches":
+        home = Path.home()
+        return [home / ".cache/sglang/diffusion/host_spill", home / ".cache/sgl_diffusion/decode_dtype_store"], None
+    unit = {"image": IMAGE_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH, "video": VIDEO_UNIT_PATH}[item]
+    d = Path.home() / ".local/share" / f"qwen38-{item}"
+    try:
+        m = re.search(r"^WorkingDirectory=(.+)$", unit.read_text(errors="replace"), re.M)
+        d = Path(m.group(1).strip()) if m else d
+    except OSError:
+        pass
+    try:
+        return [p for p in sorted(d.iterdir()) if p.name not in RUNTIME_KEEP], unit.name
+    except OSError:
+        return [], unit.name
+
+
+def tree_bytes(paths) -> int:
+    """The disk the paths hold (blocks, each inode once), links not followed."""
+    seen, n = set(), 0
+    for p in paths:
+        stack = [p]
+        while stack:
+            q = stack.pop()
+            try:
+                st = os.lstat(q)
+            except OSError:
+                continue
+            if (st.st_dev, st.st_ino) not in seen:
+                seen.add((st.st_dev, st.st_ino))
+                n += st.st_blocks * 512
+            if stat.S_ISDIR(st.st_mode):
+                try:
+                    stack += [os.path.join(q, e) for e in os.listdir(q)]
+                except OSError:
+                    pass
+    return n
+
+
+RUNTIME_ITEMS = ("image", "image-h3", "video", "diffusion-caches")
+DIFFUSION_UNITS = ("qwen38-image.service", "qwen38-image-h3.service", "qwen38-video.service")
+
+
+def runtime_rows() -> list[dict]:
+    """Library's runtimes and caches: each item's bytes and disk, for its table."""
+    rows = []
+    for item in RUNTIME_ITEMS:
+        paths, _unit = runtime_paths(item)
+        paths = [p for p in paths if os.path.lexists(p)]
+        if paths:
+            rows.append({"item": item, "bytes": tree_bytes(paths), "mount": rg.mount_of(paths[0]),
+                         "paths": [str(p) for p in paths]})
+    return rows
+
+
+def job_delete_runtime(job: Job):
+    """Library's Delete of a lane's runtime (its outputs/ kept) or of the diffusion runtime's caches: refused while a
+    lane that runs it serves or starts."""
+    item = job.params["item"]
+    paths, unit = runtime_paths(item)
+    users = [u for u in ((unit,) if unit else DIFFUSION_UNITS)
+             if run(["systemctl", "is-active", u]).strip() in ("active", "activating", "reloading", "deactivating")]
+    if users:
+        return False, [f"kept the {item} runtime: {', '.join(users)} serves or starts"], {"ok": False}
+    paths = [p for p in paths if os.path.lexists(p)]
+    if not paths:
+        return True, [f"nothing of the {item} runtime is on this box"], {"ok": True, "bytes": 0}
+    size, mount = tree_bytes(paths), rg.mount_of(paths[0])
+    before = disk_free(mount)
+    for p in paths:
+        if p.is_dir() and not p.is_symlink():
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+    after = disk_free(mount)
+    audit({"kind": "runtime_deleted", "item": item, "paths": [str(p) for p in paths], "bytes": size,
+           "freed": after - before})
+    return True, [f"deleted {', '.join(str(p) for p in paths)}: {size / 1e9:.2f} GB counted, "
+                  f"{(after - before) / 1e9:.2f} GB more free on {mount}",
+                  "the next start writes them again" if item == "diffusion-caches"
+                  else f"the {item} lane's next Load builds it again"], {"ok": True, "bytes": size}
+
+
+ACTIONS["delete_runtime"] = {
+    "danger": "medium",
+    "params": {"item": list(RUNTIME_ITEMS)},
+    "argv": None,
+    "timeout": 900,
+}
+
+
 # lose: "yes" once the page showed that the Hub does not serve it as it is here, and that was confirmed
 ACTIONS["delete_repo"] = {
     "danger": "medium",
@@ -6360,7 +6464,8 @@ def gpu_clock_at_start():
 JOB_FUNCS = {"flush_cache": job_flush_cache, "abort_all": job_abort_all,
              "smoke": job_smoke, "diag_bundle": job_diag_bundle,
              "delete_strays": job_delete_strays, "delete_repo": job_delete_repo,
-             "delete_image": job_delete_image, "gpu_clock": job_gpu_clock}
+             "delete_image": job_delete_image, "delete_runtime": job_delete_runtime,
+             "gpu_clock": job_gpu_clock}
 
 
 
@@ -6723,6 +6828,7 @@ def registry_snapshot(max_age: float = 300.0) -> dict:
                                   "disk_bytes": m["disk_bytes"]}
                                  for m in models if not m["managed"]],
                 "images": [i for i in images if i["engine"]],
+                "runtimes": runtime_rows(),
                 "partial": partial,
                 "pins_lost": read["pins_lost"],
                 "ts": time.time()}

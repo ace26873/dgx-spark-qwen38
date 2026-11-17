@@ -152,9 +152,6 @@ class DeleteRepo(unittest.TestCase):
         self.assertTrue(os.path.ismount(rg.mount_of(self.root)))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class UpstreamVerdict(unittest.TestCase):
     """What deleting a cached revision loses, read against the Hub's file list for that revision (blob ids, LFS
@@ -234,3 +231,7 @@ class UpstreamVerdict(unittest.TestCase):
         old, rg.HASH_MAX = rg.HASH_MAX, 10                   # by its names alone, not by its content
         self.addCleanup(setattr, rg, "HASH_MAX", old)
         self.assertTrue(rg.upstream_verdict(self.snap, [self.sib("w.bin", data)])["identical"])
+
+
+if __name__ == "__main__":
+    unittest.main()
