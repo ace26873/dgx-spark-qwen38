@@ -185,11 +185,23 @@ text_lane_prepared(){  # $1 flash|27b
 # there, the unit keeps its date, the one lane_serves_older and engine-inputs.py go by, which leaves
 # those lines out too. Prints same, deps (only those lines changed) or new.
 UNIT_DEP_KEYS='^(Description|Documentation|Wants|Requires|Requisite|BindsTo|PartOf|Conflicts|After|Before)='
+# An update downloads nothing large (decisions 1404 and 1408 to 1410 of Hasan, 2026-11-16 and 17): an installer that
+# sets PENDING_PUT=1 on an installed box puts a lane's new unit in place only when this box has everything it reads.
+# When it does not, while the unit in place has all it reads (the lane serves, or can, as it is), the new one waits in
+# $CONFIG_DIR/pending/<unit>, what it lacks beside it (<unit>.needs): the lane keeps serving what it served, at its next
+# boot too, and its Load from the cockpit downloads what it lacks, then puts that unit in place. Prints pending.
+# A unit in place that already lacks what it reads (a lane never loaded, or emptied) has nothing to keep: the new one
+# goes in place, and the lane's Load prepares it, as before.
 unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written with sudo)
   # Each step returns on its failure: a function run in $(...) does not stop at one under set -e,
   # and the caller, which assigns what it prints, stops on that return.
   local old
-  if [ -f "$2" ] && sudo cmp -s "$1" "$2"; then echo same; return 0; fi
+  if [ -f "$2" ] && sudo cmp -s "$1" "$2"; then unit_pending_clear "$2"; echo same; return 0; fi
+  if [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$2" ] && [ -n "$(unit_needs "$1")" ] && [ -z "$(unit_needs "$2")" ]; then
+    unit_pending_put "$1" "$2" || return 1
+    echo pending; return 0
+  fi
+  unit_pending_clear "$2"
   if [ -f "$2" ] && cmp -s <(sudo cat "$2" | grep -vE "$UNIT_DEP_KEYS" || true) <(grep -vE "$UNIT_DEP_KEYS" "$1" || true); then
     old="$(stat -c %Y "$2")" || return 1
     sudo install -m 644 "$1" "$2" || return 1
@@ -200,6 +212,44 @@ unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written 
   echo new
 }
 
+# What a lane's unit (or launcher) reads that this box does not have: one line each, "image <ref>" (by its digest or
+# its local build's tag, as docker names it), "checkpoint <repo>@<revision>" (whole, as ckpt_cached reads it, in the
+# cache the unit mounts), "draft <repo>@<revision>" (the 27B's DFlash2 draft, draft_in_cache), "path <path>" (a model
+# the unit names by its path: a GGUF part, a snapshot folder). Nothing when it has it all.
+unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
+  local hf img repo rev f seen=" "
+  [ -r "$1" ] || return 0
+  hf="$(unit_hf_cache "$1")"; hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"
+  for img in $(engine_image "$1") $({ grep -oE '[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}' "$1" || true; }) \
+             $({ grep -oE 'qwen38-(kolibri|nemotron):[A-Za-z0-9._-]+' "$1" || true; }); do
+    case "$seen" in *" $img "*) continue ;; esac
+    seen="$seen$img "
+    docker image inspect "$img" >/dev/null 2>&1 || echo "image $img"
+  done
+  repo="$({ grep -m1 -oE -- '(--model-path|vllm serve) [^ ]+' "$1" || true; } | head -1 | awk '{print $NF}')"
+  rev="$({ grep -m1 -oE -- '--revision [^ ]+' "$1" || true; } | head -1 | cut -d' ' -f2)"
+  case "$repo" in
+    "") ;;
+    /*) [ -e "$repo" ] || echo "path $repo" ;;
+    *) ckpt_cached "$hf/hub/models--${repo//\//--}" "${rev:-main}" || echo "checkpoint $repo@${rev:-main}" ;;
+  esac
+  if ! draft_in_cache "$1"; then
+    echo "draft $({ grep -m1 -oE -- '--speculative-draft-model-path [^ ]+' "$1" || true; } | cut -d' ' -f2)@$({ grep -m1 -oE -- '--speculative-draft-model-revision [^ ]+' "$1" || true; } | cut -d' ' -f2)"
+  fi
+  for f in $({ grep -oE '/[^ "=]*/hub/models--[^ "/]+/snapshots/[0-9a-f]{40}/[^ "]+\.gguf' "$1" || true; } | sort -u); do
+    [ -e "$f" ] || echo "path $f"
+  done
+}
+unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, what it lacks with it
+  local d="${CONFIG_DIR:-$HOME/.config/qwen38}/pending" n
+  n="$(basename "$2")"
+  mkdir -p "$d" || return 1
+  cp "$1" "$d/$n.tmp" && mv "$d/$n.tmp" "$d/$n" || return 1
+  unit_needs "$1" > "$d/$n.needs" || return 1
+}
+unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for it any more
+  rm -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1")" "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs"
+}
 lane_serves_older(){  # $1 unit, $2... its files: true when it serves and one of them is newer than its start
   local unit="$1" started f; shift
   [ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" = active ] || return 1
