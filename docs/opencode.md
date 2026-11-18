@@ -31,7 +31,7 @@ behaviour: the compaction threshold `oc-fit-limits.py` sizes the limits for, the
 32,000-token output cap the `oc` launcher lifts, the overflow phrases the proxy answers
 with so that a refusal makes opencode compact instead of failing, and `--yolo` /
 `OPENCODE_PERMISSION` for the Agent view. So `install.sh` pins the opencode it runs:
-**1.19.5** (`OPENCODE_VERSION`, with the sha256 GitHub publishes for
+**1.19.6** (`OPENCODE_VERSION`, with the sha256 GitHub publishes for
 `opencode-linux-arm64.tar.gz` in `OPENCODE_SHA256`). CI runs the Agent view against that release
 on its arm64 runners, with that digest; `dashboard/tests/agent-bench.mjs` also carries the digest of
 `opencode-linux-x64.tar.gz` for the same release (`X64_SHA256`), for a run on an x86_64 machine: a new pin needs both. 1.18.32 was checked against the
@@ -70,6 +70,20 @@ to, no longer on a pattern of its path, answers a request of the TUI's worker th
 instead of leaving it waiting, updates the package of GitLab's provider, which this repo does
 not use, and otherwise removes unused code: the compaction, overflow, permission, flag and request
 code is as it was. It runs on the same Bun 1.4.4.
+1.19.6 was checked against 1.19.5 on 2026-11-18, the binaries side by side: both assets match the
+digests GitHub publishes, the 21 phrases and 3 exclusions are all there, and the block adds two,
+`request body too large` and `multimodal data size is too large`; `max_tokens` 32,000 and 182,000 on
+the fake endpoint with the same headers, the same default permissions, `--yolo` still read as
+`--auto`, keys masked, the sessions one wrote the other lists and reads, both ways, and the
+aliyuncs.com command refused by both under `--yolo` and under `AGENT_AUTO`'s permission. On an
+endpoint that refuses a request the way this box's proxy does (413 for a body past its cap, 400
+`context_too_long` for a window passed), both compact and send it again; a 400 that says only
+`Request body too large` failed the turn in 1.19.5 and is compacted and sent again in 1.19.6. Both
+`opencode run` exit 1 after such a recovery, though the answer comes. The release diff adds those two
+phrases and bounds the images a session sends inline (past 25 MiB, the oldest become a placeholder
+until 15 MiB), and offers OpenCode 2 in the desktop application only; the permission, flag and
+request code is as it was, on the same Bun 1.4.4. `dashboard/tests/agent-bench.mjs` passes 34 of 34
+with it (the Agent view behind the cockpit's relay, its terminal and the phone layer).
 
 What a run does with the opencode it finds:
 

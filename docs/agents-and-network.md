@@ -10,8 +10,8 @@ On 2026-10-26 Cohere reported that Qwen3.8-Flash-Next, given a shell in an agent
 
 ## What runs without asking
 
-- **opencode** (1.19.5, the version this repo pins) starts from permissive defaults: every tool, the shell included, runs without asking. It asks only before a loop it detects, before reaching outside the project directory and before reading a `.env` file. Read in 1.19.4's binary on 2026-10-28, and the same in 1.19.5's on 2026-10-30.
-- **`oc`** runs opencode with `--yolo`, an alias of `--auto` in 1.19.4 and 1.19.5: it approves those few questions too. A `deny` rule still holds under it.
+- **opencode** (1.19.6, the version this repo pins) starts from permissive defaults: every tool, the shell included, runs without asking. It asks only before a loop it detects, before reaching outside the project directory and before reading a `.env` file. Read in 1.19.4's binary on 2026-10-28, and the same in 1.19.5's on 2026-10-30.
+- **`oc`** runs opencode with `--yolo`, an alias of `--auto` in 1.19.4, 1.19.5 and 1.19.6: it approves those few questions too. A `deny` rule still holds under it.
 - **The Agent tab**, installed without `AGENT_AUTO`, keeps opencode's defaults, so its shell commands run unasked as well. With `AGENT_AUTO=1` it approves every tool call, and opencode merges that setting after every rule of its config files: your own rules, `deny` included, do not hold under it.
 - **`claude-local`** starts Claude Code in its normal permission mode, which asks before each command ([clients.md](clients.md)).
 

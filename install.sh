@@ -496,14 +496,16 @@ FLASH_SERVE_IMAGE="${FLASH_SERVE_IMAGE:-$FLASH_IMAGE}"
 # config` prints, where 1.18.32 printed this box's key in clear, 1.19.4 against 1.18.35
 # (2026-10-22), which runs on Bun 1.4.4 and its fixes for Brotli, TLS and HTTP, and 1.19.5
 # against 1.19.4 (2026-10-30), which lets a terminal's ticket stand for the password only on the
-# route the server dispatches the request to, no longer on a pattern of its path.
+# route the server dispatches the request to, no longer on a pattern of its path, and 1.19.6 against
+# 1.19.5 (2026-11-18), which compacts and retries on a provider's "request body too large" too and
+# bounds the images a session sends inline.
 # Left alone, two boxes installed a week apart run two versions (up to 1.18, opencode also
 # installed its own patch releases). The sha256 is GitHub's own digest of the release asset
 # opencode-linux-arm64.tar.gz. OPENCODE_PIN=0 keeps whatever opencode you have.
 _ENV_OPENCODE_VERSION="${OPENCODE_VERSION:-}"
 _ENV_OPENCODE_SHA256="${OPENCODE_SHA256:-}"
-OPENCODE_VERSION="${OPENCODE_VERSION:-1.19.5}"
-OPENCODE_SHA256="${OPENCODE_SHA256:-fae5be262d693b7c5e562856cc473e59e741772936db0c0600ac0d5ed5bd088b}"
+OPENCODE_VERSION="${OPENCODE_VERSION:-1.19.6}"
+OPENCODE_SHA256="${OPENCODE_SHA256:-5b68c1f4c5e75b4134e664cc8f36d634d64208d4fcfe5bcf3b48bab699c2dbac}"
 OPENCODE_PIN="${OPENCODE_PIN:-1}"
 PORT="${PORT:-30000}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
