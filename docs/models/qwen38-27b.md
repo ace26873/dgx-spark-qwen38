@@ -7,7 +7,7 @@ DGX Spark or one ASUS Ascent GX10, with a window of 1,010,000 tokens.
 ## One command
 
 ```bash
-./switch-model.sh stock        # or: uncensored | fp8 | uncensored-fp8 | arete
+./switch-model.sh stock        # or: uncensored | fp8 | uncensored-fp8 | arete | daisyrose
 ```
 
 The one-line install of the [README](../../README.md) sets it up, and the [cockpit](../cockpit.md)
@@ -34,9 +34,10 @@ target verifies every drafted token, so speed costs no quality
 ## What it is good at
 
 General text work with long context: agent loops in Claude Code or opencode, code with files open,
-summaries of whole repositories. The five targets share one serving path: `stock` for general use,
+summaries of whole repositories. The six targets share one serving path: `stock` for general use,
 the two abliterated targets for fewer refusals, Qwen's own FP8 release as the quantization
-reference, and `arete`, Nous Research's fine-tune. Free prose is the slow case on any drafter,
+reference, `arete`, Nous Research's fine-tune, and `daisyrose`, RadixArk's
+reinforcement-learning-only fine-tune. Free prose is the slow case on any drafter,
 [BENCHMARKS.md](../../BENCHMARKS.md) says by how much.
 
 ## Arete 27B
@@ -52,6 +53,22 @@ Measured on our box on 2026-11-14 under the lane's unit:
 - **GSM8K 99.2%** on 250 questions, **MMLU 88.0%** on 500, **HumanEval 96.3%**.
 - A KL divergence of **0.030** to Nous's BF16 over 30 texts, the needle exact at 120,000 and
   300,000 tokens, a KV pool of **905,941 and 902,974 tokens** on its two boots.
+
+## DaisyRose 27B
+
+`daisyrose` serves [DaisyRose 27B](https://huggingface.co/RadixArk/DaisyRose-27B), RadixArk's
+reinforcement-learning-only fine-tune of Qwen3.8 27B (Apache-2.0, no SFT, no distillation), in
+[RadixArk's own NVFP4](https://huggingface.co/RadixArk/DaisyRose-27B-NVFP4)
+(`RadixArk/DaisyRose-27B-NVFP4`, revision `c4d85c5`, DaisyRose 27B NVFP4 · RadixArk in the
+cockpit, 21.95 GB), with the lane's unit, image and DFlash2 draft as they are: same
+architecture, same tokenizer, same chat template, byte for byte, and its config loads with
+the lane image's transformers 5.19.0. Its checkpoint declares no KV cache: its switch
+writes the one RadixArk's NVFP4 declares into its config (`patch-kv.py`), so its target's
+cache is fp8 and its draft's bf16, as for `stock`. The measurement on our box remains to be
+done. RadixArk publishes, at xhigh reasoning and temperature 1.0: Terminal-Bench 2.1 at
+75.5 against 73.0 for Qwen3.8-27B, Terminal-Bench 4.1 at 12.0 against 5.6, SWE Bench Pro v2
+at 94.7 against 91.3 and GPQA Diamond at 90.7 against 89.2; several of the Qwen3.8-27B
+scores come from model cards or an article, not a paired run.
 
 ## In the repo
 
