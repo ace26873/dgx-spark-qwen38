@@ -27,8 +27,8 @@ On 2026-11-14, on the lane's pinned image, with `--reasoning off` and a context 
 ## What it is good at
 
 Speech to text on the GPU, at a word error rate the CPU speech lane's recognizer does not reach, for whoever
-needs the box's transcripts in near real time. It is a lane of its own beside the
-[speech lane](../speech-lane.md), which hears on the CPU beside any engine and also speaks.
+needs the box's transcripts fast (ten times faster than real time in its trial). It is a lane of its own
+beside the [speech lane](../speech-lane.md), which hears on the CPU beside any engine and also speaks.
 
 ## In the repo
 
