@@ -848,7 +848,7 @@ times, and the run stopped on a failure naming four causes that were all the
 wrong one, over a traceback that did name `hf_xet` (seen 2026-09-18, cache left
 holding 74 GB of the 124). Both downloaders now answer that one refusal by
 retrying the repo that hit it with Xet, then turning Xet back off, so this
-target installs with the same command as the other six.
+target installs with the same command as the other eight.
 
 The `uncensored` target, Qwen3.8 27B abliterated NVFP4 · edp1096, is huihui-ai's abliteration of Qwen3.8 27B
 re-quantized with the identical RadixArk modelopt NVFP4 recipe (verified: same
@@ -878,8 +878,10 @@ reinforcement-learning-only fine-tune of Qwen3.8 27B (Apache-2.0; no SFT, no
 distillation), in [its own NVFP4](https://huggingface.co/RadixArk/DaisyRose-27B-NVFP4):
 RadixArk's recipe for the 27B, layer for layer the one of
 `RadixArk/Qwen3.8-27B-NVFP4` (MIXED_PRECISION, 401 layers: 208 FP8 and 193 NVFP4,
-21.95 GB), with the same architecture, the same tokenizer and the same chat template,
-byte for byte, and its config loads with the lane image's transformers 5.19.0, so it
+21.95 GB), with the same architecture, its tokenizer files and chat template byte for
+byte (its tokenizer_config marks nine more tokens special, none of the think or tool tags:
+the same text encodes and decodes the same), and its config loads with the lane image's
+transformers 5.19.0, so it
 takes the lane's unit, image and DFlash2 draft as they are. Its checkpoint declares no
 KV cache either: its switch (and `MODEL_CHOICE=daisyrose ./install.sh`) writes the
 declaration RadixArk's NVFP4 carries into its cached config with `patch-kv.py`, after

@@ -221,8 +221,10 @@ ARETE_REV="50235efb8aaa20e7d9338ad9d64f9451da784f91"
 # DaisyRose 27B, RadixArk's reinforcement-learning-only fine-tune of Qwen3.8-27B
 # (Apache-2.0, no SFT and no distillation), in RadixArk's own NVFP4 of the 27B
 # (MIXED_PRECISION, 401 layers: 208 FP8 and 193 NVFP4, identical layer to layer to
-# RadixArk/Qwen3.8-27B-NVFP4; same architecture, tokenizer and chat template, byte for
-# byte, 21.95 GB; its config loads with the lane image's transformers 5.19.0). Nothing
+# RadixArk/Qwen3.8-27B-NVFP4; same architecture, its tokenizer files and chat template
+# byte for byte, 21.95 GB; its config loads with the lane image's transformers 5.19.0, and
+# its tokenizer_config only marks nine more tokens special, none of the think or tool
+# tags, so the same ids encode and decode the same). Nothing
 # measured on the reference box yet; RadixArk publishes Terminal-Bench 2.1 at 75.5
 # against 73.0 for Qwen3.8-27B (xhigh reasoning). It declares no KV cache either: like
 # arete, its switch and this installer write the lane's fp8 declaration into its config

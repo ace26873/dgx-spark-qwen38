@@ -61,7 +61,8 @@ reinforcement-learning-only fine-tune of Qwen3.8 27B (Apache-2.0, no SFT, no dis
 [RadixArk's own NVFP4](https://huggingface.co/RadixArk/DaisyRose-27B-NVFP4)
 (`RadixArk/DaisyRose-27B-NVFP4`, revision `c4d85c5`, DaisyRose 27B NVFP4 · RadixArk in the
 cockpit, 21.95 GB), with the lane's unit, image and DFlash2 draft as they are: same
-architecture, same tokenizer, same chat template, byte for byte, and its config loads with
+architecture, its tokenizer files and chat template byte for byte (its tokenizer_config marks
+nine more tokens special, none of the think or tool tags), and its config loads with
 the lane image's transformers 5.19.0. Its checkpoint declares no KV cache: its switch
 writes the one RadixArk's NVFP4 declares into its config (`patch-kv.py`), so its target's
 cache is fp8 and its draft's bf16, as for `stock`. The measurement on our box remains to be
