@@ -122,12 +122,28 @@ def run_job(job, steps, cwd):
         # by whatever ran next
         tmp = os.path.join(home, "tmp")
         os.mkdir(tmp)
+        # What a runner lacks is dropped from the step's environment, and the caches and the
+        # systemd directory are pointed at empty directories of the step's own HOME: a step that
+        # inherited the developer's HF_TOKEN read a cache a runner has not, and through the
+        # cockpit's unit paths the box's real /etc/systemd/system, so the local coverage was not
+        # the runner's (C20, 2026-11-19). QWEN38_TEST_PYTHON stays posed as before: on a runner
+        # the pip lines install into python3, here the checkout's venv is named instead.
+        hf_home = os.path.join(home, "hf-vide")
+        systemd = os.path.join(home, "systemd")
+        for d in (hf_home, os.path.join(home, ".cache"), systemd):
+            os.mkdir(d)
+        runnerless = ("HF_HOME", "HF_HUB_CACHE", "HF_CACHE", "HF_TOKEN", "HF_ENDPOINT", "HF_HUB_OFFLINE",
+                      "XDG_CACHE_HOME", "GITHUB_TOKEN", "COCKPIT_CONFIG_DIR", "COCKPIT_SYSTEMD_DIR",
+                      "QWEN38_MEMINFO")
         # CI_LOCAL_WORKFLOW names the workflow to this run and is no part of a step's environment, as a
         # runner has no such variable: tests/test_ci_local.py, a step of the night's pass, handed it to the
         # ci-local.sh of each repository it plants, which looked there for a nightly.yml they do not have
         # (13 failures, found in review on 2026-11-10 before that pass had run once)
-        env = {**{k: v for k, v in os.environ.items() if k != "CI_LOCAL_WORKFLOW"}, **test_python,
+        env = {**{k: v for k, v in os.environ.items() if k not in ("CI_LOCAL_WORKFLOW",) + runnerless},
+               **test_python,
                "HOME": home, "TMPDIR": tmp, "CI_LOCAL_CALLED": called,
+               "HF_HOME": hf_home, "XDG_CACHE_HOME": os.path.join(home, ".cache"),
+               "COCKPIT_SYSTEMD_DIR": systemd,
                "PATH": stubs + os.pathsep + os.environ.get("PATH", "")}
         r, tools, dt = None, [], 0.0
         try:

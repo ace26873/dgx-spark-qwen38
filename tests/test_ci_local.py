@@ -44,36 +44,44 @@ jobs:
 """
 
 
+def make_repo(case, workflow, files=()):
+    """A repository with this workflow and these files, all committed, and an empty TMPDIR."""
+    root = pathlib.Path(tempfile.mkdtemp())
+    case.addCleanup(shutil.rmtree, root, True)
+    repo, tmp = root / "repo", root / "tmp"
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    tmp.mkdir()
+    (repo / ".github" / "workflows" / "ci.yml").write_text(workflow)
+    for rel, text in dict(files).items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text)
+        if rel.endswith(".sh"):
+            os.chmod(repo / rel, 0o755)
+    case.git = ["git", "-C", str(repo), "-c", "user.name=ci", "-c", "user.email=ci@example.invalid",
+                "-c", "commit.gpgsign=false"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(case.git + ["add", "."], check=True)
+    subprocess.run(case.git + ["commit", "-qm", "ci"], check=True)
+    return repo, tmp
+
+
+def step_env(tmp, serial=False, **extra):
+    # CI_LOCAL_WORKFLOW too: a case asks for another workflow file by naming it, never by inheriting it
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("CI_LOCAL_SERIAL", "QWEN38_TEST_PYTHON", "CI_LOCAL_WORKFLOW")}
+    env.update(TMPDIR=str(tmp), **extra)
+    if serial:
+        env["CI_LOCAL_SERIAL"] = "1"
+    return env
+
+
 @unittest.skipUnless(HAVE_YAML, "ci-local.sh reads the workflow with PyYAML, which python3 lacks here")
 class TheJobThatNeedsTheOthers(unittest.TestCase):
     def make_repo(self, workflow, files=()):
-        """A repository with this workflow and these files, all committed, and an empty TMPDIR."""
-        root = pathlib.Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, root, True)
-        repo, tmp = root / "repo", root / "tmp"
-        (repo / ".github" / "workflows").mkdir(parents=True)
-        tmp.mkdir()
-        (repo / ".github" / "workflows" / "ci.yml").write_text(workflow)
-        for rel, text in dict(files).items():
-            (repo / rel).parent.mkdir(parents=True, exist_ok=True)
-            (repo / rel).write_text(text)
-            if rel.endswith(".sh"):
-                os.chmod(repo / rel, 0o755)
-        self.git = ["git", "-C", str(repo), "-c", "user.name=ci", "-c", "user.email=ci@example.invalid",
-                    "-c", "commit.gpgsign=false"]
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        subprocess.run(self.git + ["add", "."], check=True)
-        subprocess.run(self.git + ["commit", "-qm", "ci"], check=True)
-        return repo, tmp
+        return make_repo(self, workflow, files)
 
     def env(self, tmp, serial=False, **extra):
-        # CI_LOCAL_WORKFLOW too: a case asks for another workflow file by naming it, never by inheriting it
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("CI_LOCAL_SERIAL", "QWEN38_TEST_PYTHON", "CI_LOCAL_WORKFLOW")}
-        env.update(TMPDIR=str(tmp), **extra)
-        if serial:
-            env["CI_LOCAL_SERIAL"] = "1"
-        return env
+        return step_env(tmp, serial, **extra)
 
     def run_ci(self, slow="true", serial=False):
         repo, tmp = self.make_repo(WORKFLOW.format(slow=slow))
@@ -333,6 +341,37 @@ class TheJobThatNeedsTheOthers(unittest.TestCase):
                 return f.read().strip()
         except OSError:
             return ""
+
+
+@unittest.skipUnless(HAVE_YAML, "ci-local.sh reads the workflow with PyYAML, which python3 lacks here")
+class TheStepsSeeWhatARunnerSees(unittest.TestCase):
+    def test_each_step_s_environment_is_a_runner_s(self):
+        # C20 (2026-11-19): a step inherited the developer's session (HF_TOKEN among the
+        # variables) and, through the cockpit's unit paths, read the box's real
+        # /etc/systemd/system, so the local coverage was not the runner's. ci-local.sh drops
+        # what a runner lacks and points the caches and the systemd directory at empty
+        # directories of the step's own throwaway HOME; QWEN38_TEST_PYTHON stays posed as before.
+        workflow = ("name: ci\non: push\njobs:\n  env:\n    runs-on: ubuntu-24.04-arm\n    steps:\n"
+                    "      - name: A step sees what a runner sees\n        run: |\n"
+                    "          for v in HF_HOME XDG_CACHE_HOME COCKPIT_SYSTEMD_DIR; do\n"
+                    "            [ -n \"${!v:-}\" ] || { echo \"$v is not set\"; exit 1; }\n"
+                    "          done\n"
+                    "          [ -z \"$(ls -A \"$HF_HOME\" 2>/dev/null)\" ] || { echo \"HF_HOME=$HF_HOME is not empty\"; exit 1; }\n"
+                    "          case \"$COCKPIT_SYSTEMD_DIR\" in \"$HOME\"/*) ;; *) echo \"COCKPIT_SYSTEMD_DIR=$COCKPIT_SYSTEMD_DIR is not under the step's HOME=$HOME\"; exit 1 ;; esac\n"
+                    "          for v in HF_HUB_CACHE HF_CACHE HF_TOKEN HF_ENDPOINT HF_HUB_OFFLINE GITHUB_TOKEN COCKPIT_CONFIG_DIR QWEN38_MEMINFO; do\n"
+                    "            [ -z \"${!v:-}\" ] || { echo \"$v is still set\"; exit 1; }\n"
+                    "          done\n")
+        repo, tmp = make_repo(self, workflow)
+        # every variable a runner lacks is set here to a fake value, so the step fails if
+        # ci-local.sh lets one through, and the posed ones fail if it does not pose them
+        fake = {k: f"/not/a/runner/{k.lower()}" for k in
+                ("HF_HOME", "HF_HUB_CACHE", "HF_CACHE", "HF_TOKEN", "HF_ENDPOINT", "HF_HUB_OFFLINE",
+                 "XDG_CACHE_HOME", "GITHUB_TOKEN", "COCKPIT_CONFIG_DIR", "COCKPIT_SYSTEMD_DIR",
+                 "QWEN38_MEMINFO")}
+        r = subprocess.run(["bash", str(SCRIPT)], cwd=repo, env=step_env(tmp, serial=True, **fake),
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("ok   A step sees what a runner sees", r.stdout)
 
 
 if __name__ == "__main__":
