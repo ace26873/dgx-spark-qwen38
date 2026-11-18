@@ -80,7 +80,8 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
     gigabytes of wheels, which an update leaves to the lane's Load (side_runtime_waits)."""
     FN = TEXT[TEXT.index("side_runtime_waits(){"):TEXT.index("\n}\n", TEXT.index("side_runtime_waits(){")) + 3]
 
-    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True, waiting=False):
+    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True, waiting=False,
+               waiting_needs="image x\n"):
         d = pathlib.Path(tempfile.mkdtemp(prefix="runtime-waits-"))
         repo, cfg, lanes, etc = d / "repo", d / "config", d / "lanes", d / "etc"
         for x in (repo, cfg, lanes, etc):
@@ -101,7 +102,7 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
         if waiting:
             (cfg / "pending").mkdir()
             (cfg / "pending" / f"qwen38-{lane}.service").write_text("newer")
-            (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text("image x\n")
+            (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text(waiting_needs)
         script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"\nside_lane_dir(){{ echo "{lanes}/$1"; }}\n'
                   + self.FN.replace("/etc/systemd/system/", f"{etc}/") + f'\nside_runtime_waits {lane}\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
@@ -125,8 +126,21 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
         self.assertIsNone(self.run_fn(venv=False))
         self.assertIsNone(self.run_fn(lane="kolibri"))
 
-    def test_a_unit_already_waiting_is_left_as_it_is(self):
-        self.assertEqual(self.run_fn(waiting=True), ("newer", "image x\n"))
+    def test_a_wheel_and_a_source_that_moved_are_one_line_each(self):
+        unit, needs = self.run_fn(lane="image-h3", source="d" * 40)
+        self.assertEqual(needs, f"runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\nruntime SGLang source {'e' * 12}\n")
+
+    def test_a_unit_already_waiting_keeps_its_unit_and_learns_its_runtime(self):
+        # an earlier run's wait: its runtime lines were left out (Vibe's blind review of v1.52.0, Mistral Large 4)
+        self.assertEqual(self.run_fn(waiting=True),
+                         ("newer", "image x\nruntime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n"))
+
+    def test_a_runtime_line_of_an_earlier_run_is_made_current_not_repeated(self):
+        self.assertEqual(self.run_fn(waiting=True, waiting_needs="image x\nruntime sglang[diffusion] 0.5.21 (it runs 0.5.20)\n"),
+                         ("newer", "image x\nruntime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n"))
+
+    def test_a_unit_already_waiting_with_nothing_moved_is_left_as_it_is(self):
+        self.assertEqual(self.run_fn(waiting=True, note="0.5.22"), ("newer", "image x\n"))
 
 
 class SideInstall(unittest.TestCase):

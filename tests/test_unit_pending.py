@@ -101,6 +101,26 @@ class UnitNeeds(unittest.TestCase):
         self.b.ckpt("Aleph-Alpha/Kolibri-1", REV2)
         self.assertEqual(self.b.needs(text), [])
 
+    def test_a_vllm_drafter_named_by_its_speculative_config(self):
+        # the Nemotron lanes' drafter (Vibe's blind review of v1.52.0, GLM 5.3: unit_needs did not see it)
+        text = (f"ExecStart=/bin/bash -c 'exec /usr/bin/docker run -v {self.b.hf}:/root/.cache/huggingface \\\n"
+                f"  {OLD_IMG} \\\n    nvidia/Nemotron-Bolt --revision {REV1} \\\n"
+                f"    --speculative-config.method dflash --speculative-config.model nvidia/Bolt-Draft \\\n"
+                f"    --speculative-config.revision {REV2} --speculative-config.num_speculative_tokens 7'\n")
+        self.b.ckpt("nvidia/Nemotron-Bolt", REV1)
+        self.assertEqual(self.b.needs(text), [f"draft nvidia/Bolt-Draft@{REV2}"])
+        self.b.ckpt("nvidia/Bolt-Draft", REV2)
+        self.assertEqual(self.b.needs(text), [])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file of mode 000")
+    def test_a_unit_it_cannot_read_is_not_taken_for_whole(self):
+        # a root unit of mode 0600 read as "lacks nothing" (Vibe's blind review of v1.52.0, Mistral Large 4)
+        f = self.b.d / "unreadable.service"
+        f.write_text(self.b.text())
+        f.chmod(0)
+        r = self.b.sh(f'unit_needs "{f}"')
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (0, [f"unreadable {f}"]), r.stderr)
+
     def test_a_native_lane_reads_the_cache_its_environment_names(self):
         # the image and video lanes set HF_HOME: their checkpoint is looked for there, not in the default cache
         other = self.b.d / "other-disk"
@@ -162,6 +182,15 @@ class UnitPutOnAnUpdate(unittest.TestCase):
     def test_a_lane_that_cannot_serve_as_it_is_gets_its_new_unit(self):
         # emptied (its image gone): nothing to keep serving, its Load prepares the new unit
         self.b.images.write_text("")
+        new = self.b.text(img=NEW_IMG)
+        self.assertEqual(self.b.put(new), "PUT=new")
+        self.assertEqual(self.b.unit.read_text(), new)
+        self.assertFalse(self.pending.exists())
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file of mode 000")
+    def test_an_installed_unit_it_cannot_read_takes_its_new_unit_as_before(self):
+        # unreadable, it was taken for whole and its new unit waited (Vibe's blind review of v1.52.0)
+        self.b.unit.chmod(0)
         new = self.b.text(img=NEW_IMG)
         self.assertEqual(self.b.put(new), "PUT=new")
         self.assertEqual(self.b.unit.read_text(), new)

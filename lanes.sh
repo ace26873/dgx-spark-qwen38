@@ -214,11 +214,14 @@ unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written 
 
 # What a lane's unit (or launcher) reads that this box does not have: one line each, "image <ref>" (by its digest or
 # its local build's tag, as docker names it), "checkpoint <repo>@<revision>" (whole, as ckpt_cached reads it, in the
-# cache the unit mounts), "draft <repo>@<revision>" (the 27B's DFlash2 draft, draft_in_cache), "path <path>" (a model
-# the unit names by its path: a GGUF part, a snapshot folder). Nothing when it has it all.
+# cache the unit mounts), "draft <repo>@<revision>" (the 27B's DFlash2 draft, draft_in_cache, and the Nemotron lanes'
+# vLLM drafter), "path <path>" (a model the unit names by its path: a GGUF part, a snapshot folder), "unreadable
+# <file>" (a unit this user cannot read). Nothing when it has it all.
 unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   local hf img repo rev f seen=" "
-  [ -r "$1" ] || return 0
+  # a unit this user cannot read (root's 0600, as the image lane's were before a fix) is not taken for whole: its
+  # new unit goes in place as before v1.52.0 (Vibe's blind review of v1.52.0, Mistral Large 4)
+  [ -r "$1" ] || { echo "unreadable $1"; return 0; }
   # the cache a container mounts, or the one a native lane names in its environment (the image and video lanes: code
   # review of v1.52.0, read in the default cache they were not)
   hf="$(unit_hf_cache "$1")"
@@ -241,6 +244,16 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   esac
   if ! draft_in_cache "$1"; then
     echo "draft $({ grep -m1 -oE -- '--speculative-draft-model-path [^ ]+' "$1" || true; } | cut -d' ' -f2)@$({ grep -m1 -oE -- '--speculative-draft-model-revision [^ ]+' "$1" || true; } | cut -d' ' -f2)"
+  fi
+  # vLLM's drafter, the Nemotron lanes': --speculative-config.model and .revision (Vibe's blind review of v1.52.0,
+  # GLM 5.3: a new drafter pin went in place unseen, and the lane found it nowhere at its next start)
+  repo="$({ grep -m1 -oE -- '--speculative-config\.model [^ ]+' "$1" || true; } | awk '{print $2}')"
+  if [ -n "$repo" ]; then
+    rev="$({ grep -m1 -oE -- '--speculative-config\.revision [^ ]+' "$1" || true; } | awk '{print $2}')"
+    case "$repo" in
+      /*) [ -e "$repo" ] || echo "path $repo" ;;
+      *) ckpt_cached "$hf/hub/models--${repo//\//--}" "${rev:-main}" || echo "draft $repo@${rev:-main}" ;;
+    esac
   fi
   for f in $({ grep -oE '/[^ "=]*/hub/models--[^ "/]+/snapshots/[0-9a-f]{40}/[^ "]+\.gguf' "$1" || true; } | sort -u); do
     [ -e "$f" ] || echo "path $f"

@@ -35,19 +35,19 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
         self.installed.write_text("[Service]\nExecStart=/bin/bash -c 'exec docker run old'\n")
         self.template = self.d / "cfg" / "chat-template.jinja"
 
-    def put(self, enabled, new=None):
+    def put(self, enabled, new=None, pending_put=False):
         new_unit = self.d / "new.service"
         new_unit.write_text(new or ("[Service]\nExecStart=/bin/bash -c 'exec docker run \\\n"
                                     f"  --mount type=bind,source={self.template},target=/out/t.jinja,readonly \\\n"
                                     f"  --mount type=bind,source={self.d}/cfg,target=/out/cfg,readonly new'\n"))
         script = "\n".join([
-            "set -euo pipefail", f'. "{REPO}/vllm-lane.sh"',
+            "set -euo pipefail", f'. "{REPO}/lanes.sh"' if pending_put else ":", f'. "{REPO}/vllm-lane.sh"',
             'die(){ echo "die: $*"; exit 1; }', 'unit_put(){ cp "$1" "$2"; echo installed; }',
             f'CONFIG_DIR="{self.d}/cfg"', f'INSTALLED="{self.installed}"', "UNIT=qwen38-x.service",
             "VLANE_SHORT=X", "SMOKE=1", f'vlane_put_unit "{new_unit}"'])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
                            env=dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", ENABLED="1" if enabled else "0",
-                                    SUDO_LOG=str(self.sudo_log)))
+                                    SUDO_LOG=str(self.sudo_log), PENDING_PUT="1" if pending_put else "0"))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         return r.stdout, self.installed.read_text()
 
@@ -55,6 +55,28 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
         out, installed = self.put(enabled=True)
         self.assertIn(f"NOTE: X starts at boot, and its new unit mounts what is not there yet: {self.template}.", out)
         self.assertIn("docker run old", installed)
+
+    def test_on_an_update_its_new_unit_waits_for_its_load_with_what_it_mounts(self):
+        # nothing waited, an earlier run's wait stayed, and install.sh went on to update the lane whole (Vibe's blind
+        # review of v1.52.0, Mistral Large 4); docker here only says it has no image
+        (self.bin / "docker").write_text("#!/bin/bash\nexit 1\n")
+        (self.bin / "docker").chmod(0o755)
+        pend = self.d / "cfg" / "pending"
+        pend.mkdir()
+        (pend / "installed.service").write_text("older\n")
+        (pend / "installed.service.needs").write_text("checkpoint old/one@1\n")
+        out, installed = self.put(enabled=True, pending_put=True)
+        self.assertIn("NOTE: X starts at boot", out)
+        self.assertIn("docker run old", installed, "the unit in place serves what it served, at boot too")
+        self.assertEqual((pend / "installed.service").read_text(), (self.d / "new.service").read_text())
+        needs = (pend / "installed.service.needs").read_text().splitlines()
+        self.assertIn(f"path {self.template}", needs)
+        self.assertNotIn("checkpoint old/one@1", needs)
+
+    def test_outside_an_update_nothing_is_written_to_wait(self):
+        out, installed = self.put(enabled=True)
+        self.assertIn("NOTE: X starts at boot", out)
+        self.assertFalse((self.d / "cfg" / "pending").exists())
 
     def test_a_boot_lane_takes_the_new_unit_once_the_file_is_there(self):
         self.template.write_text("{{ messages }}\n")

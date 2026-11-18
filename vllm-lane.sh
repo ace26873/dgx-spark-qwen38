@@ -208,6 +208,14 @@ vlane_put_unit(){  # $1 the rendered unit, $2... what else the lane's start read
     done
     if [ -n "$missing" ]; then
       echo "NOTE: $VLANE_SHORT starts at boot, and its new unit mounts what is not there yet:$missing. The unit it has is kept; a Load, or ./install.sh once its checkpoint is in reach, brings the new one."
+      # an update (PENDING_PUT=1) says so as for every unit that waits: the new unit and what it lacks, the files it
+      # mounts with it, wait for the lane's Load, which writes them. Nothing waited, a wait of an earlier run stayed,
+      # and install.sh went on to update the lane whole (Vibe's blind review of v1.52.0, Mistral Large 4).
+      if [ "${PENDING_PUT:-0}" = 1 ]; then
+        unit_pending_put "$1" "$INSTALLED" || return 1
+        for src in $missing; do echo "path $src"; done \
+          >> "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$INSTALLED").needs"
+      fi
       return 0
     fi
   fi

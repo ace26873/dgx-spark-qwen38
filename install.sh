@@ -1701,8 +1701,9 @@ side_waited(){ case "$SIDE_WAITED" in *" $1 "*) return 0 ;; esac; return 1; }  #
 # runtime it lacks, and that Load's preparation builds it (its installer's --prepare, whose unit_put clears the wait).
 side_runtime_waits(){  # $1 lane
   local inst="$REPO_DIR/install-$1.sh" dir wheel pin had unit="/etc/systemd/system/qwen38-$1.service" lacks=""
+  local p="$CONFIG_DIR/pending/qwen38-$1.service"
   case "$1" in image|image-h3|video) ;; *) return 0 ;; esac
-  [ -f "$unit" ] && [ ! -f "$CONFIG_DIR/pending/qwen38-$1.service" ] || return 0
+  [ -f "$unit" ] || return 0
   dir="$(side_lane_dir "$1")"
   [ -x "$dir/venv/bin/python" ] || return 0              # not built: its first Load builds it, as before
   wheel="$({ grep -m1 -oE '^WHEEL="\$\{[A-Z0-9_]+:-[^}]+\}"' "$inst" || true; } | sed -E 's/.*:-([^}]+)\}"/\1/')"
@@ -1710,12 +1711,18 @@ side_runtime_waits(){  # $1 lane
   had="$(cat "$dir/sglang-wheel" 2>/dev/null || true)"
   [ -z "$wheel" ] || [ "$had" = "$wheel" ] || lacks="runtime sglang[diffusion] $wheel (it runs $had)"
   if [ -n "$pin" ] && [ -f "$dir/sglang-source" ] && [ "$(cat "$dir/sglang-source")" != "$pin" ]; then
-    lacks="${lacks:+$lacks; }runtime SGLang source ${pin:0:12}"
+    lacks="${lacks:+$lacks$'\n'}runtime SGLang source ${pin:0:12}"
   fi
   [ -n "$lacks" ] || return 0
   mkdir -p "$CONFIG_DIR/pending"
-  cp "$unit" "$CONFIG_DIR/pending/qwen38-$1.service"
-  printf '%s\n' "$lacks" > "$CONFIG_DIR/pending/qwen38-$1.service.needs"
+  # a unit already waiting (an earlier run's) keeps its unit and what it lacks, its runtime lines made current: they
+  # were left out, and the lane's card said less than its Load does (Vibe's blind review of v1.52.0, Mistral Large 4)
+  if [ -f "$p" ]; then
+    { grep -v '^runtime ' "$p.needs" 2>/dev/null || true; printf '%s\n' "$lacks"; } > "$p.needs.tmp" && mv "$p.needs.tmp" "$p.needs"
+    return 0
+  fi
+  cp "$unit" "$p"
+  printf '%s\n' "$lacks" > "$p.needs"
 }
 side_mode(){  # $1 lane, $2 --with-<lane> given: the installer's option for this run
   if [ "$ALL_WEIGHTS" -eq 1 ] || [ "$2" -eq 1 ] || side_begun "$1"; then echo --no-smoke; else echo --units-only; fi
