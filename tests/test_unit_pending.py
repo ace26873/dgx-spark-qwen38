@@ -623,11 +623,27 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
 
 class TheSwitchPutsALaneBesidesNewUnit(unittest.TestCase):
     def test_each_unit_its_switch_puts_in_place_clears_what_waited(self):
-        # a lane beside the text lane takes its new unit from its switch, which renders it (code review of v1.52.0)
+        # a lane beside the text lane takes its new unit from its switch, which renders it (code review of
+        # v1.52.0); the transcribe, LFM2.5 and LFM3 lanes' switches too, since they sit on v1.52
         import re
         text = (REPO / "switch-model.sh").read_text()
-        puts = re.findall(r'sudo install -m 644 "\$(KOL|NEM|NSV|FLL|ORN|FLU|IMG)_STAGE" "\$([A-Z0-9_]+)"\n\s*unit_pending_clear "\$\2"', text)
-        self.assertEqual(len(puts), 7, puts)
+        puts = re.findall(r'sudo install -m 644 "\$(KOL|NEM|NSV|FLL|ORN|FLU|IMG|TRANSCRIBE|LFM25|LFM3)_STAGE" "\$([A-Z0-9_]+)"\n\s*unit_pending_clear "\$\2"', text)
+        self.assertEqual(len(puts), 10, puts)
+
+    def test_every_installer_that_puts_its_unit_itself_says_when_it_waits(self):
+        # unit_put answers pending when the new unit reads what the box lacks (v1.52.0): an installer that runs
+        # unit_put on its own, not through vllm-lane.sh's vlane_put_unit (which says it since v1.52.0), must say
+        # so too, else it would print "unit installed" for a unit it did not put in place
+        import re
+        for inst in sorted(REPO.glob("install-*.sh")):
+            text = inst.read_text()
+            if not re.search(r'^[A-Za-z_]*[Pp][Uu][Tt]="\$\(unit_put ', text, re.M):
+                continue
+            with self.subTest(installer=inst.name):
+                case = re.search(r'case "\$\{?[A-Za-z_]*[Pp][Uu][Tt]\}?" in(.*?)\n\s*esac', text, re.S)
+                self.assertIsNotNone(case, f"{inst.name} runs unit_put but has no case on its result")
+                self.assertIn("pending)", case.group(1),
+                              f"{inst.name} does not say when its new unit waits for its Load")
 
 
 class TheVideoAndImageH3SwitchAppliesTheWaitingUnit(unittest.TestCase):

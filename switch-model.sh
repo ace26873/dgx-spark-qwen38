@@ -1509,6 +1509,7 @@ if [ "$CHOICE" = "transcribe" ]; then
   if ! cmp -s "$TRANSCRIBE_STAGE" "$TRANSCRIBE_UNIT"; then
     diff "$TRANSCRIBE_STAGE" "$TRANSCRIBE_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$TRANSCRIBE_STAGE" "$TRANSCRIBE_UNIT"
+    unit_pending_clear "$TRANSCRIBE_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     TR_REWRITTEN=1
   fi
   rm -f "$TRANSCRIBE_STAGE"
@@ -1603,6 +1604,7 @@ if [ "$CHOICE" = "lfm25" ]; then
   if ! cmp -s "$LFM25_STAGE" "$LFM25_UNIT"; then
     diff "$LFM25_STAGE" "$LFM25_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$LFM25_STAGE" "$LFM25_UNIT"
+    unit_pending_clear "$LFM25_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     LFM25_REWRITTEN=1
   fi
   rm -f "$LFM25_STAGE"
@@ -1728,6 +1730,7 @@ if [ "$CHOICE" = "lfm3" ]; then
   if ! cmp -s "$LFM3_STAGE" "$LFM3_UNIT"; then
     diff "$LFM3_STAGE" "$LFM3_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$LFM3_STAGE" "$LFM3_UNIT"
+    unit_pending_clear "$LFM3_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     LFM3_REWRITTEN=1
   fi
   rm -f "$LFM3_STAGE"

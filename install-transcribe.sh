@@ -159,6 +159,7 @@ install_service(){
   render_unit "$RENDER"
   put="$(unit_put "$RENDER" "$INSTALLED")"
   case "$put" in
+    pending) echo "its new unit waits for its Load, the one in place kept: it lacks $(unit_pending_says "$INSTALLED") (decision 1408)" ;;
     same) echo "unit unchanged" ;;
     deps) sudo systemctl daemon-reload
           echo "unit updated: only the lines naming the other lanes changed, which the lane does not read" ;;
