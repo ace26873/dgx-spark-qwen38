@@ -1016,9 +1016,16 @@ class InstallShSaysTheSame(unittest.TestCase):
         blocks = floor(list(re.finditer(r'^(\s*)if \[ "\$WANT_([A-Z0-9_]+)" -eq 1 \]; then\n(.*?)^\1fi\b', sh, re.M | re.S)),
                        f"{rel} its if [ \"$WANT_<LANE>\" -eq 1 ] blocks", 2 * len(SIDE))
         copies = {}
+        # since v1.52.0 a block runs its installer through side_install <lane>, whose body runs
+        # "$REPO_DIR/install-$1.sh" (and its update waits for the lane's Load when it must): read both
+        fn = re.search(r"^side_install\(\)\{.*?^\}", sh, re.M | re.S)
+        p.append(f"{rel} has no side_install()") if not fn else None
+        if fn and fn.group(0).count('"$REPO_DIR/install-$1.sh"') < 2:
+            p.append(f"{rel}:{line_at(sh, fn.start())} side_install() does not run \"$REPO_DIR/install-$1.sh\" for its lane")
         for b in blocks:
             lane = LANE_OF_VAR.get(b.group(2), b.group(2))
             inst = re.findall(r'"\$REPO_DIR/(install-[a-z0-9-]+\.sh)"', b.group(3))
+            inst += [f"install-{x}.sh" for x in re.findall(r"^\s*(?:if\s+)?side_install ([a-z0-9-]+) ", b.group(3), re.M)]
             copies.setdefault(len(b.group(1)), []).append((lane, line_at(sh, b.start())))
             if inst != [LANES[lane]["installer"] if lane in LANES else None]:
                 p.append(f"{rel}:{line_at(sh, b.start())} WANT_{b.group(2)} runs {inst}, the registry says "
