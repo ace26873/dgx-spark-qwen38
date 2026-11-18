@@ -20,6 +20,7 @@ from [BENCHMARKS.md](../../BENCHMARKS.md) and the lane pages it links, nothing h
 | Qwen-Image 2.1 · Qwen | SGLang Diffusion 0.5.21 | [qwen-image-21.md](qwen-image-21.md) | `./switch-model.sh image` | 1024x1024 in 7.5 s with its Turbo |
 | MiniMax-H3 · MiniMax, video with sound | SGLang Diffusion 0.5.21 | [minimax-h3.md](minimax-h3.md) | `./switch-model.sh video` | 4 s of 480P in about 127 s with its Turbo |
 | MiniMax-H3-Image · MiniMax | SGLang Diffusion main 49f1a44 | [minimax-h3-image.md](minimax-h3-image.md) | `./switch-model.sh image-h3` | 2048x2048 in 15.6 s, 4736x3552 in 81 s |
+| NVIDIA Nemotron Transcribe 30B-A4B · NVIDIA, speech to text | llama.cpp b12316 | [nemotron-transcribe.md](nemotron-transcribe.md) | `./switch-model.sh transcribe` | French WER 2.76 % against the speech lane's 5.6 %, ready in 15 s |
 
 Each engine is the version the lane's pinned image reads on the reference box (the cockpit says the same, and the
 version its engine reports for the lane that serves).
