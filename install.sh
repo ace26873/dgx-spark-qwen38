@@ -3894,15 +3894,15 @@ else
       || echo "NOTE: the MiniMax-H3-Image lane did not install or update; retry with ./install-image-h3.sh --no-smoke"
   fi
   if [ "$WANT_TRANSCRIBE" -eq 1 ]; then
-    "$REPO_DIR/install-transcribe.sh" "$(side_mode transcribe "$WITH_TRANSCRIBE")" \
+    side_install transcribe "$(side_mode transcribe "$WITH_TRANSCRIBE")" "$WITH_TRANSCRIBE" \
       || echo "NOTE: the NVIDIA Nemotron Transcribe lane did not install or update; retry with ./install-transcribe.sh --no-smoke"
   fi
   if [ "$WANT_LFM25" -eq 1 ]; then
-    "$REPO_DIR/install-lfm25.sh" "$(side_mode lfm25 "$WITH_LFM25")" \
+    side_install lfm25 "$(side_mode lfm25 "$WITH_LFM25")" "$WITH_LFM25" \
       || echo "NOTE: the Liquid AI LFM2.5 24B-A2B lane did not install or update; retry with ./install-lfm25.sh --no-smoke"
   fi
   if [ "$WANT_LFM3" -eq 1 ]; then
-    "$REPO_DIR/install-lfm3.sh" "$(side_mode lfm3 "$WITH_LFM3")" \
+    side_install lfm3 "$(side_mode lfm3 "$WITH_LFM3")" "$WITH_LFM3" \
       || echo "NOTE: the Liquid AI LFM3 lane did not install or update; retry with ./install-lfm3.sh --no-smoke"
   fi
   SERVING_LANE=""
@@ -4340,7 +4340,7 @@ except Exception as e:
     if [ "$WANT_TRANSCRIBE" -eq 1 ]; then
       step "NVIDIA Nemotron Transcribe lane (speech to text on its own port, on llama.cpp)"
       TRANSCRIBE_MODE="$(side_mode transcribe "$WITH_TRANSCRIBE")"
-      if "$REPO_DIR/install-transcribe.sh" "$TRANSCRIBE_MODE"; then TRANSCRIBE_STATE=installed; [ "$TRANSCRIBE_MODE" = --units-only ] && TRANSCRIBE_STATE=units; else
+      if side_install transcribe "$TRANSCRIBE_MODE" "$WITH_TRANSCRIBE"; then TRANSCRIBE_STATE=installed; { [ "$TRANSCRIBE_MODE" = --units-only ] || side_waited transcribe; } && TRANSCRIBE_STATE=units; else
         TRANSCRIBE_STATE=failed
         echo "NOTE: the NVIDIA Nemotron Transcribe lane did not install (the lines above say why); the rest goes on."
       fi
@@ -4348,7 +4348,7 @@ except Exception as e:
     if [ "$WANT_LFM25" -eq 1 ]; then
       step "Liquid AI LFM2.5 24B-A2B lane (Liquid AI's mixture of experts, on SGLang in the 27B lane's image)"
       LFM25_MODE="$(side_mode lfm25 "$WITH_LFM25")"
-      if "$REPO_DIR/install-lfm25.sh" "$LFM25_MODE"; then LFM25_STATE=installed; [ "$LFM25_MODE" = --units-only ] && LFM25_STATE=units; else
+      if side_install lfm25 "$LFM25_MODE" "$WITH_LFM25"; then LFM25_STATE=installed; { [ "$LFM25_MODE" = --units-only ] || side_waited lfm25; } && LFM25_STATE=units; else
         LFM25_STATE=failed
         echo "NOTE: the Liquid AI LFM2.5 24B-A2B lane did not install (the lines above say why); the rest goes on."
       fi
@@ -4356,7 +4356,7 @@ except Exception as e:
     if [ "$WANT_LFM3" -eq 1 ]; then
       step "Liquid AI LFM3 lane (Liquid AI's LFM3 1.7B, on vLLM's own nightly image)"
       LFM3_MODE="$(side_mode lfm3 "$WITH_LFM3")"
-      if "$REPO_DIR/install-lfm3.sh" "$LFM3_MODE"; then LFM3_STATE=installed; [ "$LFM3_MODE" = --units-only ] && LFM3_STATE=units; else
+      if side_install lfm3 "$LFM3_MODE" "$WITH_LFM3"; then LFM3_STATE=installed; { [ "$LFM3_MODE" = --units-only ] || side_waited lfm3; } && LFM3_STATE=units; else
         LFM3_STATE=failed
         echo "NOTE: the Liquid AI LFM3 lane did not install (the lines above say why); the rest goes on."
       fi
