@@ -93,6 +93,7 @@ class Base(unittest.TestCase):
         # the video lane's port, which the offline suite's guard did not watch (found on
         # 2026-11-10). A test that needs an engine starts its own and points ENGINE_BASE at it.
         os.environ.update(COCKPIT_DRY_RUN="1", COCKPIT_CONFIG_DIR=str(cls.tmp),
+                          HOME=str(cls.tmp),
                           COCKPIT_REPO_DIR=str(REPO), COCKPIT_PORT="0",
                           COCKPIT_AGENT_PORT="0", COCKPIT_AUTOHEAL="0",
                           COCKPIT_ENGINE=CLOSED, COCKPIT_PROXY=CLOSED, COCKPIT_IMAGE=CLOSED, COCKPIT_IMAGE_H3=CLOSED, COCKPIT_TRANSCRIBE=CLOSED,
@@ -103,6 +104,16 @@ class Base(unittest.TestCase):
         cls.cp = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.cp)
         cls.cp._get_json = offline
+        # Every unit the cockpit reads, this suite's own: on a box whose real units name the
+        # real HF cache, lane_caches() read it here and the local coverage was not the runner's
+        # (C20, 2026-11-19). A fixed list of names missed a lane's unit once already (2026-10-16),
+        # so every *_UNIT_PATH of the module is redirected, and UNIT_PATHS with them.
+        cls.units = cls.tmp / "units"
+        cls.units.mkdir()
+        for name, value in list(vars(cls.cp).items()):
+            if name.endswith("_UNIT_PATH") and isinstance(value, Path):
+                setattr(cls.cp, name, cls.units / value.name)
+        cls.cp.UNIT_PATHS = {k: cls.units / Path(v).name for k, v in cls.cp.UNIT_PATHS.items()}
         # staticmethod: a plain function stored on a class becomes a method,
         # and would then receive the TestCase as its first argument.
         cls.real_run = staticmethod(cls.cp.run)
@@ -150,6 +161,14 @@ class TheUpdateCommand(Base):
 
 
 class TheRegistryReadsEveryCache(Base):
+    def test_lane_caches_reads_no_cache_but_this_suite_s_own(self):
+        # C20 (2026-11-19): on a box whose real units name the real HF cache, lane_caches() read
+        # it here, so registry_snapshot() scanned the developer's cache and the local coverage
+        # was not the runner's; every unit path points at this suite's own directory
+        own = os.path.realpath(self.tmp) + os.sep
+        outside = [c for c in self.cp.lane_caches() if not os.path.realpath(c).startswith(own)]
+        self.assertEqual(outside, [], "caches read outside this suite's tmp: " + ", ".join(outside))
+
     def test_a_cache_a_unit_names_is_scanned(self):
         # install.sh takes HF_CACHE, and the registry scanned ~/.cache/huggingface alone, so
         # a box installed with another cache read an empty Library (found in review,

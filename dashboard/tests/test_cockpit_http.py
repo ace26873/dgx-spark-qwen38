@@ -96,6 +96,16 @@ def load_cockpit(config_dir: Path):
                                                   DASH / "cockpit.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    # Every unit the cockpit reads, this suite's own: on a box whose real units name the real
+    # HF cache, /api/registry scanned it here and the local coverage was not the runner's
+    # (C20, 2026-11-19). A fixed list of names missed a lane's unit once already (2026-10-16),
+    # so every *_UNIT_PATH of the module is redirected, and UNIT_PATHS with them.
+    units = config_dir / "units"
+    units.mkdir(exist_ok=True)
+    for name, value in list(vars(mod).items()):
+        if name.endswith("_UNIT_PATH") and isinstance(value, Path):
+            setattr(mod, name, units / value.name)
+    mod.UNIT_PATHS = {k: units / Path(v).name for k, v in mod.UNIT_PATHS.items()}
     return mod
 
 
@@ -588,6 +598,14 @@ class ReadRoutes(Base):
         st, hdrs, data = self.req("GET", path, cookie=cookie)
         return st, (json.loads(data) if data and hdrs.get(
             "Content-Type", "").startswith("application/json") else data)
+
+    def test_the_registry_reads_no_cache_but_this_suite_s_own(self):
+        # C20 (2026-11-19): on a box whose real units name the real HF cache, /api/registry
+        # scanned it here through lane_caches(), so the local coverage was not the runner's;
+        # every unit path points at this suite's own directory
+        own = os.path.realpath(self.tmp) + os.sep
+        outside = [c for c in self.cp.lane_caches() if not os.path.realpath(c).startswith(own)]
+        self.assertEqual(outside, [], "caches read outside this suite's tmp: " + ", ".join(outside))
 
     def test_the_action_registry_is_published_without_its_argv(self):
         """The UI needs the parameters to render a selector; it must never be
