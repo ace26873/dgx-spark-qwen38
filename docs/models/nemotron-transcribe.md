@@ -34,5 +34,7 @@ needs the box's transcripts in near real time. It is a lane of its own beside th
 
 - [docs/speech-lane.md](../speech-lane.md), the CPU speech lane, its recognizers and the WER table its
   measurement was set against
+- [docs/transcribe-lane.md](../transcribe-lane.md), the lane's page: its port and its routes, its
+  memory, its pins and the trial its measures come from
 - [install-transcribe.sh](../../install-transcribe.sh), its pins (the GGUF Q8_0, its projector, the image),
   its port and the proof its install ends with

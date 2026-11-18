@@ -26,5 +26,6 @@ Each engine is the version the lane's pinned image reads on the reference box (t
 version its engine reports for the lane that serves).
 
 Speech (Qwen3-ASR, Kokoro) is opt-in and runs on the CPU, see
-[docs/speech-lane.md](../speech-lane.md). The lanes share one pool of unified memory and take turns
+[docs/speech-lane.md](../speech-lane.md). The Nemotron Transcribe lane's page, its port and its
+measures: [docs/transcribe-lane.md](../transcribe-lane.md). The lanes share one pool of unified memory and take turns
 in it, and the [cockpit](../cockpit.md) loads one with a button.

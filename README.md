@@ -140,6 +140,7 @@ The README is the entry point. Everything longer lives next to it, one subject p
 | Where the two Qwen text lanes stand against upstream SGLang, re-checked in the images | [docs/upstream.md](docs/upstream.md) |
 | Typed decisions in full: the contract, the four levers, the refusals, the load | [docs/systemone.md](docs/systemone.md) |
 | The speech lane: install, use, the languages, the long recordings, what it was measured with | [docs/speech-lane.md](docs/speech-lane.md) |
+| The NVIDIA Nemotron Transcribe lane: speech to text on the GPU, its port, its memory, its measures | [docs/transcribe-lane.md](docs/transcribe-lane.md) |
 | The `lean` reasoning level: method, numbers, negative results | [LEAN.md](LEAN.md) |
 | What changed in every release, with the measurement behind each change | [CHANGELOG.md](CHANGELOG.md) |
 | The layout, the state files, the invariants CI holds | [ARCHITECTURE.md](ARCHITECTURE.md) |
