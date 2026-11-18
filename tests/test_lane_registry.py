@@ -1386,13 +1386,21 @@ class TheCockpitSaysTheSame(unittest.TestCase):
         p.same(f"{where} VAR2TARGET (its targets)", got.values(), targets_of(SGLANG))
         target_lane = py_run(rel, "target_lane", {})
         p.table(f"{rel}:{py_function(rel, 'target_lane').lineno} target_lane()", {t: target_lane(t) for t in TARGET_LANE}, TARGET_LANE)
-        # target_unit() run on the unit each of its names holds: X_UNIT_PATH = Path("/etc/systemd/system/<unit>"),
-        # UNIT_PATHS by its keys
+        # target_unit() run on the unit each of its names holds: X_UNIT_PATH = Path("/etc/systemd/system/<unit>")
+        # or SYSTEMD_DIR / X_UNIT (COCKPIT_SYSTEMD_DIR, C20), UNIT_PATHS by its keys
         names = {"UNIT_PATHS": {k.value: k.value for k in py_assign(rel, "UNIT_PATHS").keys}}
+        strings = py_strings(rel)
         for node in tree_of(rel).body:
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and getattr(node.value.func, "id", "") == "Path" \
-                    and node.value.args and isinstance(node.value.args[0], ast.Constant) and isinstance(node.targets[0], ast.Name):
-                names[node.targets[0].id] = str(node.value.args[0].value).rsplit("/", 1)[-1]
+            if not (isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)):
+                continue
+            v = node.value
+            if isinstance(v, ast.Call) and getattr(v.func, "id", "") == "Path" \
+                    and v.args and isinstance(v.args[0], ast.Constant):
+                names[node.targets[0].id] = str(v.args[0].value).rsplit("/", 1)[-1]
+            elif isinstance(v, ast.BinOp) and isinstance(v.op, ast.Div) \
+                    and isinstance(v.left, ast.Name) and v.left.id == "SYSTEMD_DIR" \
+                    and isinstance(v.right, ast.Name) and v.right.id in strings:
+                names[node.targets[0].id] = strings[v.right.id]
         target_unit = py_run(rel, "target_unit", names)
         p.table(f"{rel}:{py_function(rel, 'target_unit').lineno} target_unit()", {t: target_unit(t) for t in TARGET_LANE},
                 {t: UNIT[x] for t, x in TARGET_LANE.items()})

@@ -48,6 +48,11 @@ import recipes as rp
 HERE = Path(__file__).resolve().parent
 REPO_DIR = Path(os.environ.get("COCKPIT_REPO_DIR", HERE.parent))
 CONFIG_DIR = Path(os.environ.get("COCKPIT_CONFIG_DIR", Path.home() / ".config/qwen38"))
+# Every unit the cockpit READS departs from here: /etc/systemd/system on a box, and wherever
+# COCKPIT_SYSTEMD_DIR points a test or a local CI run (a runner has no units there; ci-local.sh
+# poses an empty directory of the step's own HOME, C20, 2026-11-19). What the cockpit writes
+# (the sudo install of a switched unit) stays on the real /etc/systemd/system.
+SYSTEMD_DIR = Path(os.environ.get("COCKPIT_SYSTEMD_DIR", "/etc/systemd/system"))
 BIND = os.environ.get("COCKPIT_BIND", "127.0.0.1")
 PORT = int(os.environ.get("COCKPIT_PORT", "30090"))
 ENGINE_BASE = os.environ.get("COCKPIT_ENGINE", "http://127.0.0.1:30000")
@@ -732,7 +737,7 @@ def mem_available_gib() -> float | None:
 # /health generates nothing, and its /metrics carries its load and its KV cache (all three
 # open without the key, as on SGLang). Measured on the reference box, vLLM 0.29.0, 2026-10-14.
 KOLIBRI_UNIT = "qwen38-kolibri.service"
-KOLIBRI_UNIT_PATH = Path("/etc/systemd/system/qwen38-kolibri.service")
+KOLIBRI_UNIT_PATH = SYSTEMD_DIR / KOLIBRI_UNIT
 KOLIBRI_READY_ENTER: dict = {}
 _VLLM_GAUGE = re.compile(r"^(vllm:[a-z_]+)(\{[^}]*\})?\s+([-+0-9.eE]+)\s*$", re.M)
 
@@ -864,25 +869,25 @@ def kolibri_engine_state(unit: str, *, active: str, sub: str, prev_state: str | 
 # of that family: Bolt (nemotron) and Super VL (nemotron-super), each its own unit and container,
 # one image for the two (install-nemotron-super.sh says why).
 NEMOTRON_UNIT = "qwen38-nemotron.service"
-NEMOTRON_UNIT_PATH = Path("/etc/systemd/system/qwen38-nemotron.service")
+NEMOTRON_UNIT_PATH = SYSTEMD_DIR / NEMOTRON_UNIT
 NEMOTRON_SUPER_UNIT = "qwen38-nemotron-super.service"
-NEMOTRON_SUPER_UNIT_PATH = Path("/etc/systemd/system/qwen38-nemotron-super.service")
+NEMOTRON_SUPER_UNIT_PATH = SYSTEMD_DIR / NEMOTRON_SUPER_UNIT
 # The Qwen3.8 Flash-Next FP4-Local lane (v1.37) runs vLLM with b12x too, NVIDIA's FP4 build of the flash model
 # on the community image its model card names: the same routes, the same /metrics, the same engine
 # panel, an MTP head counted as a drafter is. It is the family's third lane, in the same table: its
 # boot alone reads otherwise (lifecycle.parse_flash_local_boot_log), and its name in a sentence.
 FLASH_LOCAL_UNIT = "qwen38-flash-local.service"
-FLASH_LOCAL_UNIT_PATH = Path("/etc/systemd/system/qwen38-flash-local.service")
+FLASH_LOCAL_UNIT_PATH = SYSTEMD_DIR / FLASH_LOCAL_UNIT
 # The Ornith 1.5 122B lane (v1.38) runs on the Qwen3.8 Flash-Next FP4-Local lane's image, read by the same b12x
 # loader, with an MTP head: the family's fourth lane, its boot read as FP4-Local's is (the same
 # loader's lines, measured on the reference box, 2026-10-21), its name in a sentence its own.
 ORNITH_UNIT = "qwen38-ornith-122b.service"
-ORNITH_122B_UNIT_PATH = Path("/etc/systemd/system/qwen38-ornith-122b.service")
+ORNITH_122B_UNIT_PATH = SYSTEMD_DIR / ORNITH_UNIT
 # The Liquid AI LFM3 lane runs vLLM's own nightly image, without b12x: read as the family's lanes are (the same routes,
 # the same /metrics, the same engine panel, its boot read from vLLM's own lines), from a table beside theirs
 # (TABLE_LANES below), its name in a sentence and its refusals its own.
 LFM3_UNIT = "qwen38-lfm3.service"
-LFM3_UNIT_PATH = Path("/etc/systemd/system/qwen38-lfm3.service")
+LFM3_UNIT_PATH = SYSTEMD_DIR / LFM3_UNIT
 # each lane's container, lane, served model and precision, by unit: the one table of the family
 # (Bolt's experts in IQ2_XXS, its Mamba layers NVFP4, the rest Q8_0; Super VL in NVFP4; FP4-Local's
 # experts and n-gram table in NVFP4, its other layers in MXFP8; Ornith's experts in NVFP4, its
@@ -1133,7 +1138,7 @@ def floor_said(done: dict) -> str:
 # server-http.cpp, b12291), so the cockpit sends it the key it reads the other routes with. Its counters are llamacpp:*,
 # the requests it serves and defers and its draft's among them; no gauge of its KV cache, whose size is its window.
 FLASH_UNSLOTH_UNIT = "qwen38-flash-unsloth.service"
-FLASH_UNSLOTH_UNIT_PATH = Path("/etc/systemd/system/qwen38-flash-unsloth.service")
+FLASH_UNSLOTH_UNIT_PATH = SYSTEMD_DIR / FLASH_UNSLOTH_UNIT
 # each lane's container, lane and served model, by unit: the family's one table
 LLAMACPP_LANES = {FLASH_UNSLOTH_UNIT: ("qwen38-flash-unsloth", "flash-unsloth", "qwen3.8-flash-next-unsloth")}
 # each lane's targets and the precision each serves, by the folder of its repository that holds the GGUF its engine
@@ -1295,7 +1300,7 @@ def llamacpp_engine_state(unit: str, *, active: str, sub: str, prev_state: str |
 # the proxy and the SGLang belts never meet it. Its /health asks no key (llama.cpp's server-http.cpp), 503 while its
 # model loads, 200 after, and it is followed on that and its container, as the llama.cpp text lane is.
 TRANSCRIBE_UNIT = "qwen38-transcribe.service"
-TRANSCRIBE_UNIT_PATH = Path("/etc/systemd/system/qwen38-transcribe.service")
+TRANSCRIBE_UNIT_PATH = SYSTEMD_DIR / TRANSCRIBE_UNIT
 TRANSCRIBE_CONTAINER = "qwen38-transcribe"
 
 
@@ -1307,7 +1312,7 @@ def transcribe_serving() -> bool:
 # The Liquid AI LFM2.5 24B-A2B lane: SGLang on the 27B lane's image, on the text port behind the proxy, so a text unit
 # of lc.TEXT_UNITS with every SGLang belt (the canary, the pool guard, the autoheal), its facts read as the 27B's are.
 LFM25_UNIT = "qwen38-lfm25.service"
-LFM25_UNIT_PATH = Path("/etc/systemd/system/qwen38-lfm25.service")
+LFM25_UNIT_PATH = SYSTEMD_DIR / LFM25_UNIT
 
 
 def transcribe_flag(flag: str, fallback: str) -> str:
@@ -2303,7 +2308,7 @@ AGENT_ENV_FILE = CONFIG_DIR / "opencode-web.env"
 # The unit install-agent.sh writes. COCKPIT_AGENT_UNIT_PATH points a test's cockpit at a unit of its own,
 # as COCKPIT_AGENT_UPSTREAM does its server: the bench run on a box read that box's real unit, and its
 # permission line, instead of the one it had started (agent-bench.mjs, 2026-10-23).
-AGENT_UNIT_PATH = Path(os.environ.get("COCKPIT_AGENT_UNIT_PATH") or Path("/etc/systemd/system") / AGENT_UNIT)
+AGENT_UNIT_PATH = Path(os.environ.get("COCKPIT_AGENT_UNIT_PATH") or SYSTEMD_DIR / AGENT_UNIT)
 AGENT = {"bind": None, "port": AGENT_PORT, "listening": False, "error": None, "since": None}
 AGENT_BINARY: dict = {"key": None, "version": None}
 
@@ -2458,7 +2463,7 @@ def _newer(there, installed) -> bool:
 # settings v1.35.0 gives Bolt's unit waited for a restart nobody was told about).
 # engine-inputs.py, the rule the installers go by, says whether the engine that serves started
 # after every input it reads was written; the banner strip and the lane's Load say what is owed.
-UNIT_DIR = Path(os.environ.get("COCKPIT_UNIT_DIR", "/etc/systemd/system"))
+UNIT_DIR = Path(os.environ.get("COCKPIT_UNIT_DIR") or SYSTEMD_DIR)
 _ENGINE_INPUTS: dict = {}
 # The vLLM lanes read one file their unit does not name, the auth middleware they mount from a
 # folder (vllm-lane.sh's LANE_FILES): without it here, an update of it got its NOTE from the
@@ -2692,7 +2697,7 @@ def _guard_failed(err: str):
 VAR2TARGET = {"STOCK_REV": "stock", "UNC_REV": "uncensored", "FP8_REV": "fp8",
               "UNCFP8_REV": "uncensored-fp8", "ARETE_REV": "arete", "DAISYROSE_REV": "daisyrose", "FLASH_REV": "flash",
               "FLASH_NVDA_REV": "flash-nvda", "FLASH_UNC_REV": "flash-uncensored", "LFM25_REV": "lfm25"}
-UNIT_PATHS = {"qwen38-sglang.service": Path("/etc/systemd/system/qwen38-sglang.service"),
+UNIT_PATHS = {"qwen38-sglang.service": SYSTEMD_DIR / "qwen38-sglang.service",
               "qwen38-flash.service": CONFIG_DIR / "launch-flash.sh",
               "qwen38-lfm25.service": LFM25_UNIT_PATH}
 UNIT_TARGET_CACHE: dict = {}
@@ -4746,13 +4751,13 @@ def systemone_call(payload: dict) -> tuple[int, dict]:
 # by ./install.sh --with-image. The browser never holds the serving key and never talks
 # to the lane: it sends a description of the call and this process makes it.
 IMAGE_UNIT = "qwen38-image.service"
-IMAGE_UNIT_PATH = Path("/etc/systemd/system/qwen38-image.service")
+IMAGE_UNIT_PATH = SYSTEMD_DIR / IMAGE_UNIT
 # MiniMax-H3-Image, the second image lane (./install.sh --with-image-h3): the same server at
 # another commit, in a venv and on a port of its own. One Image view and one set of routes
 # address the image lane that serves (image_unit): the two never serve at once (Conflicts=),
 # and each call takes the rules of the lane it goes to (IMAGE_RULES).
 IMAGE_H3_UNIT = "qwen38-image-h3.service"
-IMAGE_H3_UNIT_PATH = Path("/etc/systemd/system/qwen38-image-h3.service")
+IMAGE_H3_UNIT_PATH = SYSTEMD_DIR / IMAGE_H3_UNIT
 IMAGE_UNITS = (IMAGE_UNIT, IMAGE_H3_UNIT)
 
 
@@ -5345,7 +5350,7 @@ def _multipart(fields: dict, images: list) -> tuple[bytes, str]:
 # the call from the create to the download, the way the image call holds one from
 # the POST to the pixels.
 VIDEO_UNIT = "qwen38-video.service"
-VIDEO_UNIT_PATH = Path("/etc/systemd/system/qwen38-video.service")
+VIDEO_UNIT_PATH = SYSTEMD_DIR / VIDEO_UNIT
 # A prompt plus two keyframes at most; the MP4 itself travels back as a download,
 # never inside a JSON body.
 VIDEO_MAX_POST = 10 * 1024 * 1024
@@ -7314,7 +7319,7 @@ def pinned_pool(unit: str) -> int | None:
     return v if isinstance(v, int) else None
 
 
-INSTALLED_INVOCATION = {"27b": Path("/etc/systemd/system/qwen38-sglang.service"),
+INSTALLED_INVOCATION = {"27b": SYSTEMD_DIR / "qwen38-sglang.service",
                         "flash": CONFIG_DIR / "launch-flash.sh"}
 
 
