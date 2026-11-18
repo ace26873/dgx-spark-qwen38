@@ -218,6 +218,17 @@ UNC_REV="21565d389fe573a32c1c425e0c7ade204ddb2263"
 # (patch-kv.py says why that and not --kv-cache-dtype), and it serves as stock does.
 ARETE_REPO="atakans/Arete-27B-NVFP4"
 ARETE_REV="50235efb8aaa20e7d9338ad9d64f9451da784f91"
+# DaisyRose 27B, RadixArk's reinforcement-learning-only fine-tune of Qwen3.8-27B
+# (Apache-2.0, no SFT and no distillation), in RadixArk's own NVFP4 of the 27B
+# (MIXED_PRECISION, 401 layers: 208 FP8 and 193 NVFP4, identical layer to layer to
+# RadixArk/Qwen3.8-27B-NVFP4; same architecture, tokenizer and chat template, byte for
+# byte, 21.95 GB; its config loads with the lane image's transformers 5.19.0). Nothing
+# measured on the reference box yet; RadixArk publishes Terminal-Bench 2.1 at 75.5
+# against 73.0 for Qwen3.8-27B (xhigh reasoning). It declares no KV cache either: like
+# arete, its switch and this installer write the lane's fp8 declaration into its config
+# (patch-kv.py says why that and not --kv-cache-dtype), and it serves as stock does.
+DAISYROSE_REPO="RadixArk/DaisyRose-27B-NVFP4"
+DAISYROSE_REV="c4d85c5dfad123426555c22f4e24bb15381f0bdb"
 # Third target: Qwen3.8-Flash-Next (176B hybrid MoE, 6B active) in NVFP4 on
 # SGLang (same engine as the 27B pair), single box. The official image cannot
 # fit it on a GB10 as shipped; the locally built two-file overlay mmaps the 51B
@@ -283,10 +294,11 @@ case "$MODEL_CHOICE" in
   fp8)        MODEL_REPO="$FP8_REPO";   MODEL_REV="${MODEL_REV:-$FP8_REV}" ;;
   uncensored-fp8) MODEL_REPO="$UNCFP8_REPO"; MODEL_REV="${MODEL_REV:-$UNCFP8_REV}" ;;
   arete)      MODEL_REPO="$ARETE_REPO"; MODEL_REV="${MODEL_REV:-$ARETE_REV}" ;;
+  daisyrose)  MODEL_REPO="$DAISYROSE_REPO"; MODEL_REV="${MODEL_REV:-$DAISYROSE_REV}" ;;
   flash)      MODEL_REPO="$FLASH_REPO"; MODEL_REV="${MODEL_REV:-$FLASH_REV}" ;;
   flash-nvda) MODEL_REPO="$FLASH_NVDA_REPO"; MODEL_REV="${MODEL_REV:-$FLASH_NVDA_REV}" ;;
   flash-uncensored) MODEL_REPO="$FLASH_UNC_REPO"; MODEL_REV="${MODEL_REV:-$FLASH_UNC_REV}" ;;
-  *) printf 'ERROR: MODEL_CHOICE must be "stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-nvda" or "flash-uncensored" (got: %s)\n' "$MODEL_CHOICE" >&2; exit 1 ;;
+  *) printf 'ERROR: MODEL_CHOICE must be "stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose", "flash", "flash-nvda" or "flash-uncensored" (got: %s)\n' "$MODEL_CHOICE" >&2; exit 1 ;;
 esac
 # Which flags the flash lane's checkpoint wants. The RadixArk export is plain
 # NVFP4 and says so; NVIDIA's is a mixed-precision export that resolves its own
@@ -744,7 +756,7 @@ without a terminal.
                         --recommended lists what it moves)
 
 Re-running over an existing install keeps the operator's choices: the target
-model (any of the eight), the context mode (native/1m), the flash serving tier,
+model (any of the nine), the context mode (native/1m), the flash serving tier,
 the port, the HF cache location and the opencode on/off choice are read from
 the installed unit or launcher (or the marker file) unless the env var or flag
 is passed explicitly, or --recommended. A value only an older release's default put there, which
@@ -770,6 +782,8 @@ box, the 27B image on 2026-10-23):
   MODEL_CHOICE=uncensored-fp8        the huihui abliteration in that same FP8 format
   MODEL_CHOICE=arete                 serve Arete 27B, Nous Research's fine-tune of
                                      the 27B, in atakans's NVFP4 (21.1 GB)
+  MODEL_CHOICE=daisyrose             serve DaisyRose 27B, RadixArk's RL-only fine-tune
+                                     of the 27B, in RadixArk's NVFP4 (21.95 GB)
   MODEL_CHOICE=flash                 serve Qwen3.8-Flash-Next (176B hybrid MoE,
                                      NVFP4, SGLang engine, ~136 GB download; the
                                      47.7 GiB N-gram table is served from a file
@@ -837,7 +851,7 @@ export QWEN38_RECOMMENDED="$RECOMMENDED"   # the side lanes' installers this run
 
 # ── Converge on the operator's installed choices ──
 # Re-running the installer (or the get.sh one-liner) must never silently reset
-# a choice that is already serving: the target model (any of the eight targets),
+# a choice that is already serving: the target model (any of the nine targets),
 # the port, and the HF cache location are read from the installed units and
 # kept, unless the corresponding env var was passed explicitly on this
 # invocation. Everything else (image digest, checkpoint revisions, launch
@@ -1239,13 +1253,14 @@ elif [ "$INSTALLED_CHOICE" = "27b" ]; then
       "$FP8_REPO")    MODEL_CHOICE=fp8;            MODEL_REPO="$FP8_REPO";    MODEL_REV="${_ENV_MODEL_REV:-$FP8_REV}" ;;
       "$UNCFP8_REPO") MODEL_CHOICE=uncensored-fp8; MODEL_REPO="$UNCFP8_REPO"; MODEL_REV="${_ENV_MODEL_REV:-$UNCFP8_REV}" ;;
       "$ARETE_REPO")  MODEL_CHOICE=arete;          MODEL_REPO="$ARETE_REPO";  MODEL_REV="${_ENV_MODEL_REV:-$ARETE_REV}" ;;
+      "$DAISYROSE_REPO") MODEL_CHOICE=daisyrose;     MODEL_REPO="$DAISYROSE_REPO"; MODEL_REV="${_ENV_MODEL_REV:-$DAISYROSE_REV}" ;;
       *) KEEP_MODEL_VERBATIM=1; MODEL_CHOICE=custom; MODEL_REPO="$CUR_MODEL" ;;
     esac
     LANE=27b; UNIT_NAME="qwen38-sglang.service"
     if [ "$KEEP_MODEL_VERBATIM" -eq 1 ]; then
       echo "NOTE: keeping the custom --model-path already installed ($CUR_MODEL)."
       echo "      Its download and template steps are skipped (it is already serving from cache)."
-      echo "      Pass MODEL_CHOICE=stock, uncensored, fp8, uncensored-fp8 or arete to override."
+      echo "      Pass MODEL_CHOICE=stock, uncensored, fp8, uncensored-fp8, arete or daisyrose to override."
     else
       echo "Keeping the installed target model: $MODEL_CHOICE ($MODEL_REPO). Pass MODEL_CHOICE= to change."
     fi
@@ -1433,7 +1448,7 @@ if [ "$MEM_CLASS" = 64 ]; then
   [ "$LANE" != flash ] || die "The flash lane needs a 128 GB DGX Spark (its checkpoint alone is 135.3 GB), and this box is a 64 GB one. MODEL_CHOICE=stock ./install.sh serves the 27B, sized for it."
   # custom is a 27B unit serving a model of its own, whose size boxmem.py cannot know: kept, as on
   # any box (it read as an FP8 target, and the box could not be updated, found in review, 2026-10-23)
-  [ "$MODEL_CHOICE" = custom ] || target_fits "$MODEL_CHOICE" || die "MODEL_CHOICE=$MODEL_CHOICE (Qwen's FP8 weights, 30.9 GB) leaves the 27B's KV pool too little on a 64 GB DGX Spark: MODEL_CHOICE=stock, uncensored or arete (NVFP4) serve here."
+  [ "$MODEL_CHOICE" = custom ] || target_fits "$MODEL_CHOICE" || die "MODEL_CHOICE=$MODEL_CHOICE (Qwen's FP8 weights, 30.9 GB) leaves the 27B's KV pool too little on a 64 GB DGX Spark: MODEL_CHOICE=stock, uncensored, arete or daisyrose (NVFP4) serve here."
   [ "$CONTEXT_MODE" != 1m ] || die "CONTEXT_MODE=1m needs a 128 GB DGX Spark (the 1M window's KV pool alone is more memory than this box has), and this box is a 64 GB one. Drop CONTEXT_MODE: the 27B serves its native 262144 window here."
 fi
 if [ -z "$CONTEXT_MODE" ]; then
@@ -2435,7 +2450,7 @@ TEMPLATE_OUT="$CONFIG_DIR/chat-template-sglang.jinja"
 [ "$LANE" = "flash" ] && TEMPLATE_OUT="$CONFIG_DIR/chat-template-flashnext.jinja"
 if [ "$KEEP_MODEL_VERBATIM" -eq 1 ]; then
   [ -s "$TEMPLATE_OUT" ] \
-    || die "custom model kept, but no patched template at $TEMPLATE_OUT. Pass MODEL_CHOICE=stock, uncensored, fp8, uncensored-fp8 or arete to regenerate it."
+    || die "custom model kept, but no patched template at $TEMPLATE_OUT. Pass MODEL_CHOICE=stock, uncensored, fp8, uncensored-fp8, arete or daisyrose to regenerate it."
   echo "custom target model kept: existing patched template left untouched"
 elif [ "$UNITS_ONLY" -eq 1 ]; then
   [ -n "$ATS_CANNOT" ] || echo "the chat template comes from the checkpoint: the lane's $([ "$LEFT_OUT" -eq 1 ] && echo next || echo first) Load writes it (its switch)"
@@ -2505,6 +2520,11 @@ apply_context_configs(){
   # Arete's checkpoint declares no KV cache: the lane's fp8 declaration goes into its config,
   # after the window's (a YaRN restore puts back a config saved before it), as its switch does.
   if [ "$MODEL_CHOICE" = arete ]; then
+    python3 "$REPO_DIR/patch-kv.py" "$HF_CACHE" "$MODEL_REPO" "$MODEL_REV" || die "the fp8 KV cache declaration failed on the target model"
+  fi
+  # DaisyRose's checkpoint declares no KV cache either: the same declaration, in the same
+  # place, after the window's configs.
+  if [ "$MODEL_CHOICE" = daisyrose ]; then
     python3 "$REPO_DIR/patch-kv.py" "$HF_CACHE" "$MODEL_REPO" "$MODEL_REV" || die "the fp8 KV cache declaration failed on the target model"
   fi
 }
@@ -2931,6 +2951,7 @@ case "$(grep -oE -- '--model-path [^ ]+' "$SGL_UNIT_PATH" 2>/dev/null | head -1 
   "$FP8_REPO")    OC_27B_TARGET=fp8 ;;
   "$UNCFP8_REPO") OC_27B_TARGET=uncensored-fp8 ;;
   "$ARETE_REPO")  OC_27B_TARGET=arete ;;
+  "$DAISYROSE_REPO") OC_27B_TARGET=daisyrose ;;
 esac
 OC_27B_WINDOW=262144; [ "$OC_27B_MODE" = "1m" ] && OC_27B_WINDOW=1010000
 OC_27B_NAME="$(python3 "$REPO_DIR/oc-point-default.py" --label "$OC_27B_TARGET" "$OC_27B_WINDOW" || true)"
@@ -3561,8 +3582,9 @@ fi
 # reference box, same 1m unit: 771,139 tokens with the flag, 382,706 without). So
 # the FP8 pair asks for it explicitly, which is what the reference box has served
 # since 2026-08-31 and what every FP8 pool number in this repo was measured on. Arete's
-# NVFP4 declares none, and gets the lane's declaration in its config (apply_context_configs),
-# not this flag, which would put the draft's cache in fp8 too (patch-kv.py).
+# and DaisyRose's NVFP4 declare none, and get the lane's declaration in their config
+# (apply_context_configs), not this flag, which would put the draft's cache in fp8 too
+# (patch-kv.py).
 case "$MODEL_CHOICE" in
   fp8|uncensored-fp8) KV_CACHE_ARGS="--kv-cache-dtype fp8_e4m3 " ;;
   *)                  KV_CACHE_ARGS="" ;;

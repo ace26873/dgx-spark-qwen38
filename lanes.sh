@@ -386,7 +386,7 @@ unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for
 # idempotent (patch-yarn.py, patch-kv.py and patch-template.py all say so), so a run of both on
 # the same checkpoint, as a Load toward another target than the one that served does, changes
 # nothing twice.
-#   $1 the lane (27b|flash), $2 the switch target (arete says so), $3 the unit or launcher that
+#   $1 the lane (27b|flash), $2 the switch target (arete and daisyrose say so), $3 the unit or launcher that
 #      will serve the checkpoint (read for the 1M window flag), $4 the cache it mounts,
 #      $5 the checkpoint's repo, $6 its revision.
 patch_served_checkpoint(){  # 27b|flash, target, unit, hf cache, repo, revision
@@ -409,7 +409,8 @@ patch_served_checkpoint(){  # 27b|flash, target, unit, hf cache, repo, revision
   #     the pool: the lane's fp8 declaration goes into its config, as install.sh writes it, and its
   #     unit stays stock's, with no --kv-cache-dtype (patch-kv.py says why). After the window's
   #     configs: a YaRN restore puts back a config saved before the declaration.
-  if [ "$choice" = arete ]; then
+  # DaisyRose's checkpoint declares no KV cache either (the same lane's fp8 declaration, in the same place)
+  if [ "$choice" = arete ] || [ "$choice" = daisyrose ]; then
     python3 "$(_lanes_dir)/patch-kv.py" "$hf" "$repo" "$rev" \
       || die "the fp8 KV cache declaration failed for $repo (the unit was NOT rewritten yet)"
   fi

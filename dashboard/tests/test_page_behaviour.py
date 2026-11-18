@@ -2387,8 +2387,8 @@ class EveryVersionOfALaneIsInSight(unittest.TestCase):
                 selects: c.root.querySelectorAll('select').length});
         """)
         self.assertEqual(r["names"], ["NVFP4 · RadixArk", "Abliterated NVFP4 · edp1096", "FP8 · Qwen", "Abliterated FP8 · edp1096",
-                                      "Arete NVFP4 · atakans"])
-        self.assertEqual(r["label"], "Version (5)")
+                                      "Arete NVFP4 · atakans", "DaisyRose NVFP4 · RadixArk"])
+        self.assertEqual(r["label"], "Version (6)")
         self.assertEqual((r["group"], set(r["roles"])), ("radiogroup", {"radio"}))
         self.assertEqual(r["selects"], 0, "the buttons are the control: no select behind them")
         self.assertEqual((r["before"]["checked"], r["before"]["tabbable"], r["before"]["value"]), (["stock"], ["stock"], "stock"))
@@ -2416,7 +2416,7 @@ class EveryVersionOfALaneIsInSight(unittest.TestCase):
         """)
         self.assertEqual([s[:2] for s in r["steps"]],
                          [["uncensored", "uncensored"], ["fp8", "fp8"], ["uncensored", "uncensored"],
-                          ["stock", "stock"], ["arete", "arete"], ["stock", "stock"]])
+                          ["stock", "stock"], ["daisyrose", "daisyrose"], ["stock", "stock"]])
         self.assertTrue(all(s[2] for s in r["steps"]), "an arrow moves the choice, not the page")
         self.assertFalse(r["other"], "any other key is left to the page")
         self.assertEqual(r["after"], "stock")
@@ -2658,7 +2658,7 @@ class TheBoxItIs(unittest.TestCase):
                  'qwen38-flash-unsloth.service'];
     for (const u of BIG) units.units[u].enabled = '';
     const fits = %s === '64' ? ['qwen38-nemotron.service', 'qwen38-sglang.service'] : Object.keys(units.units);
-    const targets = fits.length === 2 ? ['arete', 'nemotron', 'stock', 'uncensored'] : Object.keys(TARGET_NAME);
+    const targets = fits.length === 2 ? ['arete', 'daisyrose', 'nemotron', 'stock', 'uncensored'] : Object.keys(TARGET_NAME);
     feed({config: CONFIG, units, lifecycle: life({'qwen38-sglang.service': eng('ready')}),
           machine: {mem: {MemTotal: %s * GIB, MemAvailable: 20 * GIB, Cached: 2 * GIB, SwapTotal: 0, SwapFree: 0},
                     box: {cls: %s, name: 'ASUS Ascent GX10', fits, targets}, cpu_pct: {cpu: 1}, load: [0, 0, 0], disks: {}}});
@@ -2705,7 +2705,7 @@ class TheBoxItIs(unittest.TestCase):
 
     MACHINE_64 = r"""{mem: {MemTotal: 57.6 * GIB, MemAvailable: 20 * GIB, Cached: 2 * GIB, SwapTotal: 0, SwapFree: 0},
         box: {cls: '64', name: 'ASUS Ascent GX10', fits: ['qwen38-nemotron.service', 'qwen38-sglang.service'],
-              targets: ['arete', 'nemotron', 'stock', 'uncensored']}, cpu_pct: {cpu: 1}, load: [0, 0, 0], disks: {}}"""
+              targets: ['arete', 'daisyrose', 'nemotron', 'stock', 'uncensored']}, cpu_pct: {cpu: 1}, load: [0, 0, 0], disks: {}}"""
 
     def test_decide_offers_the_27b_on_a_64_gb_box(self):
         # it offered Load flash 176B whatever the box, and that ended on the toast that the flash lane

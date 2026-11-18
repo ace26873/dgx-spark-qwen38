@@ -13,6 +13,7 @@ BASE = (REPO / "dashboard/static/js/base.js").read_text()
 PINS = {"stock": ("install.sh", "STOCK_REPO"), "uncensored": ("install.sh", "UNC_REPO"),
         "fp8": ("install.sh", "FP8_REPO"), "uncensored-fp8": ("install.sh", "UNCFP8_REPO"),
         "arete": ("install.sh", "ARETE_REPO"),
+        "daisyrose": ("install.sh", "DAISYROSE_REPO"),
         "flash": ("install.sh", "FLASH_REPO"), "flash-uncensored": ("install.sh", "FLASH_UNC_REPO"),
         "flash-nvda": ("install.sh", "FLASH_NVDA_REPO"), "flash-local": ("install-flash-local.sh", "FLASH_LOCAL_REPO"),
         "kolibri": ("install-kolibri.sh", "KOLIBRI_FP8_REPO"), "kolibri-nvfp4": ("install-kolibri.sh", "KOLIBRI_NVFP4_REPO"),
@@ -76,7 +77,7 @@ class EachVersionHasItsOfficialName(unittest.TestCase):
                 self.assertEqual("abliterated" in model.lower(), "abliterated" in name, (name, repo))
 
     def test_a_versions_button_says_its_precision_and_its_publisher_where_its_lane_has_several(self):
-        for target in ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-uncensored",
+        for target in ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose", "flash", "flash-uncensored",
                        "flash-nvda", "kolibri", "kolibri-nvfp4", "flash-unsloth", "flash-unsloth-iq3"):
             with self.subTest(target=target):
                 pub = self.name[target].rsplit(" · ", 1)[1]

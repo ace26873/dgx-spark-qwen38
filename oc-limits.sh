@@ -59,7 +59,7 @@ if [ "$CHOICE" = "--max-out" ]; then
       [ "$_o" -gt "$MAXOUT" ] && MAXOUT="$_o"
     done
   done
-  for _c in stock uncensored fp8 uncensored-fp8 arete; do
+  for _c in stock uncensored fp8 uncensored-fp8 arete daisyrose; do
     for _t in native 1m; do
       _o="$("$0" "$_c" "$_t" | awk '{print $2}')"
       [ -n "$_o" ] || { printf 'oc-limits: --max-out could not read %s %s\n' "$_c" "$_t" >&2; exit 2; }
@@ -193,7 +193,7 @@ case "$CHOICE" in
     esac
     LABEL="local"
     ;;
-  stock|uncensored|fp8|uncensored-fp8|arete|custom)
+  stock|uncensored|fp8|uncensored-fp8|arete|daisyrose|custom)
     # custom: a --model-path this table does not know, kept from the installed 27B unit
     # (install.sh). It had no row, so every update of such a box died at step 7 (found in
     # review, 2026-09-24). Its weights are of no known format, so in 1m it gets the pair of

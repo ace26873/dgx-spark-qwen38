@@ -6,6 +6,7 @@
 #   ./switch-model.sh fp8             # Qwen/Qwen3.8-27B-FP8 (SGLang)
 #   ./switch-model.sh uncensored-fp8  # edp1096/Huihui-...-abliterated-FP8 (SGLang)
 #   ./switch-model.sh arete           # atakans/Arete-27B-NVFP4, Nous Research's fine-tune of the 27B (SGLang)
+#   ./switch-model.sh daisyrose       # RadixArk/DaisyRose-27B-NVFP4, RadixArk's RL-only fine-tune of the 27B (SGLang)
 #   ./switch-model.sh flash           # RadixArk/Qwen3.8-Flash-Next-NVFP4 (SGLang)
 #   ./switch-model.sh flash-nvda      # nvidia/Qwen3.8-Flash-Next-NVFP4, ModelOpt mixed precision
 #   ./switch-model.sh flash-uncensored # the abliterated build of the same tree
@@ -28,11 +29,11 @@
 #   ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients
 #                                     # that lane's clients for its unit's window; nothing else
 #
-# Within the 27B lane (stock, uncensored, fp8, uncensored-fp8, arete) it does what it
+# Within the 27B lane (stock, uncensored, fp8, uncensored-fp8, arete, daisyrose) it does what it
 # always did:
 #   1. downloads the checkpoint into $HF_CACHE (resumable, pinned revision);
 #   2. applies the 1M YaRN config patch ONLY if the installed unit uses it, then, for
-#      arete, whose checkpoint declares none, the lane's fp8 KV cache declaration;
+#      arete or daisyrose, whose checkpoint declares none, the lane's fp8 KV cache declaration;
 #   3. regenerates the patched chat template from the target's own snapshot;
 #   4. rewrites ONLY --model-path/--revision in the qwen38-sglang unit.
 #
@@ -67,7 +68,7 @@ _ENV_HF_CACHE="${HF_CACHE:-}"      # before the pins below give it install.sh's 
 # 27B lane and restarting what follows it, where the usage was all anyone wanted (found
 # in review, 2026-09-24). MODEL_CHOICE= still names one, as install.sh takes it.
 CHOICE="${1:-${MODEL_CHOICE:-}}"
-case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3|transcribe|lfm25|lfm3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3|transcribe|lfm25|lfm3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
+case "$CHOICE" in stock|uncensored|fp8|uncensored-fp8|arete|daisyrose|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3|transcribe|lfm25|lfm3) ;; *) printf 'usage: ./switch-model.sh <stock|uncensored|fp8|uncensored-fp8|arete|daisyrose|flash|flash-nvda|flash-uncensored|image|image-turbo|video|kolibri|kolibri-nvfp4|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|flash-unsloth-iq3|image-h3|transcribe|lfm25|lfm3> [--fetch]\n       ./switch-model.sh <flash-local|flash-unsloth|flash-unsloth-iq3> --clients\n' >&2; [ -z "$CHOICE" ] && exit 2; die "unknown target: $CHOICE" ;; esac
 # --fetch: the target's checkpoint only, fetched as a switch fetches it (the cache first,
 # resumable, its room checked), and nothing else: no unit, no boot, no engine, no record.
 # Library's Download runs it, and a lane installed without its weights gets them so.
@@ -93,13 +94,13 @@ fetched(){  # $1 what: in --fetch mode the checkpoint is in the cache, and the r
 }
 
 
-PINS="$(grep -E '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|ARETE_REPO|ARETE_REV|FLASH_REPO|FLASH_REV|FLASH_NVDA_REPO|FLASH_NVDA_REV|FLASH_UNC_REPO|FLASH_UNC_REV|FLASH_IMAGE|FLASH_SERVE_IMAGE|SERVE_IMAGE|MODEL_CHOICE|HF_CACHE|CONFIG_DIR)=' "$REPO_DIR/install.sh" || true)"
+PINS="$(grep -E '^(IMAGE|STOCK_REPO|STOCK_REV|UNC_REPO|UNC_REV|FP8_REPO|FP8_REV|UNCFP8_REPO|UNCFP8_REV|ARETE_REPO|ARETE_REV|DAISYROSE_REPO|DAISYROSE_REV|FLASH_REPO|FLASH_REV|FLASH_NVDA_REPO|FLASH_NVDA_REV|FLASH_UNC_REPO|FLASH_UNC_REV|FLASH_IMAGE|FLASH_SERVE_IMAGE|SERVE_IMAGE|MODEL_CHOICE|HF_CACHE|CONFIG_DIR)=' "$REPO_DIR/install.sh" || true)"
 # A count of matched lines was the old check, and adding a pin broke both scripts
 # at once (it did, on 2026-09-08). What matters is not how many lines matched but
 # whether every name this script goes on to use is defined, so that is what is
 # asserted, and a failure says which one.
 eval "$PINS"
-for _v in IMAGE SERVE_IMAGE STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV UNCFP8_REPO UNCFP8_REV ARETE_REPO ARETE_REV FLASH_REPO FLASH_REV FLASH_NVDA_REPO FLASH_NVDA_REV FLASH_UNC_REPO FLASH_UNC_REV FLASH_IMAGE FLASH_SERVE_IMAGE MODEL_CHOICE HF_CACHE CONFIG_DIR; do
+for _v in IMAGE SERVE_IMAGE STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV UNCFP8_REPO UNCFP8_REV ARETE_REPO ARETE_REV DAISYROSE_REPO DAISYROSE_REV FLASH_REPO FLASH_REV FLASH_NVDA_REPO FLASH_NVDA_REV FLASH_UNC_REPO FLASH_UNC_REV FLASH_IMAGE FLASH_SERVE_IMAGE MODEL_CHOICE HF_CACHE CONFIG_DIR; do
   eval "[ -n \"\${$_v:-}\" ]" || die "install.sh no longer defines $_v (repo layout changed?)"
 done
 unset _v
@@ -1876,6 +1877,7 @@ case "$CHOICE" in
   fp8)        TARGET_REPO="$FP8_REPO";   TARGET_REV="$FP8_REV";   TARGET_LANE=27b ;;
   uncensored-fp8) TARGET_REPO="$UNCFP8_REPO"; TARGET_REV="$UNCFP8_REV"; TARGET_LANE=27b ;;
   arete)      TARGET_REPO="$ARETE_REPO"; TARGET_REV="$ARETE_REV"; TARGET_LANE=27b ;;
+  daisyrose)  TARGET_REPO="$DAISYROSE_REPO"; TARGET_REV="$DAISYROSE_REV"; TARGET_LANE=27b ;;
   flash)      TARGET_REPO="$FLASH_REPO"; TARGET_REV="$FLASH_REV"; TARGET_LANE=flash ;;
   flash-nvda) TARGET_REPO="$FLASH_NVDA_REPO"; TARGET_REV="$FLASH_NVDA_REV"; TARGET_LANE=flash ;;
   flash-uncensored) TARGET_REPO="$FLASH_UNC_REPO"; TARGET_REV="$FLASH_UNC_REV"; TARGET_LANE=flash ;;
@@ -2089,7 +2091,7 @@ if [ "$TARGET_LANE" = "27b" ]; then
   # The KV cache dtype follows the checkpoint, exactly as install.sh decides it:
   # Qwen's FP8 release carries no KV scales and must ask for fp8 explicitly, the
   # NVFP4 exports declare it in their own quant config and must not be forced
-  # (Arete's since 2a above).
+  # (Arete's and DaisyRose's since 2a above).
   # CI asserts these two strings still match install.sh's KV_CACHE_ARGS.
   case "$CHOICE" in
     fp8|uncensored-fp8) NEW_KV="--kv-cache-dtype fp8_e4m3 " ;;
@@ -2417,6 +2419,7 @@ case "$CHOICE" in
   fp8)        echo "Switch back:      ./switch-model.sh stock   (or flash, uncensored, uncensored-fp8)" ;;
   uncensored-fp8) echo "Switch back:      ./switch-model.sh fp8   (or stock, flash, uncensored)" ;;
   arete)      echo "Switch back:      ./switch-model.sh stock   (or fp8, flash, uncensored)" ;;
+  daisyrose)  echo "Switch back:      ./switch-model.sh stock   (or fp8, flash, uncensored)" ;;
   flash)      echo "Switch back:      ./switch-model.sh stock   (or fp8, flash-nvda, uncensored, flash-uncensored)" ;;
   flash-nvda) echo "Switch back:      ./switch-model.sh flash   (or stock, fp8, flash-uncensored, uncensored)" ;;
   flash-uncensored) echo "Switch back:      ./switch-model.sh flash   (or flash-nvda, stock, fp8, uncensored)" ;;

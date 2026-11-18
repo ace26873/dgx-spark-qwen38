@@ -21,6 +21,7 @@ PIN_MODELS = {
     "FP8_REV": "Qwen/Qwen3.8-27B-FP8",
     "UNCFP8_REV": "edp1096/Huihui-Qwen3.8-27B-abliterated-FP8",
     "ARETE_REV": "atakans/Arete-27B-NVFP4",
+    "DAISYROSE_REV": "RadixArk/DaisyRose-27B-NVFP4",
     "FLASH_REV": "RadixArk/Qwen3.8-Flash-Next-NVFP4",
     "FLASH_NVDA_REV": "nvidia/Qwen3.8-Flash-Next-NVFP4",
     "FLASH_UNC_REV": "dealignai/Qwen3.8-Flash-Next-ABLITERATED-NVFP4",

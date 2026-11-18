@@ -100,7 +100,7 @@ class TheSwitch(unittest.TestCase):
         src = '. "$REPO_DIR/lanes.sh"\n'
         after = text.split(src, 1)[1].splitlines()
         self.assertTrue(after[1].startswith('[ "$(box_mem_class)" != 64 ] || target_fits "$CHOICE"'), after[1])
-        for choice, goes in (("stock", True), ("uncensored", True), ("arete", True), ("nemotron", True), ("fp8", False),
+        for choice, goes in (("stock", True), ("uncensored", True), ("arete", True), ("daisyrose", True), ("nemotron", True), ("fp8", False),
                              ("uncensored-fp8", False), ("flash", False), ("image-turbo", False),
                              ("video", False), ("kolibri-nvfp4", False), ("nemotron-super", False),
                              ("flash-local", False), ("ornith-122b", False), ("flash-unsloth", False)):

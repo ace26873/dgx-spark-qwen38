@@ -21,7 +21,7 @@ spec.loader.exec_module(ltc)
 class TheLanesItKnows(unittest.TestCase):
     def test_every_text_lane_with_how_its_installer_serves_its_template(self):
         specs = {name: env for name, _, _, env in ltc.lane_specs()}
-        self.assertEqual(sorted(specs), sorted(["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-nvda",
+        self.assertEqual(sorted(specs), sorted(["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose", "flash", "flash-nvda",
                                                 "flash-uncensored", "flash-local", "ornith-122b", "kolibri",
                                                 "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-unsloth",
                                                 "flash-unsloth-iq3", "lfm25", "lfm3"]))

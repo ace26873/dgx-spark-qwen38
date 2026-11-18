@@ -59,7 +59,7 @@ class TheBox(unittest.TestCase):
     def test_a_64_gb_box_and_the_two_lanes_that_fit_it(self):
         self.assertEqual(self.box("64"), {"cls": "64", "name": "ASUS Ascent GX10",
                                           "fits": ["qwen38-nemotron.service", "qwen38-sglang.service"],
-                                          "targets": ["arete", "nemotron", "stock", "uncensored"]})
+                                          "targets": ["arete", "daisyrose", "nemotron", "stock", "uncensored"]})
 
     def test_a_128_gb_box_and_every_lane(self):
         got = self.box("128")

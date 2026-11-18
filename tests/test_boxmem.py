@@ -109,7 +109,7 @@ class Fits(Base):
 
     def test_a_64_gb_box_takes_the_27b_in_nvfp4_only(self):
         got = {t for t in boxmem.TARGETS if boxmem.target_fits(t, "64")}
-        self.assertEqual(got, {"stock", "uncensored", "arete", "nemotron"})
+        self.assertEqual(got, {"stock", "uncensored", "arete", "daisyrose", "nemotron"})
         self.assertTrue(all(boxmem.target_fits(t, "128") for t in boxmem.TARGETS))
         with self.assertRaises(ValueError):
             boxmem.target_fits("27b", "128")

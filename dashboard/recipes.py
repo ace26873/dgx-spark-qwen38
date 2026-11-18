@@ -148,7 +148,7 @@ DRAFT_FLAGS = {
     "steps": ("--speculative-num-steps", int),
     "draft_tokens": ("--speculative-num-draft-tokens", int),
 }
-BUILTIN_IDS = ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash", "flash-nvda",
+BUILTIN_IDS = ("stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose", "flash", "flash-nvda",
                "flash-uncensored")
 
 
@@ -261,7 +261,7 @@ def builtin(recipe_id: str, assigns: dict[str, str], templates: dict[str, str],
         overlay = "flash-sglang" if image != base else None
     else:
         pfx = {"stock": "STOCK", "uncensored": "UNC", "fp8": "FP8",
-               "uncensored-fp8": "UNCFP8", "arete": "ARETE"}[recipe_id]
+               "uncensored-fp8": "UNCFP8", "arete": "ARETE", "daisyrose": "DAISYROSE"}[recipe_id]
         repo, rev = assigns[f"{pfx}_REPO"], assigns[f"{pfx}_REV"]
         image = _deref(assigns["SERVE_IMAGE"], assigns)
         base = assigns.get("IMAGE")

@@ -160,7 +160,7 @@ const TARGET_UNIT = t => t === 'image' || t === 'image-turbo' ? IMAGE_UNIT : t =
   : String(t).startsWith('kolibri') ? KOLIBRI_UNIT : t === 'nemotron-super' ? NEMOTRON_SUPER_UNIT : String(t).startsWith('nemotron') ? NEMOTRON_UNIT
   : t === 'flash-local' ? FLASH_LOCAL_UNIT : t === 'ornith-122b' ? ORNITH_UNIT : String(t).startsWith('flash-unsloth') ? FLASH_UNSLOTH_UNIT
   : String(t).startsWith('flash') ? UFLASH : U27;
-const LANE_TARGETS = {[U27]: ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'arete'], [UFLASH]: ['flash', 'flash-uncensored', 'flash-nvda'],
+const LANE_TARGETS = {[U27]: ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'arete', 'daisyrose'], [UFLASH]: ['flash', 'flash-uncensored', 'flash-nvda'],
                       [FLASH_LOCAL_UNIT]: ['flash-local'],
                       [KOLIBRI_UNIT]: ['kolibri', 'kolibri-nvfp4'], [NEMOTRON_UNIT]: ['nemotron'], [NEMOTRON_SUPER_UNIT]: ['nemotron-super'],
                       [ORNITH_UNIT]: ['ornith-122b'], [FLASH_UNSLOTH_UNIT]: ['flash-unsloth-iq3', 'flash-unsloth'], [IMAGE_UNIT]: ['image', 'image-turbo'],
@@ -173,6 +173,7 @@ const LANE_TARGETS = {[U27]: ['stock', 'uncensored', 'fp8', 'uncensored-fp8', 'a
 const TARGET_NAME = {stock: 'Qwen3.8 27B NVFP4 · RadixArk', uncensored: 'Qwen3.8 27B abliterated NVFP4 · edp1096',
                      fp8: 'Qwen3.8 27B FP8 · Qwen', 'uncensored-fp8': 'Qwen3.8 27B abliterated FP8 · edp1096',
                      arete: 'Arete 27B NVFP4 · atakans',
+                     daisyrose: 'DaisyRose 27B NVFP4 · RadixArk',
                      flash: 'Qwen3.8 Flash-Next NVFP4 · RadixArk', 'flash-uncensored': 'Qwen3.8 Flash-Next abliterated NVFP4 · dealignai',
                      'flash-nvda': 'Qwen3.8 Flash-Next NVFP4 · NVIDIA', 'flash-local': 'Qwen3.8 Flash-Next FP4-Local · NVIDIA',
                      image: 'Qwen-Image 2.1 · Qwen', 'image-turbo': 'Qwen-Image 2.1 Turbo · Qwen', video: 'MiniMax-H3 · MiniMax',
@@ -186,7 +187,7 @@ const TARGET_NAME = {stock: 'Qwen3.8 27B NVFP4 · RadixArk', uncensored: 'Qwen3.
 // A version's name on its button in Lanes, and the line that tells it apart once chosen. A
 // target is declared in the tables of this block: a page test fails when one lacks a name or a line.
 const TARGET_SHORT_NAME = {stock: 'NVFP4 · RadixArk', uncensored: 'Abliterated NVFP4 · edp1096', fp8: 'FP8 · Qwen',
-  'uncensored-fp8': 'Abliterated FP8 · edp1096', arete: 'Arete NVFP4 · atakans', flash: 'NVFP4 · RadixArk', 'flash-uncensored': 'Abliterated NVFP4 · dealignai',
+  'uncensored-fp8': 'Abliterated FP8 · edp1096', arete: 'Arete NVFP4 · atakans', daisyrose: 'DaisyRose NVFP4 · RadixArk', flash: 'NVFP4 · RadixArk', 'flash-uncensored': 'Abliterated NVFP4 · dealignai',
   'flash-nvda': 'NVFP4 · NVIDIA', image: 'Base', 'image-turbo': 'Turbo', video: 'H3', kolibri: 'FP8 · Aleph Alpha',
   'kolibri-nvfp4': 'NVFP4 · Quantinine', nemotron: 'Bolt', 'nemotron-super': 'Super VL', 'flash-local': 'FP4-Local',
   'ornith-122b': '122B', 'flash-unsloth': 'UD-Q4_K_XL · Unsloth', 'flash-unsloth-iq3': 'UD-IQ3_XXS · Unsloth',
@@ -195,6 +196,7 @@ const TARGET_LINE = {
   stock: 'The default: smallest and fastest', uncensored: 'Refusals removed, same size and speed',
   fp8: "Qwen's own weights: the most faithful, and heavier", 'uncensored-fp8': 'Refusals removed, and heavier',
   arete: 'Nous Research’s fine-tune, the same size and serving path',
+  daisyrose: 'RadixArk’s RL-only fine-tune, the same size and serving path',
   flash: 'The default', 'flash-uncensored': 'Refusals removed', 'flash-nvda': "NVIDIA's own export",
   image: '40 steps, the most detail', 'image-turbo': '8 steps, about 4.5 times faster', video: 'The one version',
   kolibri: "Aleph Alpha's own weights: the reference", 'kolibri-nvfp4': '4-bit experts: faster under load, French a little weaker',
@@ -214,6 +216,7 @@ const TARGET_NOTE = {
   fp8: 'Qwen’s own FP8 release: the most faithful weights of this lane, and the heaviest. 30.9 GB against 21.9 GB for NVFP4, taken out of the KV pool: 771,139 tokens against 863,398 on the same 1M unit, and a slower decode. The first switch downloads about 31 GB.',
   'uncensored-fp8': 'The abliterated weights in Qwen’s FP8 format: the same 30.9 GB and the same cost in pool and speed as FP8. The first switch downloads about 31 GB.',
   arete: 'Arete 27B, Nous Research’s fine-tune of Qwen3.8 27B (Apache-2.0), in atakans’s NVFP4 build of 21.1 GB: the serving path of RadixArk’s NVFP4 with its DFlash2 draft, and the same fp8 KV cache, which its switch declares in the checkpoint’s config. Measured on this box on 2026-11-14: GSM8K 99.2 %, MMLU 88.0 %, HumanEval 96.3 %, 69 to 72 tokens/s alone, the needle found at 120,000 and 300,000 tokens. The first switch downloads about 21 GB.',
+  daisyrose: 'DaisyRose 27B, RadixArk’s reinforcement-learning-only fine-tune of Qwen3.8 27B (Apache-2.0, no SFT, no distillation), in RadixArk’s NVFP4 build of 21.95 GB: the serving path of RadixArk’s NVFP4 with its DFlash2 draft, and the same fp8 KV cache, which its switch declares in the checkpoint’s config (it declares none, like Arete’s). Nothing measured on this box yet; RadixArk publishes Terminal-Bench 2.1 at 75.5 against 73.0 for Qwen3.8-27B (xhigh reasoning). The first switch downloads about 22 GB.',
   flash: 'The Qwen3.8 Flash-Next lane: its own unit, its own image, and a 47.7 GiB N-gram table on the NVMe that the server rewrites at every boot.',
   'flash-uncensored': 'The abliterated build of the same 176B tree, byte-identical in layout, so every serving flag is the same. The first switch downloads about 136 GB.',
   'flash-nvda': 'NVIDIA’s own mixed-precision export of the same model, served with a pinned MoE runner. The first switch downloads about 133 GB.',

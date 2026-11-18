@@ -137,7 +137,7 @@ class Builtins(unittest.TestCase):
     def test_every_builtin_recipe_is_valid(self):
         recs = rc.builtins(ASSIGNS, TEMPLATES)
         self.assertEqual([r["id"] for r in recs],
-                         ["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "flash",
+                         ["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose", "flash",
                           "flash-nvda", "flash-uncensored"])
         for r in recs:
             errs = rc.validate(r) if r["lane"] == "flash" else rc.validate(
@@ -167,6 +167,16 @@ class Builtins(unittest.TestCase):
         a, s = rc.builtin("arete", ASSIGNS, TEMPLATES), rc.builtin("stock", ASSIGNS, TEMPLATES)
         self.assertEqual(a["lane"], "27b")
         self.assertEqual(a["model"], {"repo": ASSIGNS["ARETE_REPO"], "revision": ASSIGNS["ARETE_REV"]})
+        self.assertIsNone(a["serve"].get("kv_cache_dtype"))
+        for k in ("engine", "drafter", "serve", "switches", "env"):
+            self.assertEqual(a[k], s[k], k)
+
+    def test_daisyrose_differs_from_stock_only_by_model(self):
+        # its fp8 KV cache is declared in its config (patch-kv.py), not by the flag the FP8 targets pass:
+        # its unit is stock's, so a box serving it reports no drift
+        a, s = rc.builtin("daisyrose", ASSIGNS, TEMPLATES), rc.builtin("stock", ASSIGNS, TEMPLATES)
+        self.assertEqual(a["lane"], "27b")
+        self.assertEqual(a["model"], {"repo": ASSIGNS["DAISYROSE_REPO"], "revision": ASSIGNS["DAISYROSE_REV"]})
         self.assertIsNone(a["serve"].get("kv_cache_dtype"))
         for k in ("engine", "drafter", "serve", "switches", "env"):
             self.assertEqual(a[k], s[k], k)
@@ -934,7 +944,7 @@ class SwitchRewrite27B(unittest.TestCase):
     exercised in both directions."""
 
     KV = {"stock": "", "uncensored": "", "fp8": "--kv-cache-dtype fp8_e4m3 ",
-          "uncensored-fp8": "--kv-cache-dtype fp8_e4m3 ", "arete": ""}
+          "uncensored-fp8": "--kv-cache-dtype fp8_e4m3 ", "arete": "", "daisyrose": ""}
 
     @classmethod
     def setUpClass(cls):

@@ -28,7 +28,7 @@ def block() -> str:
 
 
 PINS = "\n".join(line for line in INSTALL.read_text().splitlines()
-                 if line.startswith(("STOCK_REPO=", "UNC_REPO=", "FP8_REPO=", "UNCFP8_REPO=", "ARETE_REPO=",
+                 if line.startswith(("STOCK_REPO=", "UNC_REPO=", "FP8_REPO=", "UNCFP8_REPO=", "ARETE_REPO=", "DAISYROSE_REPO=",
                                      "FLASH_REPO=", "FLASH_UNC_REPO=", "FLASH_NVDA_REPO=")))
 
 
@@ -166,6 +166,10 @@ class TheLaneNotInstalledKeepsItsCheckpointsName(unittest.TestCase):
     def test_arete_keeps_its_name_under_a_flash_install(self):
         names = generate("flash", "native", unit_ctx=1010000, model="atakans/Arete-27B-NVFP4", names=True)
         self.assertEqual(names["qwen38"], "Arete-27B NVFP4 + DFlash2 (local, 1M)")
+
+    def test_daisyrose_keeps_its_name_under_a_flash_install(self):
+        names = generate("flash", "native", unit_ctx=1010000, model="RadixArk/DaisyRose-27B-NVFP4", names=True)
+        self.assertEqual(names["qwen38"], "DaisyRose-27B NVFP4 + DFlash2 (local, 1M)")
 
     def test_an_fp8_27b_is_named_fp8_and_a_native_one_says_its_window(self):
         names = generate("flash", "native", unit_ctx=262144, model="Qwen/Qwen3.8-27B-FP8", names=True)

@@ -26,6 +26,7 @@ happens to exist.
 | fp8 | Qwen/Qwen3.8-27B-FP8 | not yet checked |
 | uncfp8 | edp1096/Huihui-...-FP8 | not yet checked |
 | arete | atakans/Arete-27B-NVFP4 | not yet checked: Apache-2.0 on both layers (NousResearch/Arete-27B and this quantization), verify |
+| daisyrose | RadixArk/DaisyRose-27B-NVFP4 | not yet checked: Apache-2.0 on both layers (RadixArk's fine-tune of Qwen3.8-27B and this quantization, one owner), verify |
 | flash | RadixArk/Qwen3.8-Flash-Next-NVFP4 | not yet checked |
 | flash-nvda | nvidia/Qwen3.8-Flash-Next-NVFP4 | not yet checked |
 | flash-unc | dealignai/...-ABLITERATED-NVFP4 | not yet checked: verify both layers |

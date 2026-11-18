@@ -53,6 +53,8 @@ LABEL = {"stock": "Qwen3.8-27B NVFP4 + DFlash2",
          "uncensored-fp8": "Qwen3.8-27B FP8 abliterated + DFlash2",
          # Nous Research's fine-tune of the 27B, served by the same unit under the same name.
          "arete": "Arete-27B NVFP4 + DFlash2",
+         # RadixArk's RL-only fine-tune of the 27B, served by the same unit under the same name.
+         "daisyrose": "DaisyRose-27B NVFP4 + DFlash2",
          "flash": "Qwen3.8-Flash-Next NVFP4 + MTP",
          # The three flash targets share one served-model-name too, so the same
          # rule applies: without an entry here the picker keeps saying NVFP4

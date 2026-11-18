@@ -18,7 +18,7 @@
 #   ./prepare-lane.sh flash|27b [<target>]
 #
 # The target is the one the Load loads, for the two lanes whose preparation fetches a
-# checkpoint: flash, flash-nvda or flash-uncensored; stock, uncensored, fp8, uncensored-fp8 or arete.
+# checkpoint: flash, flash-nvda or flash-uncensored; stock, uncensored, fp8, uncensored-fp8, arete or daisyrose.
 # Without one, the target the launcher or unit serves. The preparation fetched that one only,
 # the default on a new box, and the Load's switch then fetched the target loaded (found in
 # review, 2026-10-15). The lane and the target are arguments of their own: the cockpit's
@@ -73,9 +73,10 @@ pull_image(){  # $1 image, $2 the lane (its local tag), $3 the room its pull nee
 }
 pins_or_die(){  # the pins install.sh declares, the one place they are, each checked defined
   local v
-  eval "$(grep -E '^(FLASH(_NVDA|_UNC)?|STOCK|UNC|FP8|UNCFP8|ARETE)_(REPO|REV)=' "$HERE/install.sh" || true)"
+  eval "$(grep -E '^(FLASH(_NVDA|_UNC)?|STOCK|UNC|FP8|UNCFP8|ARETE|DAISYROSE)_(REPO|REV)=' "$HERE/install.sh" || true)"
   for v in FLASH_REPO FLASH_REV FLASH_NVDA_REPO FLASH_NVDA_REV FLASH_UNC_REPO FLASH_UNC_REV \
-           STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV UNCFP8_REPO UNCFP8_REV ARETE_REPO ARETE_REV; do
+           STOCK_REPO STOCK_REV UNC_REPO UNC_REV FP8_REPO FP8_REV UNCFP8_REPO UNCFP8_REV ARETE_REPO ARETE_REV \
+           DAISYROSE_REPO DAISYROSE_REV; do
     eval "[ -n \"\${$v:-}\" ]" || die "install.sh no longer defines $v (repo layout changed?)"
   done
 }
@@ -215,7 +216,8 @@ prepare_27b(){
     fp8|"$FP8_REPO") target=fp8; trepo="$FP8_REPO"; trev="$FP8_REV" ;;
     uncensored-fp8|"$UNCFP8_REPO") target=uncensored-fp8; trepo="$UNCFP8_REPO"; trev="$UNCFP8_REV" ;;
     arete|"$ARETE_REPO") target=arete; trepo="$ARETE_REPO"; trev="$ARETE_REV" ;;
-    *) if [ -n "$TARGET" ]; then die "$TARGET is not a 27B lane target (stock, uncensored, fp8, uncensored-fp8 or arete)"; fi
+    daisyrose|"$DAISYROSE_REPO") target=daisyrose; trepo="$DAISYROSE_REPO"; trev="$DAISYROSE_REV" ;;
+    *) if [ -n "$TARGET" ]; then die "$TARGET is not a 27B lane target (stock, uncensored, fp8, uncensored-fp8, arete or daisyrose)"; fi
        die "the 27B unit serves $model, which no 27B target names: ./switch-model.sh stock points it at one" ;;
   esac
   # When an update waits, the revision prepared is the one the waiting unit names in its --revision,
