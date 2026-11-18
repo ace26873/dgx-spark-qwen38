@@ -264,7 +264,7 @@ class TheInstaller(unittest.TestCase):
         for one installed on demand: neither runs the smoke test."""
         text = (REPO / "install.sh").read_text()
         self.assertIn('IMAGE_MODE="$(side_mode image "$WITH_IMAGE")"', text)
-        self.assertIn('if "$REPO_DIR/install-image.sh" "$IMAGE_MODE"; then IMAGE_STATE=installed;', text)
+        self.assertIn('if side_install image "$IMAGE_MODE" "$WITH_IMAGE"; then IMAGE_STATE=installed;', text)
         self.assertIn("then echo --no-smoke; else echo --units-only; fi", text[text.index("side_mode(){"):])
         self.assertIn('{ [ "$IMAGE_STATE" = installed ] && { [ "$IMAGE_FRESH" -eq 1 ] || [ "$WITH_IMAGE" -eq 1 ]; }; } && PROVE_IMAGE=1', text)
 
@@ -665,13 +665,13 @@ class TheOneLinerReachesIt(unittest.TestCase):
         # call belongs to the image-is-the-boot-lane exit, which ends before step 9 on
         # purpose and is held by AnUpdateKeepsTheImageLaneAsTheBootLane.
         cockpit = self.text.index("10/10 Alzeo cockpit")
-        i = self.text.index('"$REPO_DIR/install-image.sh"', cockpit)
+        i = self.text.index('if side_install image "$IMAGE_MODE" "$WITH_IMAGE"; then IMAGE_STATE=installed;', cockpit)
         self.assertLess(cockpit, i)
-        tail = self.text[i:i + 300]
+        tail = self.text[i:i + 400]
         self.assertIn("IMAGE_STATE=failed", tail)
         self.assertIn("the rest goes on", tail)
-        self.assertEqual(self.text.count('"$REPO_DIR/install-image.sh"'), 3,
-                         "the normal path prepares then proves it, and the image-boot path updates it")
+        self.assertEqual(self.text.count('"$REPO_DIR/install-image.sh"'), 1,
+                         "only the proof runs the installer directly; the run's own calls go through side_install")
 
     def test_the_help_says_what_it_costs_before_someone_spends_it(self):
         self.assertIn("--no-image            leave the Qwen-Image 2.1 lane out of this run (46 GB).", self.text)
@@ -736,7 +736,7 @@ class TheBootLaneConvergenceHoldsEveryWay(unittest.TestCase):
     def test_the_image_boot_path_respects_a_left_out_image_lane(self):
         i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         early = self.text[i:self.text.index("exit 0", i)]
-        call = early.index('"$REPO_DIR/install-image.sh" "$(side_mode image')
+        call = early.index('side_install image "$(side_mode image')
         self.assertIn('if [ "$WANT_IMAGE" -eq 1 ]', early[:call])
 
     def test_the_text_lane_used_before_images_is_the_one_brought_up_to_date(self):

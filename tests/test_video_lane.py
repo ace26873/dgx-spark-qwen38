@@ -646,7 +646,7 @@ class TheBootLaneConvergence(unittest.TestCase):
     def test_that_path_respects_a_left_out_video_lane(self):
         i = self.text.index('if [ -z "$ATS_CANNOT" ] && [ "$IMAGE_BOOT" -eq 0 ] && [ "$VIDEO_BOOT" -eq 0 ] && [ "$KOLIBRI_BOOT" -eq 0 ] && [ "$NEMOTRON_BOOT" -eq 0 ] && [ "$NEMOTRON_SUPER_BOOT" -eq 0 ] && [ "$FLASH_LOCAL_BOOT" -eq 0 ] && [ "$ORNITH_122B_BOOT" -eq 0 ] && [ "$FLASH_UNSLOTH_BOOT" -eq 0 ] && [ "$IMAGE_H3_BOOT" -eq 0 ]; then')
         early = self.text[i:self.text.index("exit 0", i)]
-        call = early.index('"$REPO_DIR/install-video.sh" "$(side_mode video')
+        call = early.index('side_install video "$(side_mode video')
         self.assertIn('if [ "$WANT_VIDEO" -eq 1 ]', early[:call])
 
     def test_an_explicit_model_choice_is_honoured(self):

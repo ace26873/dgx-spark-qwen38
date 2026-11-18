@@ -130,8 +130,11 @@ class TheClientsNameIt(unittest.TestCase):
         self.assertLess(START, i, "the move is decided before the clients' block reads the unit")
 
     def test_the_follow_is_called_after_each_successful_install_of_the_lane(self):
-        for call in ('if "$REPO_DIR/install-flash-unsloth.sh" "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")"; then\n      unsloth_clients_follow',
-                     'then FLASH_UNSLOTH_STATE=installed; [ "$FLASH_UNSLOTH_MODE" = --units-only ] && FLASH_UNSLOTH_STATE=units; unsloth_clients_follow'):
+        # through side_install since v1.52 (an update waits for the lane's Load), at both of the lane's calls
+        for call in ('if side_install flash-unsloth "$(side_mode flash-unsloth "$WITH_FLASH_UNSLOTH")" "$WITH_FLASH_UNSLOTH"; then\n'
+                     '      unsloth_clients_follow',
+                     'then FLASH_UNSLOTH_STATE=installed; { [ "$FLASH_UNSLOTH_MODE" = --units-only ] || side_waited flash-unsloth; } '
+                     '&& FLASH_UNSLOTH_STATE=units; unsloth_clients_follow'):
             with self.subTest(call=call[:40]):
                 self.assertIn(call, TEXT)
 
