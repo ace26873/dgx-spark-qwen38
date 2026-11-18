@@ -84,7 +84,10 @@ CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kol
 # A list named for one of them must be that family whatever its size (a b12x table of three that lost
 # one was two, below the check's threshold), and the b12x family is taken from a list so named only:
 # the cockpit's NEMOTRON_LANES is that family's table, named before FP4-Local joined it.
-NAMED_FAMILIES = (("b12x", "B12X"), ("nemotron_lanes", "B12X"), ("vllm", "VLLM"), ("other_text", "OTHER_TEXT"))
+# the diffusion lanes (image, MiniMax-H3-Image, video) are a family of their own since Library deletes their
+# runtimes' caches (the cockpit's DIFFUSION_UNITS, v1.51.0): a list named for them is that family
+NAMED_FAMILIES = (("b12x", "B12X"), ("nemotron_lanes", "B12X"), ("vllm", "VLLM"), ("other_text", "OTHER_TEXT"),
+                  ("diffusion", "DIFFUSION"))
 
 
 def family_of(name):
