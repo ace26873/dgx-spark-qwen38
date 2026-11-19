@@ -247,5 +247,46 @@ class SideInstall(unittest.TestCase):
         self.assertEqual(self.run_side(mode="--units-only")[0], ["install-kolibri.sh --units-only force=0"])
         self.assertEqual(self.run_side(pending_put=0, waits=True)[0], ["install-kolibri.sh --no-smoke force=0"])
 
+class TheVLLMLanesStageTheirTemplateAfterTheFetch(unittest.TestCase):
+    """A vLLM lane's switch fetches its checkpoint, then runs its installer's --stage, which writes the chat
+    template the unit bind-mounts and renders the unit: one Load applies all of it, never a first Load that
+    leaves the wait in place after everything was downloaded (third review of v1.52.0, 2026-11-19, GLM 5.3,
+    "à vérifier")."""
+
+    def test_the_stage_runs_after_the_fetch_in_each_lane(self):
+        text = (REPO / "switch-model.sh").read_text()
+        for lane, fetch_mark, stage_mark in (
+                ("flash-local", "ckpt-fetch.py \"$FLASH_LOCAL_REPO\"", "install-flash-local.sh\" --stage"),
+                ("ornith-122b", "ckpt-fetch.py \"$ORNITH_122B_REPO\"", "install-ornith-122b.sh\" --stage"),
+                ("flash-unsloth", "install-flash-unsloth.sh\" --fetch", "install-flash-unsloth.sh\" --stage")):
+            with self.subTest(lane=lane):
+                start = text.index(f'if [ "$CHOICE" = "{lane}"')
+                end = text.index("\nfi\n", start)
+                block = text[start:end]
+                self.assertLess(block.index(fetch_mark), block.index(stage_mark),
+                                "the fetch precedes the stage that writes the chat template")
+
+
+class TheWaitsLoadProbeCoversWhatTheRealUnitsRead(unittest.TestCase):
+    """The WAITS_LOAD probe of install.sh is a synthetic unit: image, --model-path/--revision, the 27B's draft.
+    Every hub-checkpoint flag the real text units and launcher name is one it enumerates, so a need the real
+    unit reads cannot be missed by the probe and send the update downloading (third review of v1.52.0,
+    2026-11-19, GLM 5.3, "à vérifier")."""
+
+    def test_every_checkpoint_flag_of_the_text_templates_is_in_the_probe(self):
+        import re
+        text = (REPO / "install.sh").read_text()
+        probe = text[text.index('_wunit="$(mktemp)"'):text.index('WAITS_WHAT=', text.index('_wunit="$(mktemp)"'))]
+        probe_flags = set(re.findall(r"--[a-z0-9-]+", probe))
+        for tpl in ("qwen38-sglang-1m.service.template", "qwen38-sglang-64.service.template",
+                    "qwen38-flash-launch.sh.template", "qwen38-flash.service.template"):
+            t = (REPO / tpl).read_text()
+            for flag in set(re.findall(r"--(?:model-path|revision|speculative-draft-model-path|"
+                                       r"speculative-draft-model-revision|speculative-config\.model|"
+                                       r"speculative-config\.revision)\b", t)):
+                with self.subTest(tpl=tpl, flag=flag):
+                    self.assertIn(flag, probe_flags)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,25 @@ differ from the one in place, and their switch rewrote only the checkpoint, draf
 never clearing the wait when only the image moved); their switch now puts the waiting unit in place whole, image
 line included. Each new test fails on the code before.
 
+**What the third blind review found (GLM 5.3, 2026-11-19 08:23), fixed with tests.** Three defects, each read in
+the code again before fixing: a switch to the other target of a lane that has a wait (the Kolibri lane's FP8/NVFP4,
+the image lane's base/Turbo) posed the wait whole and dropped the asked target, after its checkpoint had been
+fetched for nothing (102 GB for the NVFP4, 33 for the Turbo): the wait is now posed whole first, then rewritten to
+the asked one, which is the one served, never the reverse, and a wait that cannot be posed whole is dropped and the
+unit in place rewritten; a Load of the 27B or the flash lane toward another target than the waiting unit's prepared
+and posed the wait, then the switch overwrote it (45 GB downloaded for a target no unit served): the cockpit now
+reads which target each waiting unit serves and the journey proposes no prepare and no apply_pending for it, the
+switch renders the unit in place for the asked target and clears the wait; and an update of a side lane skipped its
+`--units-only` render while a wait of an earlier run was there, so the Load applied the older version's unit and the
+new one was lost in silence: every update renders its lane's new unit now, and `unit_put` decides alone between in
+place and waiting, replacing an earlier wait. Of the review's "to check", one held and was fixed: `unit_needs` did
+not read the files a unit bind-mounts by their own source (`--mount type=bind,source=...`, the vLLM lanes' chat
+template and api key, outside the hub cache), so a wait could be posed with its mount absent and docker refused the
+start; it reads them now. The others did not: the vLLM lanes' switch fetches its checkpoint before its installer's
+`--stage` writes the chat template, so one Load applies all of it; the WAITS_LOAD probe enumerates every hub
+checkpoint flag the real text units and launcher name; and a wait always records its `.base` (an empty one reads
+stale on both sides), so one without it cannot be posed over a switch. Each new test fails on the code before.
+
 **A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
 paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:
 the test always failed, so every update of a llama.cpp lane (flash-unsloth, and the transcribe lane to come) waited as

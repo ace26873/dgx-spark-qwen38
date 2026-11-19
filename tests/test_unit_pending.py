@@ -954,7 +954,7 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         r, unit, pend, cfg, log = self.run_kolibri(pend_text, needs="")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("is in place", r.stdout)
-        self.assertIn(f"UNIT=image qwen38-kolibri:newtag", r.stdout)
+        self.assertIn("UNIT=image qwen38-kolibri:newtag", r.stdout)
         self.assertIn(self.NVFP4_WANT, r.stdout, "the asked target is the one the unit serves, not the wait's")
         self.assertIn("--gpu-memory-utilization 0.95", r.stdout)
         self.assertNotIn(self.FP8_WANT, r.stdout)
