@@ -174,7 +174,18 @@ class TlsDoor(unittest.TestCase):
             [sys.executable, str(REPO / "keepalive-proxy.py"), "0"],
             env=base_env(self.engine_port, {"QWEN38_TLS_CERT": "/nonexistent/cert.pem"}),
             stderr=subprocess.PIPE)
-        rc = proc.wait(timeout=10)
+        try:
+            rc = proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            # the proxy did not refuse: kill it by its own pid (this test's process) and fail loudly,
+            # instead of leaving it running on its port after the test (37 orphans of exactly this
+            # test were found on the box on 2026-11-19)
+            proc.kill()
+            proc.wait(timeout=5)
+            err = proc.stderr.read().decode()
+            proc.stderr.close()
+            self.fail(f"keepalive-proxy.py did not refuse the unusable certificate: still running "
+                      f"after 10 s (pid {proc.pid}, killed); stderr: {err[-300:]}")
         err = proc.stderr.read().decode()
         proc.stderr.close()
         self.assertNotEqual(rc, 0)

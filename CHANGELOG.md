@@ -61,6 +61,13 @@ removed, with a test that fails if any test of `tests/` writes one there again. 
 `patch_served_checkpoint` (lanes.sh, switch-model.sh) still said a Load's prepare calls it, which v1.52.1
 removed; it now names `apply_pending`, the caller since, once the waiting unit is in place.
 
+**A TLS refusal that does not happen no longer leaks a process.** `tests/test_proxy_tls.py`'s
+`test_unusable_cert_refuses_to_start` waited `proc.wait(timeout=10)` and, when the proxy did not refuse,
+let `TimeoutExpired` escape with the proxy (port 0) still running: 37 orphans of exactly this test were
+found on the box on 2026-11-19. The test now kills that process by its own pid on `TimeoutExpired` and
+fails with a clear message. Proven by mutation (a proxy that does not refuse the certificate: before, a
+process outlives the test; after, none).
+
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 
 **The NVIDIA Nemotron Transcribe lane (`transcribe`): speech to text on the GPU, on a port of its own.** NVIDIA's
