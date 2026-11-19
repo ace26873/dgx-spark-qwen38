@@ -31,19 +31,20 @@ whose checkpoint the switch just fetched, and the wait is kept, with its `.base`
 now (before, the next Load read that `.base` as changed since the wait was rendered and dropped it), cleared
 only when it was posed. Each new test fails on the code before.
 
-**The "to check" of the sixth review, each verified in the code.** Three held and were fixed with tests: a vLLM
-boot lane whose new unit mounts a file not written yet posed its wait whatever the unit in place read, where
-`unit_put` puts the new unit in place when the lane cannot serve as it is (the branch now asks `unit_put_waits`,
-the one decision `unit_put` makes); the image lane wrote no `sglang-source` note (the video and MiniMax-H3-Image
-lanes do), so a moved SGLang source pin was never said for it and the new unit would have run on the old source at
-its next boot (the checkout notes the pin now); and `side_runtime_waits` compared the installer's default
-wheel/pin instead of the value this run reads with its environment, so an install made with
-`SGLANG_DIFFUSION_WHEEL=` was said to have moved at every update (it evals the installer's line now). Two did
-not hold: the video and MiniMax-H3-Image switches read `refs/main`, which their installers pin at the render
-(`--refs-main pin`), and the image-h3 unit names its snapshot by path, so the fetch reads the waiting unit's own
-revision; and the flash launcher's token map, rendered when the file exists at the render, is rebuilt by the
-Load's prepare (`flash_token_map`) when the waiting launcher names it, so a map deleted between the update and
-the Load is built again before the pose.
+**The "to check" of the sixth review, each verified in the code.** Three held and were fixed with tests: a vLLM boot
+lane whose new unit mounts a file not written yet posed its wait whatever the unit in place read, where `unit_put`
+puts the new unit in place when the lane cannot serve as it is (the branch now asks `unit_put_waits`, the one decision
+`unit_put` makes); the image lane wrote no `sglang-source` note (the video and MiniMax-H3-Image lanes do), so a moved
+SGLang source pin was never said for it and the new unit would have run on the old source at its next boot (the
+checkout notes the pin now, and both removal paths, `install-image.sh --uninstall` and `uninstall.sh`, remove the
+note: the release CI of v1.53.1 found `uninstall.sh` leaving it, so the lane's own folder was kept and said to hold
+files the image lane did not put there); and `side_runtime_waits` compared the installer's default wheel/pin instead
+of the value this run reads with its environment, so an install made with `SGLANG_DIFFUSION_WHEEL=` was said to have
+moved at every update (it evals the installer's line now). Two did not hold: the video and MiniMax-H3-Image switches
+read `refs/main`, which their installers pin at the render (`--refs-main pin`), and the image-h3 unit names its
+snapshot by path, so the fetch reads the waiting unit's own revision; and the flash launcher's token map, rendered
+when the file exists at the render, is rebuilt by the Load's prepare (`flash_token_map`) when the waiting launcher
+names it, so a map deleted between the update and the Load is built again before the pose.
 
 **The unit in place is kept beside the pose.** `apply_pending`'s sudo install overwrote the unit that served and
 nothing kept it, so a new unit that crashed at start left the lane down until a `./install.sh`. The unit (or the

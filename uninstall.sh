@@ -289,7 +289,7 @@ fi
 # review, 2026-09-24). The directory itself goes only once it is empty.
 # Left alone when sudo was refused: the image lane may still be running from it.
 if [ -d "$IMAGE_LANE_DIR" ] && { [ "$PRIV" -eq 0 ] || [ "$PRIV_DONE" -eq 1 ]; }; then
-  rm -rf "$IMAGE_LANE_DIR/venv" "$IMAGE_LANE_DIR/sglang" "$IMAGE_LANE_DIR/sglang-wheel"
+  rm -rf "$IMAGE_LANE_DIR/venv" "$IMAGE_LANE_DIR/sglang" "$IMAGE_LANE_DIR/sglang-wheel" "$IMAGE_LANE_DIR/sglang-source"
   rmdir "$IMAGE_LANE_DIR" 2>/dev/null || echo "kept $IMAGE_LANE_DIR: it holds files the image lane did not put there"
 fi
 # The video lane's runtime, under the same rule: only venv/, sglang/ and the notes of the wheel

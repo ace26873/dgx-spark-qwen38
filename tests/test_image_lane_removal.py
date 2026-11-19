@@ -35,6 +35,9 @@ def lane_dir(extra=True):
         (d / sub / "f").write_text("x")
     # the wheel note install-image.sh writes beside them since v1.24
     (d / "sglang-wheel").write_text("0.5.21\n")
+    # and the source note since v1.53.1 (the SGLang commit the venv runs from, which install.sh's
+    # side_runtime_waits reads), as the video and MiniMax-H3-Image lanes write theirs
+    (d / "sglang-source").write_text("2f89c77d\n")
     if extra:
         (d / "my-other-project").mkdir()
         (d / "my-other-project/thesis.tex").write_text("years of work")
@@ -54,7 +57,8 @@ class BothPathsRemoveOnlyTheLane(unittest.TestCase):
         ("uninstall.sh", lambda: removal(UNINSTALL, 'if [ -d "$IMAGE_LANE_DIR" ] && '),
          lambda d: {"IMAGE_LANE_DIR": d, "PRIV": "0", "PRIV_DONE": "0"}),
         ("install-image.sh --uninstall", lambda: removal(INSTALL_IMAGE, 'if [ -d "$LANE_DIR" ]; then'),
-         lambda d: {"LANE_DIR": d, "VENV": f"{d}/venv", "SRC": f"{d}/sglang", "WHEEL_NOTE": f"{d}/sglang-wheel"}),
+         lambda d: {"LANE_DIR": d, "VENV": f"{d}/venv", "SRC": f"{d}/sglang", "WHEEL_NOTE": f"{d}/sglang-wheel",
+                    "SOURCE_NOTE": f"{d}/sglang-source"}),
     )
 
     def test_a_shared_directory_keeps_everything_else(self):
@@ -66,6 +70,7 @@ class BothPathsRemoveOnlyTheLane(unittest.TestCase):
                 self.assertFalse((d / "venv").exists())
                 self.assertFalse((d / "sglang").exists())
                 self.assertFalse((d / "sglang-wheel").exists())
+                self.assertFalse((d / "sglang-source").exists())
                 self.assertEqual((d / "my-other-project/thesis.tex").read_text(), "years of work")
                 self.assertIn("did not put there", out)
 
