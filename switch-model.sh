@@ -947,8 +947,18 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
     eval "[ -n \"\${$_v:-}\" ]" || die "install-image.sh no longer defines $_v (repo layout changed?)"
   done
   unset _v
+  # An update left this lane's new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what this
+  # switch fetches is what THAT unit reads, not what the one in place reads (review of v1.52.0, 2026-11-19,
+  # GLM 5.3: this branch read the wait nowhere, so a Load whose pin had moved fetched the old pin, posed
+  # nothing, cleared nothing, and the card's Load looped on a restart that changed nothing).
+  IMG_SRC="$IMAGE_UNIT"
+  if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" ]; then
+    IMG_SRC="$CONFIG_DIR/pending/$IMAGE_UNIT_NAME"
+    echo "the image lane's update waits for this Load: fetching what its new unit reads"
+  fi
   IMG_CUR="$(grep -oE -- '--model-path [^ ]+' "$IMAGE_UNIT" | head -1 | cut -d' ' -f2 || true)"
   IMG_CUR="${IMG_CUR:-$IMAGE_MODEL_PIN}"
+  IMG_SERVED="$(grep -oE -- '--model-path [^ ]+' "$IMG_SRC" | head -1 | cut -d' ' -f2 || true)"
   # image-turbo serves the Turbo; image serves the base, or the checkpoint the unit was
   # installed with (IMAGE_MODEL=) when it is neither, written down on the way to the Turbo
   # so that the way back finds it.
@@ -958,7 +968,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   elif [ "$IMG_CUR" = "$IMAGE_TURBO_PIN" ]; then
     IMG_MODEL="$(cat "$IMG_BEFORE_TURBO" 2>/dev/null || true)"; IMG_MODEL="${IMG_MODEL:-$IMAGE_MODEL_PIN}"
   else
-    IMG_MODEL="$IMG_CUR"
+    IMG_MODEL="${IMG_SERVED:-$IMG_CUR}"
   fi
   # The revision this box serves of that checkpoint, as the video lane reads it: the unit
   # names the repo with HF_HUB_OFFLINE=1, so its refs/main IS the served commit, and one an
@@ -999,9 +1009,29 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
     || die "the image checkpoint could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
   fetched "$IMG_MODEL @ ${IMG_REV:0:12}"
   # The unit names one checkpoint; a switch between the lane's two rewrites that name and
-  # nothing else.
+  # nothing else. The update that waited for this Load (if any) goes in place whole instead: this
+  # switch just fetched what its new unit reads, and the block is the video and MiniMax-H3-Image
+  # lanes' (review of v1.52.0, 2026-11-19, GLM 5.3: it was never posed nor cleared here).
   IMG_REWRITTEN=""
-  if [ "$IMG_CUR" != "$IMG_MODEL" ]; then
+  if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" ]; then
+    if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base" ] && [ -f "$IMAGE_UNIT" ] \
+       && [ "$(cat "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base")" != "$(sha256sum "$IMAGE_UNIT" | cut -d' ' -f1)" ]; then
+      unit_pending_clear "$IMAGE_UNIT"
+      echo "the update that waited for this Load was dropped: $IMAGE_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
+    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME")" ]; then
+      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-image applies it"
+    else
+      if ! cmp -s "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" "$IMAGE_UNIT"; then
+        cp "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" "$IMG_STAGE"
+        sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
+        rm -f "$IMG_STAGE"
+        sudo systemctl daemon-reload
+        echo "the update that waited for this Load is in place: $IMAGE_UNIT_NAME"
+      fi
+      unit_pending_clear "$IMAGE_UNIT"
+      IMG_REWRITTEN=1
+    fi
+  elif [ "$IMG_CUR" != "$IMG_MODEL" ]; then
     IMG_UNIT_TEXT="$(cat "$IMAGE_UNIT")"
     printf '%s\n' "${IMG_UNIT_TEXT//"--model-path $IMG_CUR "/"--model-path $IMG_MODEL "}" > "$IMG_STAGE"
     if ! grep -q -- "--model-path $IMG_MODEL " "$IMG_STAGE"; then

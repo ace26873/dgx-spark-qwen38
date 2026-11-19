@@ -499,5 +499,119 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
                 self.assertIn(f'"{stage}": {{"__HOME__/.config/qwen38/" + stage["{stage}"]}},', ci)
 
 
+class TheImageSwitchAppliesTheWaitingUnit(unittest.TestCase):
+    """The image lane's switch applies the unit that waited for its Load, as the video and MiniMax-H3-Image
+    lanes' do: it fetches what the waiting unit reads and poses it whole, then clears the wait (review of
+    v1.52.0, 2026-11-19, GLM 5.3: this branch read the wait nowhere, so a pin that moved left the Load
+    fetching the old pin, posing nothing, clearing nothing, the card's Load looping forever). The block
+    runs here against a pending folder of the test's own."""
+
+    MARKER = "  # The unit names one checkpoint; a switch between the lane's two rewrites that name and"
+    END = "  # Which text lane this box served"
+
+    def block(self):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index(self.MARKER)
+        end = text.index(self.END, start)
+        return text[start:end]
+
+    def run_block(self, pending_text="new unit\n", base=None, needs="", same=False, cur="pin-a", model="pin-a"):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-image-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-image.service"
+        unit.write_text("old unit\n" if not same else pending_text)
+        pend = cfg / "pending" / "qwen38-image.service"
+        pend.write_text(pending_text)
+        (cfg / "pending" / "qwen38-image.service.needs").write_text("image x\n")
+        if base is None:
+            import hashlib
+            base = hashlib.sha256(unit.read_bytes()).hexdigest()
+        (cfg / "pending" / "qwen38-image.service.base").write_text(base + "\n")
+        log = d / "log"
+        log.write_text("")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+IMAGE_UNIT="{unit}"; IMAGE_UNIT_NAME="qwen38-image.service"
+IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
+IMG_CUR="{cur}"; IMG_MODEL="{model}"; NEEDS='{needs}'
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then echo "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + self.block() + f'\necho "UNIT=$(cat "{unit}")"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, unit, pend, cfg, log
+
+    def test_the_waiting_unit_goes_in_place_and_the_wait_is_cleared(self):
+        # the pin moved: the unit in place names pin-a, the one waiting names pin-b, this Load serves pin-b
+        r, unit, pend, cfg, log = self.run_block(cur="pin-a", model="pin-b", pending_text="--model-path pin-b\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("is in place", r.stdout)
+        self.assertEqual(unit.read_text(), "--model-path pin-b\n")
+        self.assertIn(f'sudo install -m 644 {cfg}/qwen38-image.service.switch-stage {unit}', log.read_text())
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+        self.assertFalse((cfg / "pending" / "qwen38-image.service.needs").exists())
+        self.assertFalse((cfg / "qwen38-image.service.switch-stage").exists(), "the stage is left behind")
+
+    def test_a_wait_rendered_before_a_switch_is_dropped_not_put(self):
+        r, unit, pend, cfg, log = self.run_block(base="0" * 64)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("was dropped", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_a_wait_that_still_lacks_stays_waiting(self):
+        r, unit, pend, cfg, log = self.run_block(needs="checkpoint repo@rev")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("still lacks checkpoint repo@rev", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+
+    def test_an_unchanged_waiting_unit_is_cleared_without_install(self):
+        r, unit, pend, cfg, log = self.run_block(same=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_without_a_wait_the_switch_between_the_two_checkpoints_still_rewrites(self):
+        # no pending unit: the piecemeal rewrite between the lane's two checkpoints is unchanged
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-image-nopend-"))
+        cfg, etc = d / "config", d / "etc"
+        cfg.mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-image.service"
+        unit.write_text("--model-path pin-a \nother\n")
+        log = d / "log"
+        log.write_text("")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+IMAGE_UNIT="{unit}"; IMAGE_UNIT_NAME="qwen38-image.service"
+IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
+IMG_CUR="pin-a"; IMG_MODEL="pin-b"; IMAGE_MODEL_PIN="pin-b"; IMAGE_TURBO_PIN="pin-t"
+IMG_BEFORE_TURBO="$CONFIG_DIR/image-model-before-turbo"
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ :; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")"; }}
+""" + self.block() + f'\necho "UNIT=$(cat "{unit}")"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--model-path pin-b ", unit.read_text())
+        self.assertIn(f'sudo install -m 644 {cfg}/qwen38-image.service.switch-stage {unit}', log.read_text())
+
+    def test_it_fetches_what_the_waiting_unit_reads(self):
+        # the fetch target (the model) is read from the pending unit when one waits, so the checkpoint
+        # the Load downloads is the one the waiting unit names
+        text = (REPO / "switch-model.sh").read_text()
+        self.assertIn('IMG_SRC="$CONFIG_DIR/pending/$IMAGE_UNIT_NAME"', text)
+        self.assertIn('grep -oE -- \'--model-path [^ ]+\' "$IMG_SRC"', text)
+
+
 if __name__ == "__main__":
     unittest.main()
