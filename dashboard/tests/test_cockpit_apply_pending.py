@@ -31,6 +31,10 @@ class Ran(str):
     ok = True
 
 
+class RanFail(str):
+    ok = False
+
+
 class ApplyPending(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -186,6 +190,46 @@ class ApplyPending(unittest.TestCase):
                       sudoers)
         self.assertEqual(self.cp.pending_units(), {})
         self.assertFalse(Path(stage).exists())
+
+    def test_a_daemon_reload_that_fails_after_an_install_that_worked_leaves_no_wait(self):
+        # the unit is in place, so the wait is cleared however the reload goes, and the failure says so:
+        # a retry must not read the leftover wait as stale (a switch) and drop it with a false message
+        # (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+        def failing_run(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[0] == "sudo":
+                self.calls.append(argv)
+                if "daemon-reload" in argv:
+                    return RanFail("systemd busy")
+            return Ran("")
+        self.cp.run = failing_run
+        job = self.act()
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertEqual([c[2] for c in self.calls], ["/usr/bin/install", "/usr/bin/systemctl"])
+        self.assertTrue(any("the unit is in place, systemd did not reload it" in ln for ln in job.lines), job.lines)
+        self.assertFalse(any("changed since" in ln or "stale" in ln for ln in job.lines),
+                         "no switch message: the unit IS in place")
+        self.assertEqual(self.cp.pending_units(), {}, "the wait is cleared: the unit is in place")
+        stage = self.cp.CONFIG_DIR / f"{UNIT}.switch-stage"
+        self.assertFalse(stage.exists(), "the stage is not left behind")
+        # a retry says there is nothing to apply, not that the update was dropped as stale
+        self.calls.clear()
+        job = self.act()
+        self.assertEqual(self.calls, [])
+        self.assertTrue(any("no update waits" in ln for ln in job.lines), job.lines)
+
+    def test_an_install_that_fails_keeps_the_wait_for_the_retry(self):
+        def failing_run(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[0] == "sudo":
+                self.calls.append(argv)
+                return RanFail("no")
+            return Ran("")
+        self.cp.run = failing_run
+        job = self.act()
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertEqual(len(self.calls), 1, "the reload is not asked after a failed install")
+        self.assertTrue(any("install failed" in ln for ln in job.lines), job.lines)
+        self.assertTrue((self.pdir / UNIT).exists(), "nothing was put in place: the wait is kept")
+        self.assertFalse((self.cp.CONFIG_DIR / f"{UNIT}.switch-stage").exists())
 
     def test_every_unit_that_can_wait_has_its_sudoers_line(self):
         sudoers = (DASH / "sudoers-cockpit.template").read_text()

@@ -3447,15 +3447,22 @@ def job_apply_pending(job: Job):
         return True, [f"{unit}: its new launch script is in place; its restart applies it"], {"ok": True}
     stage = CONFIG_DIR / f"{unit}.switch-stage"
     shutil.copyfile(src, stage)
-    for argv in (["sudo", "-n", "/usr/bin/install", "-m", "644", str(stage), f"/etc/systemd/system/{unit}"],
-                 ["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"]):
-        out = run(argv, timeout=60, merge_err=True)
-        if not answered(out):
-            return False, lines + [f"{' '.join(argv[2:])} failed: {str(out).strip()[:200]}"], {"ok": False}
+    out = run(["sudo", "-n", "/usr/bin/install", "-m", "644", str(stage), f"/etc/systemd/system/{unit}"],
+              timeout=60, merge_err=True)
+    if not answered(out):
+        stage.unlink(missing_ok=True)
+        return False, lines + [f"install failed: {str(out).strip()[:200]}"], {"ok": False}
+    # the unit is in place: the wait is cleared however the reload goes. A reload that fails must not leave a
+    # wait whose .base names the unit before, read as stale at the retry and dropped with a false "switch"
+    # message (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
     stage.unlink(missing_ok=True)
     for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
         f.unlink(missing_ok=True)
     audit({"kind": "pending_applied", "unit": unit})
+    out = run(["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"], timeout=60, merge_err=True)
+    if not answered(out):
+        return False, lines + [f"{unit}: the unit is in place, systemd did not reload it: its restart, or "
+                               f"sudo systemctl daemon-reload, applies it ({str(out).strip()[:200]})"], {"ok": False}
     return True, lines + [f"{unit}: the update that waited for its Load is in place; its restart applies it"], {"ok": True}
 
 
