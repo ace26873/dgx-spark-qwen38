@@ -2941,7 +2941,7 @@ def on_demand_unit_path(unit: str) -> Path:
     one (tests move those), the directory every unit lives in otherwise."""
     lane = on_demand_lanes().get(unit, "")
     named = globals().get(lane.replace("-", "_").upper() + "_UNIT_PATH") if lane else None
-    return named if isinstance(named, Path) else Path("/etc/systemd/system") / unit
+    return named if isinstance(named, Path) else SYSTEMD_DIR / unit
 
 
 @guard
