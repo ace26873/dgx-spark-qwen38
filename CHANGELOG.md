@@ -14,8 +14,15 @@ packages, each FlashInfer wheel checked by the sha256 its release publishes. It 
 DGX Spark is refused. Measured on the reference box (study G8, in the recipe's container): 2048 x 2048 in 15.6 s, 4736
 x 3552 in 81.1 s, an edit with one reference in 23.6 s. Measured again with this release, through the cockpit, the
 GPU clock capped at 2,000 MHz by its slider (the lane's page says why: 95 to 97.5 C uncapped): its runtime takes 17.3
-GB on disk, it was ready 493 s after its Load and made 2048 x 2048 in 20 s, the box kept 24 GiB available at the
-lowest and the chip stayed at 69 C at most.
+GB on disk, it was ready 493 s after its Load and made 2048 x 2048 in 20 s, and over the whole proof (install, the
+27B and both image lanes) the box kept 17 GiB available at the lowest and the chip stayed at 88 C at most.
+
+**Proved on the reference box.** Before the push, the release installed from its branch, its installer's own proof
+(a 1024 x 1024 image), then, each loaded from the cockpit: the 27B with the eight clients (Claude Code, opencode,
+Hermes, pi, the OpenAI and Anthropic SDKs, fetch under Node and Bun, LiteLLM), Qwen-Image 2.1 (1024 x 1024 in 40 s)
+and MiniMax-H3-Image (ready 493 s after its Load, 2048 x 2048 in 20 s): every case OK. After the push, the box
+updated by the README's one-liner in 5 min, the 27B serving again on SGLang 0.5.22, the eight clients OK again, and
+the cockpit with no banner on any view.
 
 **What the box proofs found before this release.** The runtime's install checks what SGLang's sources at the pinned
 commit ask for (their `pyproject.toml`) against what it put in the venv, and installs `blake3`, which the main of that
