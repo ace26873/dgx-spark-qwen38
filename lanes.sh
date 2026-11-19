@@ -191,15 +191,24 @@ UNIT_DEP_KEYS='^(Description|Documentation|Wants|Requires|Requisite|BindsTo|Part
 # $CONFIG_DIR/pending/<unit>, what it lacks beside it (<unit>.needs): the lane keeps serving what it served, at its next
 # boot too, and its Load from the cockpit downloads what it lacks, then puts that unit in place. Prints pending.
 # A unit in place that already lacks what it reads (a lane never loaded, or emptied) has nothing to keep: the new one
-# goes in place, and the lane's Load prepares it, as before.
+# goes in place, and the lane's Load prepares it, as before. Nor when unit_needs cannot conclude on the unit in place
+# (docker did not answer, the cache cannot be read: an "unknown" line): it keeps serving what it served, the new one
+# waits, never the reverse (review of v1.52.0, 2026-11-19).
 unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written with sudo)
   # Each step returns on its failure: a function run in $(...) does not stop at one under set -e,
   # and the caller, which assigns what it prints, stops on that return.
-  local old
+  local old new_needs old_needs
   if [ -f "$2" ] && sudo cmp -s "$1" "$2"; then unit_pending_clear "$2"; echo same; return 0; fi
-  if [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$2" ] && [ -n "$(unit_needs "$1")" ] && [ -z "$(unit_needs "$2")" ]; then
-    unit_pending_put "$1" "$2" || return 1
-    echo pending; return 0
+  if [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$2" ]; then
+    new_needs="$(unit_needs "$1")"; old_needs="$(unit_needs "$2")"
+    # an "unknown" line on the unit in place: unit_needs could not conclude on it (docker did not answer, the
+    # cache cannot be read), so it keeps serving what it served and the new unit waits for its Load, never the
+    # reverse (review of v1.52.0, 2026-11-19: a docker down during the update made the unit in place look
+    # emptied, and the new unit, whose checkpoint was not there, went in place)
+    if [ -n "$new_needs" ] && { [ -z "$old_needs" ] || ! printf '%s\n' "$old_needs" | grep -qv '^unknown '; }; then
+      unit_pending_put "$1" "$2" || return 1
+      echo pending; return 0
+    fi
   fi
   unit_pending_clear "$2"
   if [ -f "$2" ] && cmp -s <(sudo cat "$2" | grep -vE "$UNIT_DEP_KEYS" || true) <(grep -vE "$UNIT_DEP_KEYS" "$1" || true); then
@@ -216,9 +225,10 @@ unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written 
 # its local build's tag, as docker names it), "checkpoint <repo>@<revision>" (whole, as ckpt_cached reads it, in the
 # cache the unit mounts), "draft <repo>@<revision>" (the 27B's DFlash2 draft, draft_in_cache, and the Nemotron lanes'
 # vLLM drafter), "path <path>" (a model the unit names by its path: a GGUF part, a snapshot folder), "unreadable
-# <file>" (a unit this user cannot read). Nothing when it has it all.
+# <file>" (a unit this user cannot read), "unknown ..." (this cannot conclude: docker did not answer, the
+# cache cannot be read; unit_put keeps the unit in place on such a line, never the reverse). Nothing when it has it all.
 unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
-  local hf img repo rev f seen=" "
+  local hf img repo rev f seen=" " hf_known=1
   # a unit this user cannot read (root's 0600, as the image lane's were before a fix) is not taken for whole: its
   # new unit goes in place as before v1.52.0 (Vibe's blind review of v1.52.0, Mistral Large 4)
   [ -r "$1" ] || { echo "unreadable $1"; return 0; }
@@ -227,12 +237,20 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   hf="$(unit_hf_cache "$1")"
   [ -n "$hf" ] || hf="$({ grep -m1 -oE '^Environment=HF_HOME=[^ ]+' "$1" || true; } | cut -d= -f3- | tr -s /)"
   hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"
+  # a cache that exists but cannot be read (a disk not mounted, a permission): nothing read from it can be
+  # concluded, and the line says unknown rather than missing (review of v1.52.0, 2026-11-19: a docker that did
+  # not answer, or an unreadable cache, made the unit in place look emptied, and a new unit whose checkpoint
+  # was not there went in place)
+  [ ! -e "$hf" ] || [ -r "$hf" ] || { hf_known=0; echo "unknown cache $hf"; }
   for img in $(engine_image "$1") $({ grep -oE '[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}' "$1" || true; }) \
              $({ grep -oE 'qwen38-(kolibri|nemotron):[A-Za-z0-9._-]+' "$1" || true; }); do
     case "$seen" in *" $img "*) continue ;; esac
     seen="$seen$img "
-    docker image inspect "$img" >/dev/null 2>&1 || echo "image $img"
+    if docker image inspect "$img" >/dev/null 2>&1; then continue; fi
+    # the daemon not answering is not the image missing: said unknown, and unit_put keeps the unit in place
+    if docker info >/dev/null 2>&1; then echo "image $img"; else echo "unknown image $img (docker did not answer)"; fi
   done
+  if [ "$hf_known" = 1 ]; then
   repo="$({ grep -m1 -oE -- '(--model-path|vllm serve) [^ ]+' "$1" || true; } | head -1 | awk '{print $NF}')"
   # Kolibri's and the Nemotron lanes' units name their model as the first word of its own line, before its revision
   [ -n "$repo" ] || repo="$({ grep -m1 -oE '^[[:space:]]*[A-Za-z0-9._-]+/[A-Za-z0-9._-]+ --revision ' "$1" || true; } | awk '{print $1}')"
@@ -273,6 +291,7 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
       [ -e "$f" ] || echo "path $f"
     fi
   done
+  fi
 }
 unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, what it lacks with it
   local d="${CONFIG_DIR:-$HOME/.config/qwen38}/pending" n

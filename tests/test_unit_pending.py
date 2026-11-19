@@ -26,7 +26,8 @@ class Box:
         self.images = self.d / "images"
         self.images.write_text(OLD_IMG + "\n")
         (self.bin / "docker").write_text(
-            f'#!/bin/bash\n[ "$1 $2" = "image inspect" ] || exit 2\ngrep -qxF -- "${{@: -1}}" "{self.images}"\n')
+            f'#!/bin/bash\n[ -n "${{DOCKER_DOWN:-}}" ] && exit 2\n[ "$1" = "info" ] && exit 0\n'
+            f'[ "$1 $2" = "image inspect" ] || exit 2\ngrep -qxF -- "${{@: -1}}" "{self.images}"\n')
         for f in ("sudo", "docker"):
             (self.bin / f).chmod(0o755)
         self.hf = self.d / "hf"
@@ -161,6 +162,25 @@ class UnitNeeds(unittest.TestCase):
         (encdir / "te-1.safetensors").unlink()
         self.assertEqual(self.b.needs(unit(enc)), [f"path {encdir}"])
 
+    def test_a_docker_that_does_not_answer_is_said_unknown_not_missing(self):
+        # unit_put must not read "docker down" as "the image of the unit in place is missing" (review of
+        # v1.52.0, 2026-11-19: it did, and a new unit whose checkpoint was not there went in place)
+        f = self.b.d / "rendered"
+        f.write_text(self.b.text())
+        r = self.b.sh(f'unit_needs "{f}"', env={"DOCKER_DOWN": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), [f"unknown image {OLD_IMG} (docker did not answer)"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a folder of mode 000")
+    def test_an_unreadable_cache_is_said_unknown_not_missing(self):
+        self.b.hf.chmod(0)
+        f = self.b.d / "rendered"
+        f.write_text(self.b.text())
+        r = self.b.sh(f'unit_needs "{f}"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), [f"unknown cache {self.b.hf}"])
+        self.b.hf.chmod(0o755)
+
     def test_a_gguf_named_by_its_path_in_the_container_is_looked_for_where_its_mount_puts_it_on_the_host(self):
         # the Unsloth lane's unit mounts <hf>:/root/.cache/huggingface and names its -m /root/.cache/huggingface/...
         # (install-flash-unsloth.sh renders it so): /root is 0700 on the host, so the container's path tested as it
@@ -232,6 +252,21 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertEqual(self.b.put(new), "PUT=new")
         self.assertEqual(self.b.unit.read_text(), new)
         self.assertFalse(self.pending.exists())
+
+    def test_a_docker_down_during_the_update_keeps_the_unit_in_place_and_waits(self):
+        # the unit in place cannot be concluded on (its image reads unknown): it keeps serving what it served,
+        # the new one, whose checkpoint is not there, waits for its Load, never the reverse (review of v1.52.0,
+        # 2026-11-19)
+        new = self.b.text(img=NEW_IMG, rev=REV2)
+        self.b.d.joinpath("rendered").write_text(new)
+        r = self.b.sh(f'P="$(unit_put \"{self.b.d}/rendered\" \"{self.b.unit}\")"\necho "PUT=$P"',
+                      env={"PENDING_PUT": "1", "DOCKER_DOWN": "1"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("PUT=pending", r.stdout, r.stdout)
+        self.assertEqual(self.b.unit.read_text(), self.b.text(), "the unit in place serves what it served, at boot too")
+        self.assertEqual(self.pending.read_text(), new)
+        self.assertIn(f"checkpoint RadixArk/Qwen3.8-27B-NVFP4@{REV2}",
+                      pathlib.Path(str(self.pending) + ".needs").read_text())
 
     def test_the_flash_lanes_waiting_launcher_survives_its_units_put(self):
         # its wait is its launch script's: the unit that only runs that script clears nothing (code review of v1.52.0)

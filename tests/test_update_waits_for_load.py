@@ -38,7 +38,7 @@ LANE={lane}; UNIT_NAME=qwen38-sglang.service; ALL_WEIGHTS={all_weights}; UNITS_O
 TEXT_NAMED={named}; KEEP_MODEL_VERBATIM={verbatim}; IMAGE={IMAGE}; FLASH_IMAGE={IMAGE}; HF_CACHE={hf}
 MODEL_REPO=RadixArk/Qwen3.8-27B-NVFP4; MODEL_REV={REV}; DRAFT2_REPO=maurienne-ai/Draft; DRAFT2_REV={DREV}
 text_lane_prepared(){{ return {0 if prepared else 1}; }}
-docker(){{ return {0 if image else 1}; }}
+docker(){{ [ "$1" = info ] && return 0; return {0 if image else 1}; }}   # info answers: the daemon is up, only the image is missing
 ckpt_cached(){{ return {0 if ckpt else 1}; }}
 """ + BLOCK.replace("/etc/systemd/system/", f"{etc}/") + """
 echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ONLY"
