@@ -133,10 +133,13 @@ class XetRetry(unittest.TestCase):
         """Within one process: on again for the refused repo, off again right after."""
         sys.path.insert(0, str(self.tmp))
         self.addCleanup(sys.path.remove, str(self.tmp))
+        # each variable gets back the value it had, not removed: ci-local.sh poses HF_HOME for every step since C20,
+        # and popping it left the suite's environment changed ("The offline suite touches nothing outside itself")
+        for k in ("HF_HUB_DISABLE_XET", "HF_HOME", "FAKE_MODE", "FAKE_BIG_REPO", "FAKE_LOG", "FAKE_SNAPSHOT"):
+            old = os.environ.get(k)
+            self.addCleanup(os.environ.__setitem__, k, old) if old is not None else self.addCleanup(os.environ.pop, k, None)
         os.environ.update(HF_HUB_DISABLE_XET="1", HF_HOME=str(self.tmp), FAKE_MODE="cdn_limit",
                           FAKE_BIG_REPO="org/model", FAKE_LOG=str(self.log), FAKE_SNAPSHOT=str(self.snapshot))
-        for k in ("HF_HUB_DISABLE_XET", "HF_HOME", "FAKE_MODE", "FAKE_BIG_REPO", "FAKE_LOG", "FAKE_SNAPSHOT"):
-            self.addCleanup(os.environ.pop, k, None)
         sys.modules.pop("huggingface_hub", None)
         self.addCleanup(sys.modules.pop, "huggingface_hub", None)
         spec = importlib.util.spec_from_file_location("ckpt_fetch_under_test", FETCH)
