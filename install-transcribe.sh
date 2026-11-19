@@ -113,8 +113,12 @@ PORT="${TRANSCRIBE_PORT:-$(installed_flag --port)}"; PORT="${PORT:-30036}"
 case "$PORT" in ''|*[!0-9]*) die "TRANSCRIBE_PORT takes a number, got: $PORT" ;; esac
 ENGINE_BIND="${TRANSCRIBE_BIND:-$(installed_flag --host)}"; ENGINE_BIND="${ENGINE_BIND:-127.0.0.1}"
 case "$ENGINE_BIND" in *[!0-9.]*|""|*..*) [ "$ENGINE_BIND" = localhost ] || die "TRANSCRIBE_BIND takes an IPv4 address, got: $ENGINE_BIND" ;; esac
-# The Hugging Face cache the unit mounts, read the way the other lanes read it (lanes.sh).
-HF_CACHE="${HF_CACHE:-$(unit_hf_cache "$INSTALLED")}"; HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
+# The Hugging Face cache the unit mounts, read the way the other lanes beside it read theirs
+# (vllm-lane.sh's vlane_text_cache): this lane's own unit first, then the text lanes', so a box
+# whose cache lives on another disk (docs/external-disk.md, HF_CACHE=...) keeps its 36.5 GB there
+# instead of downloading them into $HOME.
+TEXT_UNITS="${TEXT_UNITS:-$LANES_UNIT_DIR/qwen38-sglang.service $CONFIG_DIR/launch-flash.sh}"
+HF_CACHE="${HF_CACHE:-$(vlane_text_cache)}"; HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 
 model_host(){ llane_path "$TRANSCRIBE_REPO" "$TRANSCRIBE_REV" "$1"; }
 model_box(){ printf '/root/.cache/huggingface/hub/models--%s/snapshots/%s/%s\n' \
