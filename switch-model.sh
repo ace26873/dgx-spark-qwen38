@@ -196,38 +196,64 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   [ -n "$KOL_CUR" ] && [ -n "$KOL_CUR_GMU" ] || die "the Kolibri-1 unit names no checkpoint or memory share where this expects it (hand-edited unit?): re-run ./install-kolibri.sh --no-smoke"
   KOL_WANT="$KOL_MODEL --revision $KOL_REV"; KOL_WANT_GMU="--gpu-memory-utilization $KOL_GMU"
   KOL_REWRITTEN=""
-  # The update that waited for this Load (if any) goes in place whole: this lane's local image is tagged from
-  # the pins its installer pins, so a waiting unit's image line can differ from the one in place, and the
-  # rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3). Same block as the other lanes beside.
+  # The update that waited for this Load (if any) is posed whole first when it serves the asked target:
+  # this lane's local image is tagged from the pins its installer pins, so a waiting unit's image line can
+  # differ from the one in place, and the rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3).
+  # When it serves the lane's OTHER target, it is posed whole and then rewritten to the asked one: the asked
+  # target is the one served, never the reverse, and the checkpoint fetched above is the asked one's, so
+  # nothing is downloaded for a target that will not serve (third review of v1.52.0, 2026-11-19, GLM 5.3: the
+  # wait was posed whole and the asked target dropped, after its 102 GB checkpoint had been fetched).
+  KOL_POSE=""; KOL_STAYS=""
   if [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" ]; then
     if [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base" ] && [ -f "$KOLIBRI_UNIT" ] \
        && [ "$(cat "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base")" != "$(sha256sum "$KOLIBRI_UNIT" | cut -d' ' -f1)" ]; then
       unit_pending_clear "$KOLIBRI_UNIT"
       echo "the update that waited for this Load was dropped: $KOLIBRI_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
-    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME")" ]; then
-      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-kolibri applies it"
     else
-      if ! cmp -s "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" "$KOLIBRI_UNIT"; then
-        cp "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" "$KOL_STAGE"
-        sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
-        rm -f "$KOL_STAGE"
-        sudo systemctl daemon-reload
-        echo "the update that waited for this Load is in place: $KOLIBRI_UNIT_NAME"
+      KOL_POSE="$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME"
+      KOL_POSE_CUR="$(grep -m1 -oE -- "[^ ]+ --revision [0-9a-f]{40}" "$KOL_POSE" || true)"
+      KOL_POSE_GMU="$(grep -m1 -oE -- "--gpu-memory-utilization [0-9.]+" "$KOL_POSE" || true)"
+      if [ -z "$KOL_POSE_CUR" ] || [ "$KOL_POSE_CUR" = "$KOL_WANT" ]; then
+        # it serves the asked target (or names no checkpoint): it waits for what it lacks, as before
+        if [ -n "$(unit_needs "$KOL_POSE")" ]; then
+          echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$KOL_POSE" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-kolibri applies it"
+          KOL_POSE=""; KOL_STAYS=1
+        fi
+      elif [ -n "$(unit_needs "$KOL_POSE" | grep -v "^checkpoint ${KOL_POSE_CUR%% --revision *}@${KOL_POSE_CUR##* --revision }$" || true)" ]; then
+        # it serves the other target and still lacks what the rewrite to the asked one does not replace
+        # (its image, a mounted file): it cannot be posed whole, and is dropped, the asked target served
+        # from the unit in place
+        echo "NOTE: the update that waited for this Load serves ${KOL_POSE_CUR%% --revision *}, not the asked $KOL_MODEL, and still lacks $(unit_needs "$KOL_POSE" | grep -v "^checkpoint ${KOL_POSE_CUR%% --revision *}@${KOL_POSE_CUR##* --revision }$" | paste -sd ';' | sed 's/;/; /g'): it is dropped; ./install.sh writes it again"
+        unit_pending_clear "$KOLIBRI_UNIT"
+        KOL_POSE=""
       fi
+    fi
+  fi
+  KOL_FROM="$KOLIBRI_UNIT"; KOL_FROM_CUR="$KOL_CUR"; KOL_FROM_GMU="$KOL_CUR_GMU"
+  if [ -n "$KOL_POSE" ]; then KOL_FROM="$KOL_POSE"; KOL_FROM_CUR="$KOL_POSE_CUR"; KOL_FROM_GMU="$KOL_POSE_GMU"; fi
+  if [ -n "$KOL_POSE" ] || { [ -z "$KOL_STAYS" ] && { [ "$KOL_CUR" != "$KOL_WANT" ] || [ "$KOL_CUR_GMU" != "$KOL_WANT_GMU" ]; }; }; then
+    # the waiting unit posed whole when there is one, then rewritten to the asked target, which is the one
+    # served, never the reverse
+    if [ -n "$KOL_FROM_CUR" ]; then
+      KOL_TEXT="$(cat "$KOL_FROM")"
+      KOL_TEXT="${KOL_TEXT//"$KOL_FROM_CUR"/"$KOL_WANT"}"
+      printf '%s\n' "${KOL_TEXT//"$KOL_FROM_GMU"/"$KOL_WANT_GMU"}" > "$KOL_STAGE"
+      if ! grep -q -- "$KOL_WANT " "$KOL_STAGE" || ! grep -q -- "$KOL_WANT_GMU " "$KOL_STAGE"; then
+        rm -f "$KOL_STAGE"; die "the Kolibri-1 unit's rewrite to $KOL_MODEL failed (hand-edited unit?): re-run ./install-kolibri.sh --no-smoke"
+      fi
+    else
+      cp "$KOL_FROM" "$KOL_STAGE"
+    fi
+    if ! cmp -s "$KOL_STAGE" "$KOLIBRI_UNIT"; then
+      diff "$KOL_STAGE" "$KOLIBRI_UNIT" || true   # show exactly what changes
+      sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
       unit_pending_clear "$KOLIBRI_UNIT"
-      KOL_REWRITTEN=1
+      rm -f "$KOL_STAGE"
+      sudo systemctl daemon-reload
+      [ -n "$KOL_POSE" ] && echo "the update that waited for this Load is in place: $KOLIBRI_UNIT_NAME"
+    else
+      unit_pending_clear "$KOLIBRI_UNIT"   # an unchanged waiting unit is cleared without install
     fi
-  elif [ "$KOL_CUR" != "$KOL_WANT" ] || [ "$KOL_CUR_GMU" != "$KOL_WANT_GMU" ]; then
-    KOL_TEXT="$(cat "$KOLIBRI_UNIT")"
-    KOL_TEXT="${KOL_TEXT//"$KOL_CUR"/"$KOL_WANT"}"
-    printf '%s\n' "${KOL_TEXT//"$KOL_CUR_GMU"/"$KOL_WANT_GMU"}" > "$KOL_STAGE"
-    if ! grep -q -- "$KOL_WANT " "$KOL_STAGE" || ! grep -q -- "$KOL_WANT_GMU " "$KOL_STAGE"; then
-      rm -f "$KOL_STAGE"; die "the Kolibri-1 unit's rewrite to $KOL_MODEL failed (hand-edited unit?): re-run ./install-kolibri.sh --no-smoke"
-    fi
-    diff "$KOL_STAGE" "$KOLIBRI_UNIT" || true   # show exactly what changes
-    sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
-    unit_pending_clear "$KOLIBRI_UNIT"   # its new unit is in place: an update that waited for this Load is applied
-    rm -f "$KOL_STAGE"
     KOL_REWRITTEN=1
   fi
   # Which lane this box served at boot, written down before it is disabled: removing the
@@ -1060,34 +1086,62 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   # switch just fetched what its new unit reads, and the block is the video and MiniMax-H3-Image
   # lanes' (review of v1.52.0, 2026-11-19, GLM 5.3: it was never posed nor cleared here).
   IMG_REWRITTEN=""
+  # The update that waited for this Load (if any) is posed whole first when it serves the asked checkpoint
+  # (the fetch above read what it reads, IMG_SRC): this switch just fetched it. When it serves the lane's
+  # OTHER one, it is posed whole and then its --model-path is rewritten to the asked one: the asked target
+  # is the one served, never the reverse, and the checkpoint fetched above is the asked one's, so nothing is
+  # downloaded for a target that will not serve (third review of v1.52.0, 2026-11-19, GLM 5.3: a Load of
+  # image-turbo with a wait for the base posed the wait whole and dropped the Turbo, after its 33 GB had
+  # been fetched).
+  IMG_POSE=""; IMG_STAYS=""
   if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" ]; then
     if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base" ] && [ -f "$IMAGE_UNIT" ] \
        && [ "$(cat "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base")" != "$(sha256sum "$IMAGE_UNIT" | cut -d' ' -f1)" ]; then
       unit_pending_clear "$IMAGE_UNIT"
       echo "the update that waited for this Load was dropped: $IMAGE_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
-    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME")" ]; then
-      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-image applies it"
     else
-      if ! cmp -s "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" "$IMAGE_UNIT"; then
-        cp "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" "$IMG_STAGE"
-        sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
-        rm -f "$IMG_STAGE"
-        sudo systemctl daemon-reload
-        echo "the update that waited for this Load is in place: $IMAGE_UNIT_NAME"
+      IMG_POSE="$CONFIG_DIR/pending/$IMAGE_UNIT_NAME"
+      IMG_POSE_CUR="$(grep -oE -- '--model-path [^ ]+' "$IMG_POSE" | head -1 | cut -d' ' -f2 || true)"
+      if [ -z "$IMG_POSE_CUR" ] || [ "$IMG_POSE_CUR" = "$IMG_MODEL" ]; then
+        # it serves the asked checkpoint (or names none): it waits for what it lacks, as before
+        if [ -n "$(unit_needs "$IMG_POSE")" ]; then
+          echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$IMG_POSE" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-image applies it"
+          IMG_POSE=""; IMG_STAYS=1
+        fi
+      elif [ -n "$(unit_needs "$IMG_POSE" | grep -v "^checkpoint ${IMG_POSE_CUR}@" || true)" ]; then
+        # it serves the other checkpoint and still lacks what the rewrite to the asked one does not
+        # replace (its runtime, a mounted file): it cannot be posed whole, and is dropped, the asked
+        # target served from the unit in place
+        echo "NOTE: the update that waited for this Load serves $IMG_POSE_CUR, not the asked $IMG_MODEL, and still lacks $(unit_needs "$IMG_POSE" | grep -v "^checkpoint ${IMG_POSE_CUR}@" | paste -sd ';' | sed 's/;/; /g'): it is dropped; ./install.sh writes it again"
+        unit_pending_clear "$IMAGE_UNIT"
+        IMG_POSE=""
       fi
+    fi
+  fi
+  IMG_FROM="$IMAGE_UNIT"; IMG_FROM_CUR="$IMG_CUR"
+  if [ -n "$IMG_POSE" ]; then IMG_FROM="$IMG_POSE"; IMG_FROM_CUR="$IMG_POSE_CUR"; fi
+  if [ -n "$IMG_POSE" ] || { [ -z "$IMG_STAYS" ] && [ "$IMG_CUR" != "$IMG_MODEL" ]; }; then
+    # the waiting unit posed whole when there is one, then rewritten to the asked checkpoint, which is the
+    # one served, never the reverse
+    if [ -n "$IMG_FROM_CUR" ]; then
+      IMG_UNIT_TEXT="$(cat "$IMG_FROM")"
+      printf '%s\n' "${IMG_UNIT_TEXT//"--model-path $IMG_FROM_CUR "/"--model-path $IMG_MODEL "}" > "$IMG_STAGE"
+      if ! grep -q -- "--model-path $IMG_MODEL " "$IMG_STAGE" && ! grep -q -- "--model-path $IMG_MODEL\$" "$IMG_STAGE"; then
+        rm -f "$IMG_STAGE"; die "the image unit's rewrite to $IMG_MODEL failed (hand-edited unit?): re-run ./install-image.sh"
+      fi
+    else
+      cp "$IMG_FROM" "$IMG_STAGE"
+    fi
+    if ! cmp -s "$IMG_STAGE" "$IMAGE_UNIT"; then
+      diff "$IMG_STAGE" "$IMAGE_UNIT" || true   # show exactly what changes
+      sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
       unit_pending_clear "$IMAGE_UNIT"
-      IMG_REWRITTEN=1
+      rm -f "$IMG_STAGE"
+      sudo systemctl daemon-reload
+      [ -n "$IMG_POSE" ] && echo "the update that waited for this Load is in place: $IMAGE_UNIT_NAME"
+    else
+      unit_pending_clear "$IMAGE_UNIT"   # an unchanged waiting unit is cleared without install
     fi
-  elif [ "$IMG_CUR" != "$IMG_MODEL" ]; then
-    IMG_UNIT_TEXT="$(cat "$IMAGE_UNIT")"
-    printf '%s\n' "${IMG_UNIT_TEXT//"--model-path $IMG_CUR "/"--model-path $IMG_MODEL "}" > "$IMG_STAGE"
-    if ! grep -q -- "--model-path $IMG_MODEL " "$IMG_STAGE"; then
-      rm -f "$IMG_STAGE"; die "the image unit's rewrite to $IMG_MODEL failed (hand-edited unit?): re-run ./install-image.sh"
-    fi
-    diff "$IMG_STAGE" "$IMAGE_UNIT" || true   # show exactly what changes
-    sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
-    unit_pending_clear "$IMAGE_UNIT"   # its new unit is in place: an update that waited for this Load is applied
-    rm -f "$IMG_STAGE"
     IMG_REWRITTEN=1
     if [ "$IMG_MODEL" = "$IMAGE_TURBO_PIN" ] && [ "$IMG_CUR" != "$IMAGE_MODEL_PIN" ]; then
       printf '%s\n' "$IMG_CUR" > "$IMG_BEFORE_TURBO"

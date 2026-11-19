@@ -558,7 +558,8 @@ set -euo pipefail
 CONFIG_DIR="{cfg}"
 IMAGE_UNIT="{unit}"; IMAGE_UNIT_NAME="qwen38-image.service"
 IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
-IMG_CUR="{cur}"; IMG_MODEL="{model}"; NEEDS='{needs}'
+IMG_BEFORE_TURBO="$CONFIG_DIR/image-model-before-turbo"
+IMG_CUR="{cur}"; IMG_MODEL="{model}"; IMAGE_MODEL_PIN="pin-b"; IMAGE_TURBO_PIN="pin-t"; NEEDS='{needs}'
 sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
 unit_needs(){{ if [ -n "$NEEDS" ]; then echo "$NEEDS"; fi; }}
 unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
@@ -819,6 +820,183 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertEqual(unit.read_text(), "old unit\n")
         self.assertNotIn("sudo install", log.read_text())
         self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+
+
+class TheSwitchToTheLanesOtherTargetServesTheAskedOne(unittest.TestCase):
+    """A switch to the OTHER target of a lane that has a wait (the Kolibri lane's FP8/NVFP4, the image
+    lane's base/Turbo) serves the asked target: the wait is posed whole first (its image line can differ
+    from the one in place), then rewritten to the asked one, never the reverse, and the checkpoint
+    fetched above is the asked one's, so nothing is downloaded for a target that will not serve (third
+    review of v1.52.0, 2026-11-19, GLM 5.3: the wait was posed whole and the asked target dropped, after
+    its checkpoint, 102 GB for the Kolibri lane's NVFP4, 33 for the image lane's Turbo, had been
+    fetched). The block runs here against a pending folder of the test's own."""
+
+    FP8_CUR, FP8_CUR_REV = "r/fp8 --revision " + "e" * 40, "e" * 40
+    NVFP4_WANT, NVFP4_REV = "r/nvfp4 --revision " + "n" * 40, "n" * 40
+    FP8_WANT, FP8_REV = "r/fp8 --revision " + "f" * 40, "f" * 40
+
+    def kolibri_block(self):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index('  KOL_REWRITTEN=""')
+        end = text.index("  # Which lane this box served at boot", start)
+        return text[start:end]
+
+    def image_block(self):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index("  # The unit names one checkpoint; a switch between the lane's two rewrites that name and")
+        end = text.index("  # Which text lane this box served", start)
+        return text[start:end]
+
+    def run_kolibri(self, pending_text, unit_text="old unit\n", want=None, want_gmu="--gpu-memory-utilization 0.95",
+                    cur=None, cur_gmu="--gpu-memory-utilization 0.9", needs="", base=None):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-kol-other-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-kolibri.service"
+        unit.write_text(unit_text)
+        pend = cfg / "pending" / "qwen38-kolibri.service"
+        pend.write_text(pending_text)
+        (cfg / "pending" / "qwen38-kolibri.service.needs").write_text("image qwen38-kolibri:tag\n")
+        if base is None:
+            import hashlib
+            base = hashlib.sha256(unit.read_bytes()).hexdigest()
+        (cfg / "pending" / "qwen38-kolibri.service.base").write_text(base + "\n")
+        log = d / "log"
+        log.write_text("")
+        want = want or self.NVFP4_WANT
+        cur = cur or self.FP8_CUR
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+KOLIBRI_UNIT="{unit}"; KOLIBRI_UNIT_NAME="qwen38-kolibri.service"
+KOL_STAGE="$CONFIG_DIR/qwen38-kolibri.service.switch-stage"
+KOL_MODEL="r/nvfp4"; KOL_REV="{self.NVFP4_REV}"
+KOL_CUR="{cur}"; KOL_CUR_GMU="{cur_gmu}"; KOL_WANT="{want}"; KOL_WANT_GMU="{want_gmu}"
+NEEDS='{needs}'
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then printf '%s\\n' "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + self.kolibri_block() + f'\necho "UNIT=$(cat "{unit}")"\necho "REWRITTEN=$KOL_REWRITTEN"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, unit, pend, cfg, log
+
+    def run_image(self, pending_text, unit_text="--model-path pin-a \\nother\\n", model="pin-t", cur="pin-a",
+                  needs="", base=None):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-img-other-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-image.service"
+        unit.write_text(unit_text)
+        pend = cfg / "pending" / "qwen38-image.service"
+        pend.write_text(pending_text)
+        (cfg / "pending" / "qwen38-image.service.needs").write_text("image x\n")
+        if base is None:
+            import hashlib
+            base = hashlib.sha256(unit.read_bytes()).hexdigest()
+        (cfg / "pending" / "qwen38-image.service.base").write_text(base + "\n")
+        log = d / "log"
+        log.write_text("")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+IMAGE_UNIT="{unit}"; IMAGE_UNIT_NAME="qwen38-image.service"
+IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
+IMG_BEFORE_TURBO="$CONFIG_DIR/image-model-before-turbo"
+IMG_CUR="{cur}"; IMG_MODEL="{model}"; IMAGE_MODEL_PIN="pin-b"; IMAGE_TURBO_PIN="pin-t"
+NEEDS='{needs}'
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then printf '%s\\n' "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + self.image_block() + f'\necho "UNIT=$(cat "{unit}")"\necho "REWRITTEN=$IMG_REWRITTEN"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, unit, pend, cfg, log
+
+    def test_kolibri_a_wait_for_the_other_target_is_posed_then_rewritten_to_the_asked_one(self):
+        # the box serves FP8, an update waits whose unit serves FP8 at a new revision with a new image tag,
+        # the operator asks for NVFP4: the wait goes in place whole (its image line), then its checkpoint
+        # lines are rewritten to the asked NVFP4, whose checkpoint the switch fetched above
+        pend_text = f"image qwen38-kolibri:newtag \\\n  {self.FP8_WANT} \\\n  --gpu-memory-utilization 0.9 \\\n"
+        r, unit, pend, cfg, log = self.run_kolibri(pend_text, needs="")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("is in place", r.stdout)
+        self.assertIn(f"UNIT=image qwen38-kolibri:newtag", r.stdout)
+        self.assertIn(self.NVFP4_WANT, r.stdout, "the asked target is the one the unit serves, not the wait's")
+        self.assertIn("--gpu-memory-utilization 0.95", r.stdout)
+        self.assertNotIn(self.FP8_WANT, r.stdout)
+        self.assertIn("REWRITTEN=1", r.stdout)
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_kolibri_a_wait_that_lacks_only_its_own_checkpoint_is_posed_then_rewritten(self):
+        # the waiting unit's checkpoint is not on the box: irrelevant here, the rewrite points the unit at
+        # the asked target, whose checkpoint the switch just fetched; nothing is fetched for the wait's
+        pend_text = f"image qwen38-kolibri:newtag \\\n  {self.FP8_WANT} \\\n  --gpu-memory-utilization 0.9 \\\n"
+        r, unit, pend, cfg, log = self.run_kolibri(pend_text, needs=f"checkpoint r/fp8@{self.FP8_REV}")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(self.NVFP4_WANT, r.stdout)
+        self.assertIn("REWRITTEN=1", r.stdout)
+        self.assertFalse(pend.exists())
+        self.assertNotIn("still lacks", r.stdout)
+
+    def test_kolibri_a_wait_for_the_other_target_that_lacks_its_image_is_dropped_and_the_unit_rewritten(self):
+        # it cannot be posed whole (its image is missing), so it is dropped and the unit in place is
+        # rewritten to the asked target, which the switch fetched
+        pend_text = f"image qwen38-kolibri:newtag \\\n  {self.FP8_WANT} \\\n  --gpu-memory-utilization 0.9 \\\n"
+        unit_text = f"image qwen38-kolibri:oldtag \\\n  {self.FP8_CUR} \\\n  --gpu-memory-utilization 0.9 \\\n"
+        r, unit, pend, cfg, log = self.run_kolibri(pend_text, unit_text=unit_text, needs="image qwen38-kolibri:newtag")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("dropped", r.stdout)
+        self.assertIn(self.NVFP4_WANT, r.stdout, "the asked target is served from the unit in place")
+        self.assertFalse(pend.exists())
+
+    def test_kolibri_a_wait_for_the_asked_target_still_waits_for_what_it_lacks(self):
+        # same target as the asked one: unchanged behaviour, it waits for what it lacks
+        pend_text = f"image qwen38-kolibri:newtag \\\n  {self.NVFP4_WANT} \\\n  --gpu-memory-utilization 0.95 \\\n"
+        r, unit, pend, cfg, log = self.run_kolibri(pend_text, want=self.NVFP4_WANT,
+                                                  needs=f"checkpoint r/nvfp4@{self.NVFP4_REV}")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("still lacks", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertTrue(pend.exists())
+
+    def test_image_a_wait_for_the_base_is_posed_then_rewritten_to_the_turbo(self):
+        # the box serves the base, an update waits (the pin moved to pin-b), the operator asks for the
+        # Turbo: the wait goes in place whole, then its --model-path is rewritten to the Turbo's, whose
+        # checkpoint the switch fetched above (33 GB, not wasted)
+        pend_text = "--model-path pin-b \nExecStart=venv/bin/python serve.py\n"
+        r, unit, pend, cfg, log = self.run_image(pend_text, model="pin-t", cur="pin-a",
+                                                 needs="checkpoint pin-b@rev")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("is in place", r.stdout)
+        self.assertIn("UNIT=--model-path pin-t ", r.stdout)
+        self.assertIn("ExecStart=venv/bin/python serve.py", r.stdout, "the waiting unit's own lines are kept")
+        self.assertNotIn("pin-b", r.stdout)
+        self.assertIn("REWRITTEN=1", r.stdout)
+        self.assertFalse(pend.exists())
+
+    def test_image_a_wait_for_the_base_that_lacks_its_runtime_is_dropped_and_the_unit_rewritten(self):
+        pend_text = "--model-path pin-b \nExecStart=venv/bin/python serve.py\n"
+        r, unit, pend, cfg, log = self.run_image(pend_text, model="pin-t", cur="pin-a", needs="path /venv/bin/python")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("dropped", r.stdout)
+        self.assertIn("UNIT=--model-path pin-t ", r.stdout)
+        self.assertFalse(pend.exists())
+
+    def test_the_fetch_above_reads_the_asked_target_not_the_waits(self):
+        # the checkpoint the switch fetches is the asked one's in both lanes, so nothing is downloaded for
+        # a target that will not serve
+        text = (REPO / "switch-model.sh").read_text()
+        kol = text[text.index('if [ "$CHOICE" = "kolibri" ]'):text.index('  # Which lane this box served at boot')]
+        self.assertIn('KOL_MODEL="$KOLIBRI_NVFP4_REPO"; KOL_REV="$KOLIBRI_NVFP4_REV"', kol)
+        self.assertIn('"$KOL_MODEL" "$KOL_REV" --offline-first', kol, "the Kolibri fetch reads the asked target")
+        img = text[text.index('if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]'):text.index("  # Which text lane this box served")]
+        self.assertIn('if [ "$CHOICE" = "image-turbo" ]; then\n    IMG_MODEL="$IMAGE_TURBO_PIN"', img,
+                      "the image fetch reads the asked target even when a wait exists")
 
 
 if __name__ == "__main__":
