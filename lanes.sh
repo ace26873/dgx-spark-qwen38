@@ -298,6 +298,14 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
     fi
   done
   fi
+  # a file the unit bind-mounts by its own source (--mount type=bind,source=...): the vLLM lanes' chat template
+  # and api key, mounted that way on purpose so that a missing source fails the start where -v made a
+  # root-owned directory in its place (their templates say why). Read where it is, a host path already. The
+  # gates (a switch, apply_pending) read unit_needs alone, and without this a wait could be posed with its
+  # mount absent (third review of v1.52.0, 2026-11-19, GLM 5.3).
+  for f in $({ grep -oE -- '--mount type=bind,source=[^,]+' "$1" | sed -e 's/.*source=//' | sort -u || true; }); do
+    [ -e "$f" ] || echo "path $f"
+  done
 }
 unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, what it lacks with it
   local d="${CONFIG_DIR:-$HOME/.config/qwen38}/pending" n

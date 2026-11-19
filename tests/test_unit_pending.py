@@ -141,6 +141,21 @@ class UnitNeeds(unittest.TestCase):
         text = f"ExecStart=/usr/bin/docker run --rm {OLD_IMG} -m {part} --port 30000\n"
         self.assertEqual(self.b.needs(text), [f"path {part}"])
 
+    def test_a_file_bind_mounted_by_its_own_source_outside_the_cache(self):
+        # the vLLM lanes mount their chat template with --mount type=bind,source=..., outside the hub cache:
+        # the gates (a switch, apply_pending) read unit_needs alone, so a missing one is a need there too,
+        # or a wait is posed with its mount absent and docker refuses the start (third review of v1.52.0,
+        # 2026-11-19, GLM 5.3)
+        tmpl = self.b.d / "chat-template.jinja"
+        text = (f"ExecStart=/usr/bin/docker run --rm -v {self.b.hf}:/root/.cache/huggingface {OLD_IMG} \\\n"
+                f"  --mount type=bind,source={self.b.config}/api-key,target=/out/api-key,readonly \\\n"
+                f"  --mount type=bind,source={tmpl},target=/out/chat-template.jinja,readonly \\\n"
+                f"  --model-path RadixArk/Qwen3.8-27B-NVFP4 --revision {REV1}\n")
+        (self.b.config / "api-key").write_text("k\n")
+        self.assertEqual(self.b.needs(text), [f"path {tmpl}"])
+        tmpl.write_text("{{ messages }}\n")
+        self.assertEqual(self.b.needs(text), [])
+
     def test_a_text_encoder_the_unit_names_by_its_path(self):
         # the image-h3 lane's unit loads MiniMax-H3's text_encoder by its folder at the pinned revision
         # (qwen38-image-h3.service.template's --text-encoder-path): a pin that moved and was never fetched is a
