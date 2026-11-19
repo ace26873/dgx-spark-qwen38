@@ -138,6 +138,7 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
 - Cockpit, UX review of v1.53.0: the Logs source list disables the containers and journals of lanes this box does not have, with the reason as the title, instead of offering them to fail on read.
 - Cockpit, UX review of v1.53.0: Settings' opencode panel shows the default model's own limits as a first row when they are not the 27B's or flash's, instead of naming only those two lanes whatever serves.
 - Cockpit, UX review of v1.53.0: while the NVIDIA Nemotron Transcribe lane serves, the Now view's capsule and Activity panel say speech to text on its own port (read from its unit by the api collector) instead of "nothing running" and "KV pool held: waiting for the engine".
+- Cockpit, UX review of v1.53.0: while the transcribe lane serves, Connect a client offers its own address, its two routes, a line saying the proxy on :30001 does not relay it (503 with no text engine), and a copyable transcribe test that reads the box's key from its file, as docs/transcribe-lane.md's does.
 
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 

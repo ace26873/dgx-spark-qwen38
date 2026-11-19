@@ -263,6 +263,9 @@ function renderApi(){
   // claude-local sets Claude Code up for the lane that serves (proxy, key, model, budgets: docs/clients.md); the test
   // reads the key from its file, on the box, and never shows it
   const testCmd = `curl -s ${base}/v1/chat/completions -H ${keyHeader} -H 'Content-Type: application/json' -d '{"model":"${m}","messages":[{"role":"user","content":"Say ok."}],"max_tokens":8}'`;
+  // the transcribe lane serves no text: while it serves, its own address is the one to give a client,
+  // and the proxy's rows say they do not reach it (review of v1.53.0, 2026-11-19)
+  const tr = transcribeServing() && d.transcribe && d.transcribe.installed ? d.transcribe : null;
   const rows = [
     ['OpenAI API', `${base}/v1`, 'wrap', `${base}/v1`, 'Copy the OpenAI API address'],
     ['Anthropic API', base, 'wrap', base, 'Copy the Anthropic API address'],
@@ -277,11 +280,16 @@ function renderApi(){
       : others.length ? ['From another machine', others.join('\n'), 'wrap lines'] : [null, null],
     // part of the proxy's settings in a file the cockpit cannot read: what it sets is not known here (review of v1.45.1)
     d.env_unread ? ['Not read', "the proxy's environment file: if it sets a certificate the address is https, and with client keys only those are taken", 'wrap'] : [null, null]];
+  if (tr) rows.unshift(['Speech to text', tr.base, 'wrap'],
+                       ['Its routes', '/v1/audio/transcriptions, /v1/realtime (websocket)', 'wrap'],
+                       ['Proxy :30001', 'has no text engine behind it now and does not relay this lane: it answers 503', 'wrap']);
   // claude-local sets Claude Code up for the lane that serves (proxy, key, model, budgets: docs/clients.md); the test
   // reads the key from its file, on the box, and never shows it. It is offered only when a model is known:
   // copied with "MODEL" in it, it would be refused by a proxy with no text lane behind it (review of v1.53.0, 2026-11-19)
   const items = [['Copy the address', `${base}/v1`], ['Copy for Claude Code, on the box', 'claude-local']];
   if (model) items.push(['Copy a test', `curl -s ${base}/v1/chat/completions -H ${keyHeader} -H 'Content-Type: application/json' -d '{"model":"${model}","messages":[{"role":"user","content":"Say ok."}],"max_tokens":8}'`]);
+  if (tr) items.push(['Copy a transcribe test',
+    `printf 'Authorization: Bearer %s\\n' "$(cat ${d.key_file})" | curl -s ${tr.base}/v1/audio/transcriptions -H @- -F file=@meeting.wav -F language=fr`]);
   // the unit not read: the proxy's usual port, said as a guess (review of v1.45.1)
   const aside = !d.known ? 'its port not read: 30001 assumed' : boxOnly ? 'from this box only' : 'OpenAI and Anthropic APIs';
   // built again only when what it says changed: rebuilt at every tick of the lanes (2 s), a selection or a focus on

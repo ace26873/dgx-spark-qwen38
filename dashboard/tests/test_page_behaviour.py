@@ -431,6 +431,37 @@ class TheTranscribeLaneOnNow(unittest.TestCase):
         self.assertNotIn("KV pool", r)
         self.assertIn("up 10 min", r)
 
+    def test_connect_a_client_offers_its_own_address_routes_and_a_copyable_test(self):
+        r = run(self, self.SERVES + r"""
+        let copied = null; navigator.clipboard.writeText = async t => { copied = t; };
+        const labels = [...$('api-copy').querySelectorAll('button')].map(b => b.textContent);
+        const b = [...$('api-copy').querySelectorAll('button')].find(x => x.textContent === 'Copy a transcribe test');
+        b.click(); await __settle();
+        report({facts: txt('api-facts'), labels, copied});
+        """)
+        self.assertIn("http://127.0.0.1:30036", r["facts"])
+        self.assertIn("/v1/audio/transcriptions", r["facts"])
+        self.assertIn("does not relay this lane", r["facts"])
+        self.assertIn("503", r["facts"])
+        self.assertIn("Copy a transcribe test", r["labels"])
+        self.assertNotIn("Copy a test", r["labels"])
+        self.assertIn("curl -s http://127.0.0.1:30036/v1/audio/transcriptions -H @-", r["copied"])
+        self.assertIn("-F file=@meeting.wav -F language=fr", r["copied"])
+        self.assertIn("$(cat /home/u/.config/qwen38/box.key)", r["copied"])
+
+    def test_while_a_text_lane_serves_no_transcribe_rows(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}),
+              api: {known: true, port: 30001, bind: '127.0.0.1', tls: false, client_keys: false,
+                    key_file: '/home/u/.config/qwen38/box.key', addresses: [],
+                    transcribe: {installed: true, base: 'http://127.0.0.1:30036', port: 30036}},
+              engine_info: {served_target: 'stock', info: {served_model_name: 'qwen3.8-27b'}}});
+        report({facts: txt('api-facts'), labels: [...$('api-copy').querySelectorAll('button')].map(b => b.textContent)});
+        """)
+        self.assertNotIn("30036", r["facts"])
+        self.assertNotIn("Copy a transcribe test", r["labels"])
+        self.assertIn("Copy a test", r["labels"])
+
 
 
 class ThePoolLegendNamesNoLaneWhenNoneServes(unittest.TestCase):
