@@ -40,7 +40,7 @@ SMI_TIMEOUT_S="${QWEN38_PREFLIGHT_SMI_TIMEOUT_S:-10}"
 # of that engine since 2026-11-19, the transcribe lane's included): each lane the registry calls
 # llamacpp, its unit's name without ".service" (lane_registry.py, beside this script in the
 # repository, so a lane added there is covered here with no list to forget). The copy the units
-# run (~/.config/qwen38/engine-preflight.sh) has no registry beside it: it reads the units'
+# run (in the box's config folder, the units' ExecStartPre) has no registry beside it: it reads the units'
 # directory, where each llama.cpp lane's unit runs the files' check (llamacpp-files.sh, the
 # marker the uninstall reads too, llamacpp-lane.sh) and names its container (--name).
 # QWEN38_PREFLIGHT_LLAMACPP_CONTAINER overrides both with one container, for a test.
