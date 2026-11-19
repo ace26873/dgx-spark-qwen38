@@ -231,6 +231,25 @@ class UnitNeeds(unittest.TestCase):
         (snap / "model.safetensors").unlink()
         self.assertEqual(self.b.needs(text), [f"path {snap}"])
 
+    def test_a_diffusion_snapshot_whose_weights_are_in_a_subfolder_is_read_whole(self):
+        # MiniMax-H3-Image's snapshot keeps its shards in transformer/, with its own index there and
+        # model_index.json at the root: read whole the same way. Checked on the box, 2026-11-19: unit_needs
+        # of the real qwen38-image-h3.service said "path <snapshot>" forever (the root holds no index and
+        # no model.safetensors), so no Load could ever apply the lane's update
+        snap = self.b.hf / "hub" / "models--MiniMaxAI--MiniMax-H3-Image" / "snapshots" / REV1
+        (snap / "transformer").mkdir(parents=True)
+        (snap / "model_index.json").write_text("{}")
+        (snap / "transformer" / "model.safetensors.index.json").write_text(json.dumps(
+            {"weight_map": {"a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}))
+        (snap / "transformer" / "model-00001-of-00002.safetensors").write_bytes(b"1")
+        text = (f"[Service]\nEnvironment=HF_HOME={self.b.hf}\n"
+                f"ExecStart=/x/venv/bin/python -m sglang serve --model-path {snap} --port 30026\n")
+        self.assertEqual(self.b.needs(text), [f"path {snap}"], "a shard gone: not whole")
+        (snap / "transformer" / "model-00002-of-00002.safetensors").write_bytes(b"2")
+        self.assertEqual(self.b.needs(text), [])
+        (snap / "model_index.json").unlink()      # no diffusion marker: the root file is the check again
+        self.assertEqual(self.b.needs(text), [f"path {snap}"])
+
     def test_a_drafter_named_by_its_bare_snapshot_folder_is_read_whole(self):
         # the same for --speculative-config.model with a path, the vLLM drafter of a lane that names it so
         # (fourth review of v1.52.0, 2026-11-19, GLM 5.3: the case read [ -e ] only)

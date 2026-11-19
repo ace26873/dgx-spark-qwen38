@@ -553,10 +553,24 @@ repo, rev = pathlib.Path(sys.argv[1]), sys.argv[2]
 ref = repo / "refs" / rev
 snap = repo / "snapshots" / (ref.read_text().strip() if ref.is_file() else rev)
 try:
-    shards = set(json.loads((snap / "model.safetensors.index.json").read_text())["weight_map"].values())
+    pairs = [(snap, s) for s in set(json.loads((snap / "model.safetensors.index.json").read_text())["weight_map"].values())]
 except (OSError, ValueError, KeyError, TypeError, AttributeError):
-    shards = {"model.safetensors"}
-sys.exit(0 if shards and all((snap / s).exists() for s in shards) else 1)
+    # no index at the root: a diffusion repository (a model_index.json at the root, as MiniMax-H3-Image's)
+    # keeps its shards in subfolders that carry their own index, and every one of them must be there;
+    # checked on the box, 2026-11-19: the image-h3 lane's bare snapshot read as missing forever, its
+    # transformer/ weights unread at the root, and no Load could apply the lane's update. Otherwise the
+    # one file at the root is the check.
+    pairs = []
+    if (snap / "model_index.json").is_file():
+        for d in snap.iterdir():
+            if d.is_dir() and (d / "model.safetensors.index.json").is_file():
+                try:
+                    pairs += [(d, s) for s in set(json.loads((d / "model.safetensors.index.json").read_text())["weight_map"].values())]
+                except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                    pass
+    if not pairs:
+        pairs = [(snap, "model.safetensors")]
+sys.exit(0 if pairs and all((b / s).exists() for b, s in pairs) else 1)
 PY
 }
 # Whether a snapshot folder is whole, when the unit names the folder itself rather than its repository:
