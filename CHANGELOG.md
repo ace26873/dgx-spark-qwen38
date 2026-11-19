@@ -1,5 +1,173 @@
 # Changelog
 
+## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
+
+**The NVIDIA Nemotron Transcribe lane (`transcribe`): speech to text on the GPU, on a port of its own.** NVIDIA's
+`Nemotron-3.5-Transcribe-30B-A4B` in mradermacher's GGUF Q8_0 (35 GB of weights, 35,004,647,040 bytes) with its F16
+projector (1.4 GB, 1,468,544,320 bytes), served by llama.cpp's own server on port 30036 (beside the speech lane's
+30024), answering `/v1/audio/transcriptions` and the `/v1/realtime` websocket, with no chat route: the proxy on
+:30001 does not relay it, and programs on the box ask it on its port with the box's key. The engine is the Unsloth
+GGUF lane's image, pinned by digest (llama.cpp b12316, `ghcr.io/ggml-org/llama.cpp@sha256:a5600a59...`), so one
+image serves the two llama.cpp lanes; the flags are the measured run's: `--reasoning off` and a window of 65,536
+tokens. The two files are 36.47 GB, rounded up to the 37 GB its fetch asks, and the lane asks for 45 GB of disk (8 of
+room beside them); its image is about 4.5 GB, 2.7 to download, already there on a box that loaded the Unsloth GGUF
+lane. A plain `./install.sh` puts its unit in and its first Load builds it, as the image and video lanes are;
+`./install.sh --with-transcribe` installs it whole now and proves it (a spoken French sentence this repository
+carries, `tests/fixtures/transcribe-smoke.wav`, and a check that the box's key is in none of its journal lines),
+and `--no-transcribe` leaves it out of the run that passes it. `./switch-model.sh transcribe` fetches its files and
+stages its unit, and makes it the one unit enabled at boot; switching back to a text target gives the boot back.
+A 64 GB DGX Spark refuses it before anything is fetched: 37 GB of weights do not hold there. Its 35 GB do not hold
+beside the 27B either (the box found 22 GiB free beside it), so its unit says so to systemd with `Conflicts=` like
+every engine lane's: it comes up when no other engine serves, the CPU speech lane the only one it leaves beside it,
+under the same 110g memory cap as every engine lane. Measured on the reference box on 2026-11-14 (the trial
+`essai-20261114-1436` in `~/qa-tools/etudes/nouvelles-lanes/`: the model loaded once on the pinned image b12316,
+the 27B stopped, the GPU clock capped at 2,000 MHz, a pause under 70 °C before each step): ready in 15 s with 81
+GiB available (76 at the lowest), French WER 2.76 % over the 20-excerpt set (291 s of audio, real time factor 0.096,
+1.40 s an excerpt on average), English WER 0.40 % over 10 excerpts (92 s, real time factor 0.099), and four requests
+in parallel serving 8 excerpts, 124 s of audio, in 6.0 s (20.5 x real time). Against the speech lane's own set,
+measured on the same excerpts: French WER 5.6 % for its best Qwen3-ASR 1.7B and 9.7 % for its default, so half the
+word error rate of the box's best CPU recognizer, about ten times faster than real time. Its pins are sha256 and
+size read from the cache's own blobs on 2026-11-15 (`mradermacher/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF` at
+`76a736c119c734a6526a37bcd6fd2c4d3b252b03`), and `check-pins.sh` asks the Hub's LFS pointers every day.
+
+**The Liquid AI LFM2.5 24B-A2B lane (`lfm25`): Liquid AI's hybrid mixture of experts and its draft on SGLang, in the
+27B lane's image.** `LiquidAI/LFM2.5-24B-A2B-FP8` at `f54bf395...` with Liquid AI's own DSpark draft
+`LiquidAI/LFM2.5-24B-A2B-DSpark` at `e052e5b1...`, served on the text lanes' port 30000 behind the proxy and its key
+as model `lfm2.5-24b-a2b`. The model is 24B parameters with about 2B active per token, 40 layers (30 short
+convolutions, 10 attention), 64 experts of which 4 per token, a vocabulary of 128,000 tokens and a native window of
+131,072 tokens; the FP8 checkpoint quantizes linear weights by blocks of 128 x 128, and the draft is 327.7M
+parameters (BF16, five attention layers) proposing blocks of 9 tokens. The 27B lane's own image (SGLang v0.5.22, the
+same digest, 33.7 GB unpacked) serves it, so a box that serves the 27B pulls nothing more for the lane: its two
+checkpoints are 25.4 GB, 26 GB of disk beside the 27B lane and 74 without its image. The unit runs the trial's
+command with the lane's parsers added: `--context-length 131072 --mem-fraction-static 0.7 --max-running-requests 48`,
+DSpark with `--speculative-dspark-block-size 9 --speculative-num-draft-tokens 10`, `--reasoning-parser deepseek-r1`
+(the template opens a thought itself at every generation prompt and reads no switch, so the model always reasons)
+and `--tool-call-parser lfm2`, the key by `--config` as on the 27B lane. A plain `./install.sh` puts its unit in
+and its first Load prepares it; `--with-lfm25` installs it whole now and proves it with a reply and a tool call;
+`--no-lfm25` leaves it out (a 64 GB box leaves it out too: its trial left 24 GiB available at its lowest on a 128 GB
+box, and none was made on a 64 GB one). `./switch-model.sh lfm25` fetches the checkpoint and the draft, stages the
+unit and points opencode at it. Measured on the reference box on 2026-11-14 (one trial, no parser, the GPU clock
+capped at 2,000 MHz, the 27B stopped, at the lane's context length and memory share): ready in 286 s, a KV cache of
+1,667,049 tokens (BF16, the window 12.7 times), MemAvailable 28 GiB once ready and 24 GiB at its lowest, GSM8K 0.912
+on 250 questions with 8 at once where the 27B lane scores 99.2 % on the same questions, a first answer 17 x 23 = 391
+right, generation 362 tokens/s in all at the median under 8 requests (443 at the most, 183 readings), the draft
+accepting 5.28 tokens at the median. Through the proxy, opencode gets an `lfm25` provider (no variant, 74,000 tokens
+of context and 32,000 of output at its window), pi offers `high` alone and sends no effort field, omp gets `high`;
+System One is not served on it (proxy v6.60, 400): its template opens a thought at every answer, so the one token
+System One reads would be the thought's. The checkpoint and the draft are under the LFM Open License v1.0, which
+does not license commercial use by a legal entity with an annual revenue of 10 million US dollars or more.
+
+**The Liquid AI LFM3 lane (`lfm3`): LFM3 1.7B in NVFP4 on vLLM's own nightly.** `LiquidAI/LFM3-1.7B-NVFP4` at
+`cfe4b5ea...` (one file of 1,829,744,600 bytes, about 1.85 GB), served on the text lanes' port 30000 behind the
+proxy and its key as model `lfm3-1.7b`, at the model's whole window of 262,144 tokens. The engine is vLLM's own
+nightly image of commit 60bd6dd (`vllm/vllm-openai`, vLLM 0.34.0rc1.dev571+g60bd6dd2e, CUDA 13.2.1, arm64, pinned
+by digest, pulled as published, nothing built on the box): LFM3 came to vLLM on 2026-11-06 (vllm#65826) and no
+release carries it yet, and SGLang's support came on 2026-11-16 (sgl-project/sglang#46858), in no release yet
+either. The image is 28 GB on disk, 11.5 GB to download, and the lane asks for 41 GB (2 for the checkpoint, 39 for
+the image while it is pulled). The checkpoint is ModelOpt NVFP4 (feed-forward weights and activations in blocks of
+16 values), the rest left in BF16; it started on the box's driver (580.178.04, CUDA 13.0) and FlashInfer tuned its
+NVFP4 GEMM at the first boot. The unit passes `--gpu-memory-utilization 0.75` (`LFM3_GMU`), `--max-model-len 262144`,
+the `qwen3` reasoning parser and the `qwen3_coder` tool-call parser, the key by `--config` (redacted in vLLM's own
+log line), the vLLM lanes' middleware on every route but `/health` and `/metrics`, and turns vLLM's usage statistics
+off (`VLLM_NO_USAGE_STATS=1`, `DO_NOT_TRACK=1`). The share matters: with none set, this nightly grows its KV cache
+into every byte left free after its warmup, and the reference box kept 1,087 MiB available at its lowest (the cache
+had grown to 5,239,455 tokens, 100.85 GiB, twenty times the window); 0.75 of the 121.63 GiB the engine sees is about
+91 GiB. A plain `./install.sh` on a 128 GB box puts its unit in and its first Load pulls the image and fetches the
+checkpoint; `--with-lfm3` does it whole now and proves it with a reply and a tool call; `--no-lfm3` leaves it out;
+a 64 GB box leaves it out (no share was measured there). Measured on the reference box on 2026-11-16, in the "base"
+campaign, with no memory share set, the GPU clock capped at 2,000 MHz and every other lane stopped: first boot to
+`/health` in 160 s (127.5 s of engine init, 11.1 s of compile, FlashInfer's NVFP4 tuning 29 s of it), KV cache
+5,239,455 tokens, MemAvailable 1,087 MiB at its lowest, GSM8K 0.896 on 250 questions (the same model in a Q8_0 GGUF
+on llama.cpp scored 0.844 on the same questions, at 103.6 tokens/s on one stream). Speeds with `vllm bench serve`
+(1,024 tokens in, 512 out): 87.0 and 87.6 tokens/s in all alone (87.7 and 87.8 per stream, first token in 0.07 and
+0.02 s), then 721.4 at 8 requests at once, 2,162.9 at 32, 3,140.3 at 64, 3,911.8 at 128, 3,832.8 at 256 (the total
+stops growing past 128); per stream 93.4 at 8 down to 17.9 at 256; one long prompt alone: 32,768 tokens computed in
+1.68 s to the first token, 131,072 in 10.24 s, 250,000 in 22.86 s. An agent's conversation (`prefix_probe.py`): the
+first turn of 34,941 tokens found nothing in the prefix cache (first token after 1.73 s), and each of the five turns
+after it found 99 to 100 % of its 35,083 to 35,643 tokens there, first token after 0.11 to 0.14 s. Through the proxy,
+opencode gets an `lfm3` provider with two variants, `high` and `none` (205,000 tokens of context and 32,000 of
+output, the flash lane's pair at the same window), and loading the lane makes it opencode's default; pi offers `off`
+and `high`, omp `high` and `minimal`; a `reasoning_effort` is turned into the template's `enable_thinking` switch
+(proxy v6.61, `none` and `minimal` off, every other level on); System One is not served on any vLLM lane (vLLM caps
+`top_logprobs`), the proxy says so (400). vLLM warns at start that this checkpoint's template requires system-first
+ordering on `/v1/messages`, so Claude Code's per-turn reminders would miss the prefix cache; that warning is not a
+measurement yet. The checkpoint is under the LFM Open License v1.0, same Threshold of 10 million US dollars of
+annual revenue.
+
+**Proxy v6.59 to v6.61.** v6.59: a text client is told the box is transcribing speech while the transcribe lane
+serves (`qwen38-transcribe.service`), and the way back, instead of "It is stopped, restarting or still loading
+(about 9 minutes)"; nothing reaches that lane through the proxy, it answers its own audio routes on its own port.
+v6.60: `lfm2.5-24b-a2b` is a lane of the pair's routes, and POST `/v1/systemone` is refused while it serves (400,
+the lanes it serves on named). v6.61: `lfm3-1.7b` is a lane of the pair's routes, and a request's `reasoning_effort`
+is translated into the LFM3 template's `enable_thinking` as Ornith's is: `none` and `minimal` turn the reasoning off,
+every other level keeps it; System One stays refused there, as on every vLLM lane.
+
+**The cockpit follows the three lanes.** The Lanes view carries their cards with Load, and the Now view carries them
+too: NVIDIA Nemotron Transcribe, Liquid AI LFM2.5 24B-A2B and Liquid AI LFM3 (with Liquid AI's mark and a hue of
+its own). The transcribe card reads its state from its own facts: its container, its `/health` on its own port 30036,
+its boot read in its log while it is not healthy, so the card says warming-up during its 35 GB load. The LFM2.5 lane
+is read as an SGLang text lane (the canary, the pool guard, the autoheal, its boot default 286 s measured), the LFM3
+lane as a vLLM lane of the table (its own boot markers, default 160 s measured, its refusals in its own name, System
+One said unavailable as on every vLLM lane). The Library counts the transcribe lane's two pinned files and the two
+Liquid AI lanes' checkpoints (the LFM2.5 lane's draft too). Their start, stop, restart, enable, disable and the
+install of their staged units are in the cockpit's sudoers.
+
+**An update of these lanes downloads nothing large, like every side lane since v1.52.0.** `install.sh` runs
+transcribe, lfm25 and lfm3 through `side_install` now: on an update, a new unit that reads what the box lacks (an
+image by its digest, a checkpoint at its revision, a draft) waits in `~/.config/qwen38/pending/` beside the unit in
+place, the lane keeps serving the release it served (at its next boot too), and its card says "An update waits for
+its Load, which downloads ..." with an orange badge; its Load downloads what is missing, puts the new unit in place
+and restarts the lane. Each switch to one of the three lanes clears its waiting unit once the unit is in place
+(10 switch puts now, 7 before), and the transcribe installer says when its unit waits. `--with-<lane>` and
+`--all-weights` still download now, as asked.
+
+**Docs.** The three lanes get their pages, `docs/transcribe-lane.md`, `docs/lfm25-lane.md` and `docs/lfm3-lane.md`
+(what each serves and why its engine, installing and removing, calling it with the box's key read from its file,
+memory, the trials with their conditions, the pins, what the cockpit shows, the limits, the licence), and their model
+pages `docs/models/nemotron-transcribe.md`, `docs/models/lfm25.md` and `docs/models/lfm3.md`, linked from the models
+index and the README's table of docs; the transcribe page says its trial ran at ten times real time (real time
+factor 0.096 French, 0.099 English), not near real time. The Unsloth GGUF model page's 1M memory range is the lane
+page's: 12.9 to 16.1 GiB left to the box, corrected from 14.3 to 16.1.
+
+**Five sudoers lines that named no unit are gone.** The transcribe lane's wiring had added `/usr/bin/systemctl
+start`, `stop`, `restart`, `enable` and `disable` with no unit beside them: sudoers matches a command's arguments
+exactly, so each allowed only a bare `systemctl <verb>`, which systemctl refuses. They did nothing, but they
+contradicted the file's exact-argv header and read as an open hole to a blind review. The cockpit always calls
+systemctl with a verb and a unit. `tests/test_sudoers_no_free_args.py` now holds every systemctl line to one unit, and
+is red on the five lines before this change; `visudo -c` passes.
+
+**What the reviews of the 19th of November found, fixed with tests.** The preflight's memory guard counts every
+llama.cpp lane's left-behind `llama-server`: the transcribe lane runs its own in its own container, and one left there
+by a stop that did not take the container was counted as another program's, so the next lane started on the memory
+it still held; it reads the llama.cpp lanes from the units' directory, and looks for nothing beside itself, as the side
+lanes run it from a view of the config folder that shows it alone. The transcribe installer fetches its GGUF files
+into the text lanes' cache, as the lanes beside it do (a box with `HF_CACHE` on another disk had its 36.5 GB
+downloaded onto the home disk). While the transcribe lane serves, the page and the server treat it as no text engine:
+Smoke, Flush and Abort are refused with the reason, and the Lanes view shows no text engine's panel; Logs opens its
+container, and its unit maps to it, so a container alive while its unit is inactive gets its orphan banner. A blind
+review by Mistral Vibe (GLM 5.3) then found four more: the transcribe installer's proof started a lane already serving
+with a `systemctl start` that does nothing, so it asked the engine of the release before (it restarts a lane that runs
+older files than the ones installed now, as every other lane's proof does), and it asked 127.0.0.1 where `TRANSCRIBE_BIND`
+may name another address (it asks the address the unit listens on); the cockpit had no guard for an LFM2.5 lane a box
+does not hold (one rule, read from `lane_registry.py`, now guards every lane installed on demand, so a lane added there
+is guarded the day it is added); and `check-pins.sh` did not tie the LFM2.5 lane's image to the 27B lane's, as its
+comment said (it refuses a divergent `LFM25_IMAGE` now). A box holding only Transcribe, LFM2.5 or LFM3 beside it arms
+an update's wait too, as the lanes of v1.52.0 do. Each fix is held by a test that fails on the code before it.
+
+**Tests.** `test_sudoers_no_free_args.py` fails on the five unit-less lines before their removal.
+`test_unit_pending.py` counts the switch puts of the three lanes and checks that every installer that runs `unit_put`
+itself handles the pending arm: transcribe did not. `test_update_waits_for_load`'s test that no side lane's installer
+is called but through `side_install` failed on the 6 direct calls before, and its test of the lanes beside armed the
+wait for the three lanes. `test_benches_close_side_lanes` asks every bench that closes one side lane's COCKPIT_ address
+to close them all (the benches written on v1.52 closed the image ones only, and COCKPIT_VIDEO and COCKPIT_TRANSCRIBE
+stayed open). The two SGLang-start tests (a health route that generates nothing, a rendezvous by file) failed on the
+lfm25 unit before it said them; the pi and omp levels on the two Liquid AI lanes are held by a test; the LFM3 template
+test skips, on a machine without the checkpoint cached, under the reason the CI lists. The lanes bring their own
+suites: `tests/test_lfm25_lane.py`, `tests/test_lfm3_lane.py`, `tests/test_transcribe_lane.py`,
+`dashboard/tests/test_transcribe_cockpit.py`, `test_lfm25_cockpit.py`, `test_lfm3_cockpit.py`, the cockpit's guard of
+every on-demand lane in `test_cockpit_collectors.py` (each of the registry's lanes, present and absent), and the proxy's
+`test_proxy_lfm25.py` and `test_proxy_lfm3.py`.
+
 ## v1.52.0 (2026-11-19): an update downloads nothing large
 
 **An update downloads nothing large (decisions 1404 and 1408 to 1410).** Until this release a run of `./install.sh`
