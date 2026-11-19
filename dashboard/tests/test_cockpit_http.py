@@ -1405,6 +1405,34 @@ class TheTranscribeRelay(Base):
         self.assertIn("1024", json.loads(data)["error"])
         self.assertEqual(lane.seen, [])
 
+    def test_a_mime_that_breaks_the_multipart_headers_is_refused(self):
+        # the data URL's MIME lands in the multipart part's Content-Type header on its way to
+        # the lane, so it is a whitelist (the types the lane reads), never a pass-through: a CRLF
+        # in it would inject whole headers, and a hostile file name must not either
+        cookie = self.login()
+        lane = FakeLane()
+        self.with_lane(lane)
+        evil = "data:audio/wav\r\nX-Injected: yes;base64," + base64.b64encode(b"RIFF....WAVE").decode()
+        st, _, data = self.post_tr({"audio": evil, "filename": 'a\r\nX-Evil: 1.wav'}, cookie)
+        self.assertEqual(st, 400, f"an injectable MIME was forwarded: {data}")
+        self.assertEqual(lane.seen, [], "the injected payload reached the lane")
+        # every type the lane reads is accepted, and sent as a clean lowercased Content-Type
+        for mime in ("audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3",
+                     "audio/flac", "audio/x-flac", "application/flac", "application/x-flac", "AUDIO/WAV"):
+            st, _, data = self.post_tr(
+                {"audio": f"data:{mime};base64," + base64.b64encode(b"RIFF....").decode()}, cookie)
+            self.assertEqual(st, 200, f"{mime} was refused: {data}")
+        line = lane.seen[-1].data.split(b"Content-Type: ", 1)[1].split(b"\r\n", 1)[0]
+        self.assertEqual(line, b"audio/wav")
+        self.assertFalse(any(b"X-Injected" in r.data or b"X-Evil" in r.data for r in lane.seen),
+                         "an injected header reached the lane")
+        # anything else is refused, base64 or not
+        for mime in ("audio/webm", "audio/ogg", "audio/mp4", "text/plain", "", "audio/wav\r\nX: y"):
+            st, _, _ = self.post_tr(
+                {"audio": f"data:{mime};base64," + base64.b64encode(b"RIFF....").decode()}, cookie)
+            self.assertEqual(st, 400, f"{mime!r} was forwarded")
+        self.assertEqual(len(lane.seen), 10)
+
     def test_the_call_reaches_the_lane_with_the_box_key_and_the_file(self):
         cookie = self.login()
         lane = FakeLane()

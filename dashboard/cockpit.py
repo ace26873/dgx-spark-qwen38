@@ -1403,6 +1403,15 @@ TRANSCRIBE_TIMEOUT = 1800.0
 # its prompt as "(language: %s)" (server-chat.cpp convert_transcriptions_to_chatcmpl), so anything
 # else is refused here rather than sent as a prompt.
 TRANSCRIBE_LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
+# The MIME types the lane really reads, the same list the page has (TR_MIME_OK in transcribe.js):
+# wav, mp3 and flac, as llama.cpp b12316 sniffs them (RIFF/WAVE, ID3 or a MPEG sync word, fLaC).
+# The data URL's MIME is copied into the multipart part's Content-Type header on its way to the
+# lane, so it is checked against this whitelist, never passed through: a CRLF in it would inject
+# whole headers into the request the lane receives.
+TRANSCRIBE_MIME_OK = frozenset((
+    "audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3",
+    "audio/flac", "audio/x-flac", "application/flac", "application/x-flac",
+))
 
 
 def transcribe_status() -> dict:
@@ -1433,11 +1442,15 @@ def transcribe_call(payload: dict) -> tuple[int, dict]:
     gate: the route checked the session and the CSRF token before the body was read, and the body's
     cap was checked before that."""
     ref = payload.get("audio")
-    if not isinstance(ref, str) or not ref.startswith("data:audio/"):
-        return 400, {"error": "audio must be a data URL of an audio file (data:audio/...;base64,...)"}
+    if not isinstance(ref, str) or not ref.startswith("data:"):
+        return 400, {"error": "audio must be a base64 data URL of an audio file (data:audio/wav;base64,...)"}
     head, _, b64 = ref.partition(",")
     if ";base64" not in head or not b64:
         return 400, {"error": "the audio data URL must carry base64 after its comma"}
+    mime = head[len("data:"):].split(";", 1)[0].strip().lower()
+    if mime not in TRANSCRIBE_MIME_OK:
+        return 400, {"error": f"the lane reads wav, mp3 and flac only, not {mime!r}; convert the file "
+                              "first (ffmpeg -i in.m4a -ar 16000 -ac 1 out.wav)"}
     try:
         raw = base64.b64decode(b64, validate=True)
     except Exception:                               # noqa: BLE001
@@ -1454,7 +1467,6 @@ def transcribe_call(payload: dict) -> tuple[int, dict]:
         language = ""
     if not isinstance(language, str) or (language and not TRANSCRIBE_LANGUAGE_RE.fullmatch(language)):
         return 400, {"error": "language is a two or three letter code (fr, en, ...), or empty to detect it"}
-    mime = head[len("data:"):].split(";", 1)[0] or "audio/wav"
     filename = _transcribe_filename(payload.get("filename"))
     # Only these fields reach the lane: response_format json is the only one it accepts at b12316
     # (anything else is refused by its own server), and the browser chooses nothing else.
