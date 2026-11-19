@@ -165,14 +165,15 @@ class SideInstall(unittest.TestCase):
             (cfg / "pending" / f"qwen38-{lane}.service").write_text("waiting unit\n")
             (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text("checkpoint gone\n")
         # the installer's unit_put, as lanes.sh's: --units-only renders the NEW unit; it waits (pending) when
-        # PENDING_FORCE=1 or when it lacks what it reads, and goes in place otherwise
+        # PENDING_FORCE=1 or when it lacks what it reads, and goes in place otherwise, clearing what waited
         inst = repo / f"install-{lane}.sh"
         inst.write_text(f'#!/bin/bash\necho "install-{lane}.sh $* force=${{PENDING_FORCE:-0}}" >> "{log}"\n'
                         f'case " $* " in *" --units-only "*) '
                         f'if [ "${{PENDING_FORCE:-0}}" = 1 ] || {"true" if waits else "false"}; then '
                         f'mkdir -p "{cfg}/pending"; echo "new unit" > "{cfg}/pending/qwen38-{lane}.service"; '
                         f'echo "checkpoint gone" > "{cfg}/pending/qwen38-{lane}.service.needs"; '
-                        f'else echo "new unit" > "{etc}/qwen38-{lane}.service"; fi ;; esac\nexit 0\n')
+                        f'else echo "new unit" > "{etc}/qwen38-{lane}.service"; '
+                        f'rm -f "{cfg}/pending/qwen38-{lane}.service" "{cfg}/pending/qwen38-{lane}.service.needs"; fi ;; esac\nexit 0\n')
         inst.chmod(0o755)
         (etc / f"qwen38-{lane}.service").write_text("[Service]\nExecStart=old\n")
         script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"; PENDING_PUT={pending_put}; ALL_WEIGHTS=0\n'
@@ -213,12 +214,23 @@ class SideInstall(unittest.TestCase):
         self.assertEqual(pend, "new unit\n")
         self.assertEqual(needs, "checkpoint gone\nruntime x\n")
 
-    def test_a_wait_already_there_with_nothing_moved_is_kept_as_it_is(self):
-        calls, out, pend, needs = self.run_side(already_waiting=True)
-        self.assertEqual(calls, [], "its unit and what it lacks are kept, nothing is re-rendered")
-        self.assertEqual(pend, "waiting unit\n")
-        self.assertEqual(needs, "checkpoint gone\n")
+    def test_a_wait_already_there_with_nothing_moved_is_rerendered_and_replaced(self):
+        # every update renders its lane's NEW unit and lanes.sh's unit_put decides alone between in place and
+        # waiting: a wait of an earlier run is replaced by this one, never reused (third review of v1.52.0,
+        # 2026-11-19, GLM 5.3: the render was skipped when a wait was there and nothing had moved, and the
+        # Load applied the older version's unit, losing this one's in silence)
+        calls, out, pend, needs = self.run_side(already_waiting=True, waits=True)
+        self.assertEqual(calls, ["install-kolibri.sh --units-only force=0"], "the new unit is rendered again")
+        self.assertEqual(pend, "new unit\n", "the earlier run's wait is replaced by this run's unit")
         self.assertIn("WAITED= kolibri ", out)
+
+    def test_a_wait_already_there_with_nothing_moved_and_nothing_to_wait_for_is_cleared(self):
+        # the re-render goes in place (nothing waits) and the earlier wait is cleared with it, the rest of
+        # the update following as before
+        calls, out, pend, needs = self.run_side(already_waiting=True)
+        self.assertEqual(calls, ["install-kolibri.sh --units-only force=0", "install-kolibri.sh --no-smoke force=0"])
+        self.assertIsNone(pend, "unit_put put the new unit in place and cleared the wait")
+        self.assertNotIn("WAITED= kolibri", out)
 
     def test_a_lane_that_lacks_what_its_unit_reads_gets_its_units_only(self):
         calls, out, pend, needs = self.run_side(lacks=True)

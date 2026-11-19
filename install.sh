@@ -1682,9 +1682,11 @@ side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<la
     local runtime_lacks="" force=0 p="$CONFIG_DIR/pending/qwen38-$1.service"
     runtime_lacks="$(side_runtime_waits "$1")"
     [ -n "$runtime_lacks" ] && force=1
-    if [ "$force" -eq 1 ] || [ ! -f "$p" ]; then
-      PENDING_FORCE=$force "$REPO_DIR/install-$1.sh" --units-only || return 1
-    fi
+    # every update renders its lane's NEW unit, and lanes.sh's unit_put decides alone between in place and
+    # waiting: a wait of an earlier run is replaced by this one, never reused (third review of v1.52.0,
+    # 2026-11-19, GLM 5.3: the render was skipped while a wait was there and the runtime had not moved, and
+    # the Load then applied the older version's unit, losing this one's in silence)
+    PENDING_FORCE=$force "$REPO_DIR/install-$1.sh" --units-only || return 1
     if [ -f "$p" ]; then
       if [ -n "$runtime_lacks" ]; then
         # the runtime lines of what it waits for, made current (an earlier run's wait learns them too)
