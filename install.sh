@@ -1907,9 +1907,12 @@ PENDING_PUT=0; WAITS_LOAD=0; WAITS_WHAT=""
 # side lane would have fetched)
 if [ "$ALL_WEIGHTS" -eq 0 ]; then
   for _u in "$UNIT_NAME" qwen38-sglang.service qwen38-flash.service \
-            qwen38-image.service qwen38-video.service qwen38-image-h3.service "$KOLIBRI_UNIT_PATH" \
-            "$NEMOTRON_UNIT_PATH" "$NEMOTRON_SUPER_UNIT_PATH" "$FLASH_LOCAL_UNIT_PATH" "$ORNITH_122B_UNIT_PATH" \
-            "$FLASH_UNSLOTH_UNIT_PATH"; do
+            qwen38-image.service qwen38-video.service qwen38-image-h3.service qwen38-kolibri.service \
+            qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service \
+            qwen38-flash-unsloth.service; do
+    # unit NAMES, as /etc/systemd/system/ is put before them: the *_UNIT_PATH variables are whole paths, and the
+    # path they made never existed, so a box holding Kolibri, Nemotron, FP4-Local, Ornith or Unsloth alone did not
+    # arm the wait (the CI of 550345d, test_lane_lists_whole, and the box-only test, whose decor gave bare names)
     [ -f "/etc/systemd/system/$_u" ] && { PENDING_PUT=1; break; }
   done
   unset _u
