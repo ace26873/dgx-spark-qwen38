@@ -164,7 +164,7 @@ qualified non-profit organization is not held to the Threshold for non-commercia
 ## Switching to it, and back
 
 - The cockpit: **Liquid AI LFM3** in the Lanes view, then **Load**. Its first Load pulls its image (about 11.5 GB
-  to download, 28 GB on disk) and fetches its checkpoint (1.85 GB).
+  to download, 28 GB on disk) and fetches its checkpoint (1.83 GB).
 - A terminal: `./prepare-lane.sh lfm3` the first time (it pulls its image, no sudo), then `./switch-model.sh lfm3`
   and the commands it prints.
 - Installed on demand by every plain `./install.sh` on a 128 GB box (its unit, and its first Load prepares it).

@@ -14,7 +14,7 @@
 #
 # install.sh puts this lane's unit in on every plain install, like the other lanes, and its first Load from the
 # cockpit pulls its image and fetches its checkpoint; ./install.sh --no-lfm3 leaves it out of the run that passes it.
-# It takes a checkpoint of 1.85 GB and vLLM's nightly image, 28 GB (11.5 to download): when the disk does not have the
+# It takes a checkpoint of 1.83 GB and vLLM's nightly image, 28 GB (11.5 to download): when the disk does not have the
 # room, this refuses before downloading anything.
 #
 # WHY THIS IMAGE. LFM3 came to vLLM on 2026-11-06 (PR 65826), in no release yet: the nightly image of commit 60bd6dd
