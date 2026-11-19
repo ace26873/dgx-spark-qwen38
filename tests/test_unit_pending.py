@@ -137,6 +137,30 @@ class UnitNeeds(unittest.TestCase):
         text = f"ExecStart=/usr/bin/docker run --rm {OLD_IMG} -m {part} --port 30000\n"
         self.assertEqual(self.b.needs(text), [f"path {part}"])
 
+    def test_a_text_encoder_the_unit_names_by_its_path(self):
+        # the image-h3 lane's unit loads MiniMax-H3's text_encoder by its folder at the pinned revision
+        # (qwen38-image-h3.service.template's --text-encoder-path): a pin that moved and was never fetched is a
+        # need, or the unit goes in place and the lane finds no encoder at its next start (review of v1.52.0,
+        # 2026-11-19, GLM 5.3)
+        enc = "e" * 40
+        model_snap = self.b.hf / "hub" / "models--MiniMaxAI--MiniMax-H3-Image" / "snapshots" / REV1
+        model_snap.mkdir(parents=True)
+        (model_snap / "model.safetensors").write_bytes(b"w")
+
+        def unit(rev):
+            return (f"[Service]\nEnvironment=HF_HOME={self.b.hf}\n"
+                    f"ExecStart=/x/venv/bin/python -m sglang serve --model-path {model_snap} "
+                    f"--text-encoder-path {self.b.hf}/hub/models--MiniMaxAI--MiniMax-H3/snapshots/{rev}/text_encoder"
+                    f" --port 30026\n")
+        encdir = self.b.hf / "hub" / "models--MiniMaxAI--MiniMax-H3" / "snapshots" / enc / "text_encoder"
+        self.assertEqual(self.b.needs(unit(enc)), [f"path {encdir}"])
+        encdir.mkdir(parents=True)
+        (encdir / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "te-1.safetensors"}}))
+        (encdir / "te-1.safetensors").write_bytes(b"e")
+        self.assertEqual(self.b.needs(unit(enc)), [])
+        (encdir / "te-1.safetensors").unlink()
+        self.assertEqual(self.b.needs(unit(enc)), [f"path {encdir}"])
+
     def test_a_gguf_named_by_its_path_in_the_container_is_looked_for_where_its_mount_puts_it_on_the_host(self):
         # the Unsloth lane's unit mounts <hf>:/root/.cache/huggingface and names its -m /root/.cache/huggingface/...
         # (install-flash-unsloth.sh renders it so): /root is 0700 on the host, so the container's path tested as it

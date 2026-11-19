@@ -255,13 +255,23 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
       *) ckpt_cached "$hf/hub/models--${repo//\//--}" "${rev:-main}" || echo "draft $repo@${rev:-main}" ;;
     esac
   fi
-  for f in $({ grep -oE '/[^ "=]*/hub/models--[^ "/]+/snapshots/[0-9a-f]{40}/[^ "]+\.gguf' "$1" || true; } | sort -u); do
+  # every path inside a hub snapshot the unit names, not only its model: the GGUF parts a llama.cpp lane
+  # serves, and the folders a lane loads, as the image-h3 lane's text_encoder, named by --text-encoder-path
+  # (review of v1.52.0, 2026-11-19: a pin that moved went in place unseen, and the lane found no encoder at
+  # its next start)
+  for f in $({ grep -oE '/[^ "=]*/hub/models--[^ "/]+/snapshots/[0-9a-f]{40}/[^ "]+' "$1" || true; } | sort -u); do
     # a GGUF the unit names as its container sees it (-m /root/.cache/huggingface/... when it mounts the host's
     # cache there, another than the default one or not: hf, unit_hf_cache's) is looked for where that mount puts
     # it on the host: /root is 0700, so the container's path tested as it is never exists (review of v1.52.0,
     # 2026-11-19). A path already on the host matches no mount and stays as it is.
     case "$f" in /root/.cache/huggingface/*) f="$hf${f#/root/.cache/huggingface}" ;; esac
-    [ -e "$f" ] || echo "path $f"
+    if [ -d "$f" ]; then
+      # a folder it loads is whole only when its index's shards are all there (text_encoder/ holds one)
+      if [ -f "$f/model.safetensors.index.json" ]; then ckpt_snap_cached "$f" || echo "path $f"
+      else [ -n "$(ls -A "$f" 2>/dev/null)" ] || echo "path $f"; fi
+    else
+      [ -e "$f" ] || echo "path $f"
+    fi
   done
 }
 unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, what it lacks with it
@@ -462,6 +472,20 @@ try:
     shards = set(json.loads((snap / "model.safetensors.index.json").read_text())["weight_map"].values())
 except (OSError, ValueError, KeyError, TypeError, AttributeError):
     shards = {"model.safetensors"}
+sys.exit(0 if shards and all((snap / s).exists() for s in shards) else 1)
+PY
+}
+# Whether a snapshot folder is whole, when the unit names the folder itself rather than its repository:
+# every shard its index names is in it. A folder a lane loads holds the same index (the image-h3 lane's
+# text_encoder/ does), so a begun fetch of it reads as not whole, as ckpt_cached reads a begun checkpoint.
+ckpt_snap_cached(){  # $1 = a snapshot folder
+  python3 - "$1" <<'PY'
+import json, pathlib, sys
+snap = pathlib.Path(sys.argv[1])
+try:
+    shards = set(json.loads((snap / "model.safetensors.index.json").read_text())["weight_map"].values())
+except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    shards = set()
 sys.exit(0 if shards and all((snap / s).exists() for s in shards) else 1)
 PY
 }
