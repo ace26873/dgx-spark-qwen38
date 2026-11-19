@@ -52,7 +52,7 @@ class TheUnit(unittest.TestCase):
     def test_the_switch_reads_the_repository_and_revision_off_the_units_path(self):
         import tempfile
         sw = (REPO / "switch-model.sh").read_text()
-        start = sw.index('  H3_MODEL="$(grep -oE -- \'--model-path [^ ]+\' "$IMAGE_H3_UNIT"')
+        start = sw.index('  H3_MODEL="$(grep -oE -- \'--model-path [^ ]+\' "$H3_SRC"')
         end = sw.index("\n", sw.index('    if [ "$H3_MODEL" = "$IMAGE_H3_MODEL_PIN" ]; then H3_REV='))
         block = sw[start:end] + "\n  fi\n"
         d = pathlib.Path(tempfile.mkdtemp(prefix="h3-switch-"))
@@ -65,7 +65,7 @@ class TheUnit(unittest.TestCase):
             with self.subTest(how):
                 unit = d / f"{how}.service"
                 unit.write_text(f"[Service]\nExecStart=/x/sglang serve {line}\n")
-                script = (f'IMAGE_H3_UNIT="{unit}"; HF_CACHE="{d}"; IMAGE_H3_MODEL_PIN=MiniMaxAI/MiniMax-H3-Image; '
+                script = (f'IMAGE_H3_UNIT="{unit}"; H3_SRC="$IMAGE_H3_UNIT"; HF_CACHE="{d}"; IMAGE_H3_MODEL_PIN=MiniMaxAI/MiniMax-H3-Image; '
                           f'IMAGE_H3_MODEL_PIN_REV={pin}\n' + block + '\necho "$H3_MODEL $H3_REV"')
                 r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
                 self.assertEqual(r.stdout.split(), ["MiniMaxAI/MiniMax-H3-Image", want], r.stderr)

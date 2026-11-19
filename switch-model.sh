@@ -109,8 +109,12 @@ IMAGE_UNIT_NAME="qwen38-image.service"
 IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
 VIDEO_UNIT="/etc/systemd/system/qwen38-video.service"
 VIDEO_UNIT_NAME="qwen38-video.service"
+# The video and image-h3 units are put from a waiting unit (pending) with sudo, so they are staged
+# at fixed paths the cockpit's exact-argv sudoers allowlist names, as the image unit is above.
+VID_STAGE="$CONFIG_DIR/qwen38-video.service.switch-stage"
 IMAGE_H3_UNIT="/etc/systemd/system/qwen38-image-h3.service"
 IMAGE_H3_UNIT_NAME="qwen38-image-h3.service"
+H3_STAGE="$CONFIG_DIR/qwen38-image-h3.service.switch-stage"
 
 # The one fetch of every lane's checkpoint, run in the lane's image or venv. Checked here,
 # before any branch mounts it: docker -v of a host file that is not there makes a
@@ -1069,7 +1073,14 @@ if [ "$CHOICE" = "video" ]; then
   VID_WD="$(grep -m1 -E '^WorkingDirectory=' "$VIDEO_UNIT" | cut -d= -f2- || true)"
   VID_PY="${VID_WD:-$HOME/.local/share/qwen38-video}/venv/bin/python"
   [ -x "$VID_PY" ] || die "the video lane's runtime is missing ($VID_PY): ./prepare-lane.sh video builds it (no sudo; its first Load from the cockpit runs it), then switch again"
-  VID_MODEL="$(grep -oE -- '--model-path [^ ]+' "$VIDEO_UNIT" | head -1 | cut -d' ' -f2 || true)"
+  # An update left this lane's new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what this
+  # switch fetches is what THAT unit reads, not what the one in place reads.
+  VID_SRC="$VIDEO_UNIT"
+  if [ -f "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME" ]; then
+    VID_SRC="$CONFIG_DIR/pending/$VIDEO_UNIT_NAME"
+    echo "the video lane's update waits for this Load: fetching what its new unit reads"
+  fi
+  VID_MODEL="$(grep -oE -- '--model-path [^ ]+' "$VID_SRC" | head -1 | cut -d' ' -f2 || true)"
   VID_MODEL="${VID_MODEL:-MiniMaxAI/MiniMax-H3}"
   VID_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$VIDEO_UNIT" | cut -d= -f3- || true)"
   printf '\n\033[1;36m── Verifying %s in the cache (resumable)\033[0m\n' "$VID_MODEL"
@@ -1078,7 +1089,7 @@ if [ "$CHOICE" = "video" ]; then
   # allowlist as install-video.sh: a complete fl2va cache answers without touching the
   # network, and without it a switch re-downloaded the whole repo (Ref2VA included)
   # onto a full disk (reference box, 2026-09-26).
-  VID_VARIANT="$(grep -oE -- '--model-variant [^ ]+' "$VIDEO_UNIT" | head -1 | cut -d' ' -f2 || true)"
+  VID_VARIANT="$(grep -oE -- '--model-variant [^ ]+' "$VID_SRC" | head -1 | cut -d' ' -f2 || true)"
   VID_VARIANT="${VID_VARIANT:-fl2va}"
   if [ "$VID_MODEL" = "MiniMaxAI/MiniMax-H3" ]; then
     if [ "$VID_VARIANT" = "fl2va" ]; then VID_ALLOW="FL2VA/* model_index.json modular_model_index.json scheduler/* audio_scheduler/* *.md LICENSE*"
@@ -1154,6 +1165,29 @@ if [ "$CHOICE" = "video" ]; then
     "$VID_PY" "$REPO_DIR/ckpt-fetch.py" "$VID_MODEL" "$VID_REV" --allow "$VID_ALLOW" --offline-first --refs-main fill \
     || die "the video checkpoint could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls; if the pinned revision was removed upstream, ./install-video.sh VIDEO_MODEL_REV=main re-pins it)"
   fetched "$VID_MODEL @ ${VID_REV:0:12}"
+  # The update that waited for this Load (if any) goes in place now: this switch just fetched what its unit reads.
+  # The video lane's --prepare builds the runtime only, so its switch is the one place its Load can apply an
+  # update (the cockpit's Load journey ends on this step for a lane beside the text lanes; review of v1.52.0,
+  # 2026-11-19: nothing posed it, and the Load left the lane on the old release, its card saying an update
+  # waited, forever).
+  if [ -f "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME" ]; then
+    if [ -f "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME.base" ] && [ -f "$VIDEO_UNIT" ] \
+       && [ "$(cat "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME.base")" != "$(sha256sum "$VIDEO_UNIT" | cut -d' ' -f1)" ]; then
+      unit_pending_clear "$VIDEO_UNIT"
+      echo "the update that waited for this Load was dropped: $VIDEO_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
+    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME")" ]; then
+      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-video applies it"
+    else
+      if ! cmp -s "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME" "$VIDEO_UNIT"; then
+        cp "$CONFIG_DIR/pending/$VIDEO_UNIT_NAME" "$VID_STAGE"
+        sudo install -m 644 "$VID_STAGE" "$VIDEO_UNIT"
+        rm -f "$VID_STAGE"
+        sudo systemctl daemon-reload
+        echo "the update that waited for this Load is in place: $VIDEO_UNIT_NAME"
+      fi
+      unit_pending_clear "$VIDEO_UNIT"
+    fi
+  fi
   # Which lane this box served, written down before it is disabled: install.sh
   # updates that lane on a later run, and enablement cannot tell it once all are off.
   for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service; do
@@ -1200,13 +1234,21 @@ if [ "$CHOICE" = "image-h3" ]; then
   H3_WD="$(grep -m1 -E '^WorkingDirectory=' "$IMAGE_H3_UNIT" | cut -d= -f2- || true)"
   H3_PY="${H3_WD:-$HOME/.local/share/qwen38-image-h3}/venv/bin/python"
   [ -x "$H3_PY" ] || die "the MiniMax-H3-Image lane's runtime is missing ($H3_PY): ./prepare-lane.sh image-h3 builds it (no sudo; its first Load from the cockpit runs it), then switch again"
+  # An update left this lane's new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what this
+  # switch fetches is what THAT unit reads (its checkpoint's snapshot and its text encoder's), not what the
+  # one in place reads.
+  H3_SRC="$IMAGE_H3_UNIT"
+  if [ -f "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME" ]; then
+    H3_SRC="$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME"
+    echo "the MiniMax-H3-Image lane's update waits for this Load: fetching what its new unit reads"
+  fi
   # The pins, the allowlist and the sizes, from install-image-h3.sh, the one place they are declared.
   eval "$(grep -E '^(IMAGE_H3_MODEL_PIN|IMAGE_H3_MODEL_PIN_REV|IMAGE_H3_ENCODER_PIN|IMAGE_H3_ENCODER_PIN_REV|ALLOW|WEIGHTS_GB|ENCODER_GB)=' "$REPO_DIR/install-image-h3.sh" || true)"
   for _v in IMAGE_H3_MODEL_PIN IMAGE_H3_MODEL_PIN_REV IMAGE_H3_ENCODER_PIN IMAGE_H3_ENCODER_PIN_REV ALLOW WEIGHTS_GB ENCODER_GB; do
     eval "[ -n \"\${$_v:-}\" ]" || die "install-image-h3.sh no longer defines $_v (repo layout changed?)"
   done
   unset _v
-  H3_MODEL="$(grep -oE -- '--model-path [^ ]+' "$IMAGE_H3_UNIT" | head -1 | cut -d' ' -f2 || true)"
+  H3_MODEL="$(grep -oE -- '--model-path [^ ]+' "$H3_SRC" | head -1 | cut -d' ' -f2 || true)"
   H3_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$IMAGE_H3_UNIT" | cut -d= -f3- || true)"
   H3_REV=""
   # The unit names the checkpoint by its snapshot's path (v1.50.0: by name, an offline start refused the snapshot this
@@ -1244,6 +1286,28 @@ if [ "$CHOICE" = "image-h3" ]; then
     "$H3_PY" "$REPO_DIR/ckpt-fetch.py" "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" --allow "text_encoder/*" --offline-first \
     || die "the MiniMax-H3-Image text encoder could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
   fetched "$H3_MODEL @ ${H3_REV:0:12} and its text encoder"
+  # The update that waited for this Load (if any) goes in place now: this switch just fetched what its unit reads
+  # (its checkpoint and its text encoder). The image-h3 lane's --prepare builds the runtime only, so its switch
+  # is the one place its Load can apply an update (review of v1.52.0, 2026-11-19: nothing posed it, and the Load
+  # left the lane on the old release, its card saying an update waited, forever).
+  if [ -f "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME" ]; then
+    if [ -f "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME.base" ] && [ -f "$IMAGE_H3_UNIT" ] \
+       && [ "$(cat "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME.base")" != "$(sha256sum "$IMAGE_H3_UNIT" | cut -d' ' -f1)" ]; then
+      unit_pending_clear "$IMAGE_H3_UNIT"
+      echo "the update that waited for this Load was dropped: $IMAGE_H3_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
+    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME")" ]; then
+      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-image-h3 applies it"
+    else
+      if ! cmp -s "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME" "$IMAGE_H3_UNIT"; then
+        cp "$CONFIG_DIR/pending/$IMAGE_H3_UNIT_NAME" "$H3_STAGE"
+        sudo install -m 644 "$H3_STAGE" "$IMAGE_H3_UNIT"
+        rm -f "$H3_STAGE"
+        sudo systemctl daemon-reload
+        echo "the update that waited for this Load is in place: $IMAGE_H3_UNIT_NAME"
+      fi
+      unit_pending_clear "$IMAGE_H3_UNIT"
+    fi
+  fi
   # Which text lane this box served, written down before it is disabled.
   for TEXT_UNIT_NAME in qwen38-sglang.service qwen38-flash.service; do
     if systemctl is-enabled --quiet "$TEXT_UNIT_NAME" 2>/dev/null; then

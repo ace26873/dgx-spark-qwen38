@@ -1013,7 +1013,7 @@ jobs:
           script = pathlib.Path("switch-model.sh").read_text()
           alw = pathlib.Path("dashboard/sudoers-cockpit.template").read_text()
           allowed = {m.strip() for m in re.findall(r"NOPASSWD:\s*(.+)$", alw, re.M)}
-          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
+          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
           units = {"qwen38-sglang.service", "qwen38-flash.service"}
           engines = units | {"qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                              "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
@@ -1046,6 +1046,8 @@ jobs:
               "FLL_STAGE": {"__HOME__/.config/qwen38/" + stage["FLL_STAGE"]},
               "ORN_STAGE": {"__HOME__/.config/qwen38/" + stage["ORN_STAGE"]},
               "FLU_STAGE": {"__HOME__/.config/qwen38/" + stage["FLU_STAGE"]},
+              "VID_STAGE": {"__HOME__/.config/qwen38/" + stage["VID_STAGE"]},
+              "H3_STAGE": {"__HOME__/.config/qwen38/" + stage["H3_STAGE"]},
           }
           seen, bad = 0, []
           for raw in script.splitlines():

@@ -322,5 +322,110 @@ class TheSwitchPutsALaneBesidesNewUnit(unittest.TestCase):
         puts = re.findall(r'sudo install -m 644 "\$(KOL|NEM|NSV|FLL|ORN|FLU|IMG)_STAGE" "\$([A-Z0-9_]+)"\n\s*unit_pending_clear "\$\2"', text)
         self.assertEqual(len(puts), 7, puts)
 
+
+class TheVideoAndImageH3SwitchAppliesTheWaitingUnit(unittest.TestCase):
+    """The video and MiniMax-H3-Image lanes' switch is the one place their Load can apply an update: their
+    --prepare builds the runtime only, and their switch never rewrote a unit (review of v1.52.0, 2026-11-19,
+    GLM 5.3: a waiting unit was never posed nor cleared, the card's Load left the lane on the old release and
+    said so forever). The block runs here against a pending folder of the test's own."""
+
+    @staticmethod
+    def block(unit_var, stage_var, lane):
+        text = (REPO / "switch-model.sh").read_text()
+        marker = "  # The update that waited for this Load (if any) goes in place now"
+        starts = [i for i in range(len(text)) if text.startswith(marker, i)]
+        start = starts[0 if lane == "video" else 1]
+        end = next(i for i in range(start + len(marker), len(text)) if text.startswith("  # Which", i))
+        return text[start:end], text, lane, unit_var, stage_var
+
+    def run_block(self, lane, unit_var, stage_var, pending_text="new unit\n", base=None, needs="", same=False):
+        d = pathlib.Path(tempfile.mkdtemp(prefix=f"switch-{lane}-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / f"qwen38-{lane}.service"
+        unit.write_text("old unit\n" if not same else pending_text)
+        pend = cfg / "pending" / f"qwen38-{lane}.service"
+        pend.write_text(pending_text)
+        (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text("image x\n")
+        if base is None:
+            import hashlib
+            base = hashlib.sha256(unit.read_bytes()).hexdigest()
+        (cfg / "pending" / f"qwen38-{lane}.service.base").write_text(base + "\n")
+        log = d / "log"
+        log.write_text("")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+{unit_var}="{unit}"; {unit_var}_NAME="qwen38-{lane}.service"
+{stage_var}="$CONFIG_DIR/qwen38-{lane}.service.switch-stage"
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ {f'echo "{needs}"' if needs else ':'}; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + self.block(unit_var, stage_var, lane)[0] + f'\necho "UNIT=$(cat "{unit}")"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, unit, pend, cfg, log
+
+    def test_the_waiting_unit_goes_in_place_and_the_wait_is_cleared(self):
+        for lane, unit_var, stage_var in (("video", "VIDEO_UNIT", "VID_STAGE"),
+                                          ("image-h3", "IMAGE_H3_UNIT", "H3_STAGE")):
+            with self.subTest(lane=lane):
+                r, unit, pend, cfg, log = self.run_block(lane, unit_var, stage_var)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("is in place", r.stdout)
+                self.assertEqual(unit.read_text(), "new unit\n")
+                self.assertIn(f'sudo install -m 644 {cfg}/qwen38-{lane}.service.switch-stage {unit}', log.read_text())
+                self.assertIn(f"clear {unit}", log.read_text())
+                self.assertFalse(pend.exists())
+                self.assertFalse((cfg / "pending" / f"qwen38-{lane}.service.needs").exists())
+                self.assertFalse((cfg / f"qwen38-{lane}.service.switch-stage").exists(), "the stage is left behind")
+
+    def test_a_wait_rendered_before_a_switch_is_dropped_not_put(self):
+        r, unit, pend, cfg, log = self.run_block("video", "VIDEO_UNIT", "VID_STAGE", base="0" * 64)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("was dropped", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_a_wait_that_still_lacks_stays_waiting(self):
+        r, unit, pend, cfg, log = self.run_block("image-h3", "IMAGE_H3_UNIT", "H3_STAGE", needs="path /hf/enc")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("still lacks path /hf/enc", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+
+    def test_an_unchanged_waiting_unit_is_cleared_without_install(self):
+        r, unit, pend, cfg, log = self.run_block("video", "VIDEO_UNIT", "VID_STAGE", same=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_each_branch_fetches_what_the_waiting_unit_reads(self):
+        # the fetch target (the model, its variant) is read from the pending unit when one waits, so the
+        # checkpoint the Load downloads is the one the waiting unit names
+        text = (REPO / "switch-model.sh").read_text()
+        for lane, src, unit_var in (("video", "VID_SRC", "VIDEO_UNIT"), ("image-h3", "H3_SRC", "IMAGE_H3_UNIT")):
+            with self.subTest(lane=lane):
+                self.assertIn(f'{src}="$CONFIG_DIR/pending/${unit_var}_NAME"', text)
+                for flag in ("--model-path", "--model-variant") if lane == "video" else ("--model-path",):
+                    self.assertIn(f"grep -oE -- '{flag} [^ ]+' \"${src}\"", text)
+
+    def test_their_staging_paths_have_their_sudoers_lines(self):
+        sudoers = (REPO / "dashboard" / "sudoers-cockpit.template").read_text()
+        ci = (REPO / ".github/workflows/ci.yml").read_text()
+        for lane in ("video", "image-h3"):
+            with self.subTest(lane=lane):
+                unit = f"qwen38-{lane}.service"
+                self.assertIn(f"/usr/bin/install -m 644 __HOME__/.config/qwen38/{unit}.switch-stage /etc/systemd/system/{unit}", sudoers)
+                stage = "VID_STAGE" if lane == "video" else "H3_STAGE"
+                self.assertRegex((REPO / "switch-model.sh").read_text(), rf'(?m)^{stage}="\$CONFIG_DIR/{unit}\.switch-stage"$')
+                gate = next(ln for ln in ci.splitlines() if "stage = dict(re.findall" in ln)
+                self.assertIn(stage, gate, "the CI gate's stage regex knows it")
+                self.assertIn(f'"{stage}": {{"__HOME__/.config/qwen38/" + stage["{stage}"]}},', ci)
+
+
 if __name__ == "__main__":
     unittest.main()
