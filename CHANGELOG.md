@@ -67,6 +67,18 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
 
 **The two latent defects of the v1.53.1 review (2026-11-19, GLM 5.3), fixed with tests.** `patch_waiting_checkpoint` treated every unit other than the 27B's as the flash lane; the `apply_pending` API accepts only `PENDING_UNITS`, so a unit outside them is nothing to patch and the guard now returns before any bash runs (`dashboard/cockpit.py`). And the transcribe, lfm25 and lfm3 switches had no else branch like Kolibri's and Nemotron's: when the unit the switch renders equals the one in place (a pin moved back between two versions before the Load), a wait for the lane was not cleared and its card kept saying an update waited for its Load until the next `./install.sh`; each of the three now clears the wait in that case (`switch-model.sh`). Each fix's new test fails on the code before (`dashboard/tests/test_cockpit_apply_pending.py`, `tests/test_switch_unchanged_unit.py`).
 
+**The Traffic view says what the proxy never saw.** The Requests table and its badge read the keepalive proxy's
+journal alone, while the Running/Waiting counters come from the engine itself, so a client that talks to the engine on
+:30000 directly (a `vllm bench serve`) raised the counters while the table kept saying no request had gone through
+the proxy and the badge stayed dark. Now, when the engine counts requests in flight that the proxy did not relay,
+the empty table says "N requests are running on the engine, sent to :30000 directly, not through the proxy: their
+details are not in this table", the badge follows the engine's count and its tooltip names the source (engine on
+:30000, proxy on :30001), and with rows present a note under the Requests header says how many went direct. An engine
+that has not answered counts nothing. The NVIDIA Nemotron Transcribe lane's in-flight requests are now read on its
+own port while it serves (llama.cpp's `/metrics`, `requests_processing` and `requests_deferred`, with the box's key
+in the header, read by the cockpit server and never sent to the browser; the payload carries the counts and the port
+only) and shown beside the table with their port, counted in the badge.
+
 ## v1.53.1 (2026-11-19): what the blind reviews of v1.52.0 left, rare in normal use
 
 Written on v1.52.0 as v1.52.1, recalibrated on v1.53.0 and shipped as v1.53.1.

@@ -68,7 +68,7 @@ checkpoint or chat template to run.
 
 ![The Traffic view: the running, waiting and KV counters, the requests the keepalive proxy relayed with client, route, size, duration and outcome, and the abandoned-request guard](img/cockpit-traffic.png)
 
-*Traffic: both sides of the wire. The feed is what the proxy relayed; the guard is whether any client walked away from an answer the engine is still generating.*
+*Traffic: both sides of the wire. The feed is what the proxy relayed; the guard is whether any client walked away from an answer the engine is still generating. The Running and Waiting counters come from the engine itself, and when it counts requests in flight that the proxy did not relay (a client that talks to :30000 directly, a bench), the view says so in place of the empty table's message, the badge follows the engine's count and names where it was read, and with rows present a note says how many of the engine's in-flight requests went direct. The NVIDIA Nemotron Transcribe lane's in-flight requests are read on its own port (llama.cpp's `/metrics`, with the box's key in the header, read by the cockpit and never sent to the browser) and shown beside the table, with their port, while the lane serves.*
 
 ![The Video view with the 27B lane holding the box: the button that loads MiniMax-H3, then the mode, examples, prompt, length, size and speed of a call, beside where the video appears](img/cockpit-video.png)
 
@@ -145,6 +145,13 @@ themes.
   of the **running** proxy from its startup banner; and whether the engine accepts the
   proxy's request id at all, because without that an abandoned answer can only be
   drained. See the v1.8.4 and v1.8.5 changelog entries.
+- **Requests the proxy never saw, said as such.** The Requests table is the proxy's
+  journal alone, so a bench or a script on :30000 directly counted in Running/Waiting
+  but appeared nowhere in the table. The badge now follows the engine's count, its
+  tooltip names the source (engine on :30000, proxy on :30001, Transcribe lane on its
+  own port), and the view says "N requests are running on the engine, sent to :30000
+  directly" instead of claiming no traffic. An engine that has not answered counts
+  nothing.
 - **Jobs.** Every action above, the opencode fit and the diagnostics bundle run
   as supervised one-at-a-time jobs with live output, instead of commands you
   type blind into a terminal. Benchmarks are not among them: `./bench.sh` and

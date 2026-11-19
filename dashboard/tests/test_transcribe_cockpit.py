@@ -42,22 +42,36 @@ def tearDownModule():
 
 
 class Health(http.server.BaseHTTPRequestHandler):
-    """llama-server's /health on the lane's own port: 200 once its model is loaded, 503 before."""
+    """llama-server's /health on the lane's own port: 200 once its model is loaded, 503 before.
+    Its /metrics too, answered only with the counts the cockpit asks for, and the Authorization
+    header of every ask recorded, to prove the key goes in the header and never comes back."""
     asked: list = []
+    auth: list = []
     loaded = True
+    metrics: str | None = None
 
     def log_message(self, *a):
         pass
 
-    def do_GET(self):
-        Health.asked.append(self.path)
-        code = 200 if self.path == "/health" and Health.loaded else 503
-        out = b'{"status":"ok"}' if code == 200 else b'{"error":{"code":503,"message":"Loading model"}}'
+    def _send(self, code, out):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(out)))
         self.end_headers()
         self.wfile.write(out)
+
+    def do_GET(self):
+        Health.asked.append(self.path)
+        if self.path == "/metrics":
+            Health.auth.append(self.headers.get("Authorization"))
+            if Health.metrics is None:
+                self._send(503, b'{"error":{"code":503,"message":"Loading model"}}')
+            else:
+                self._send(200, Health.metrics.encode())
+            return
+        code = 200 if self.path == "/health" and Health.loaded else 503
+        out = b'{"status":"ok"}' if code == 200 else b'{"error":{"code":503,"message":"Loading model"}}'
+        self._send(code, out)
 
 
 class Base(unittest.TestCase):
@@ -108,6 +122,8 @@ class Base(unittest.TestCase):
         self.ck.run = self.real_run
         self.ck.UNIT_TARGET_CACHE.clear()
         Health.asked[:] = []
+        Health.auth[:] = []
+        Health.metrics = None
         Health.loaded = True
 
     def whole(self):
@@ -162,6 +178,62 @@ class ItsState(Base):
         # one engine at a time: a start of it is held while another lane serves, and the other way round
         self.assertTrue(lc.blocked_reasons("unit", {"unit": U, "verb": "start"}, {"qwen38-sglang.service": "ready"}))
         self.assertTrue(lc.blocked_reasons("unit", {"unit": "qwen38-sglang.service", "verb": "start"}, {U: "ready"}))
+
+
+class ItsInFlightRequestsAreReadOnItsOwnPort(Base):
+    """The Traffic view cannot show the lane's requests: the proxy never relays its port, and the
+    text-port collectors look at :30000. The cockpit reads the lane's own /metrics while it serves,
+    with the box's key in the header, and sends the page the counts and the port only (review
+    2026-11-19)."""
+
+    METRICS = ("# HELP llamacpp:requests_processing Number of requests currently being processed\n"
+               "# TYPE llamacpp:requests_processing gauge\n"
+               "llamacpp:requests_processing 3\n"
+               "# TYPE llamacpp:requests_deferred gauge\n"
+               "llamacpp:requests_deferred 2\n"
+               "llamacpp:tokens_predicted_total 12345.0\n")
+
+    def setUp(self):
+        super().setUp()
+        with self.ck.LIFE_LOCK:
+            self.ck.LIFE["states"] = {U: "ready"}
+        Health.metrics = self.METRICS
+
+    def tearDown(self):
+        with self.ck.LIFE_LOCK:
+            self.ck.LIFE["states"] = {}
+        Health.metrics = None
+        Health.auth[:] = []
+
+    def test_the_counts_and_the_port_go_out_and_the_key_stays_server_side(self):
+        out = self.ck.collect_transcribe()
+        self.assertEqual(out["serving"], True)
+        self.assertEqual(out["read"], True)
+        self.assertEqual((out["running"], out["waiting"]), (3, 2), out)
+        self.assertEqual(out["port"], self.lane.server_port)
+        self.assertEqual(Health.asked, ["/metrics"])
+        self.assertEqual(Health.auth, ["Bearer test-key"], "the key went in the header, read here")
+        self.assertNotIn("test-key", json.dumps(out), "and never came back to the page")
+
+    def test_while_it_does_not_serve_it_is_not_asked(self):
+        with self.ck.LIFE_LOCK:
+            self.ck.LIFE["states"] = {}
+        out = self.ck.collect_transcribe()
+        self.assertEqual(out, {"node_id": "local", "serving": False})
+        self.assertEqual(Health.asked, [])
+
+    def test_a_read_that_failed_is_said_and_no_count_is_invented(self):
+        Health.metrics = None          # 503, as while its model loads
+        out = self.ck.collect_transcribe()
+        self.assertEqual(out["serving"], True)
+        self.assertEqual(out["read"], False)
+        # under "why", not "error": an "error" key makes the page treat the whole source as
+        # failed and skip its handler (apply() throws on it)
+        self.assertEqual(out["why"], "HTTP 503")
+        self.assertNotIn("error", out)
+        self.assertNotIn("running", out)
+        self.assertNotIn("waiting", out)
+        self.assertNotIn("test-key", json.dumps(out))
 
 
 class ItsUnit(Base):

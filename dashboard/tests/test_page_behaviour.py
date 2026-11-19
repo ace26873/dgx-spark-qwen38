@@ -1957,6 +1957,98 @@ class TheTrafficBadgeCountsEveryRequestInFlight(unittest.TestCase):
         self.assertEqual((r["live"], r["rows"]), (2, 27), r)
 
 
+class TheEngineCountsWhatTheProxyDidNotRelay(unittest.TestCase):
+    """A client that talks to the engine on :30000 directly (a vllm bench serve) is counted by the
+    engine's load (tr-run/tr-wait, read every second) and never appears in the Requests table,
+    whose only source is the proxy's journal: the table kept saying \"No request has gone through
+    the proxy yet\" and the badge stayed dark while requests ran (review 2026-11-19)."""
+
+    SERVES = r"""
+    feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+    feed({engine_fast: {load: [{num_reqs: 12, num_waiting_reqs: 4, num_tokens: 1000, num_used_tokens: 10}]}});
+    """
+
+    def test_an_empty_table_says_the_requests_are_on_the_engine_directly(self):
+        r = run(self, self.SERVES + r"""
+        feed({feed: {rows: []}});
+        report({empty: txt('feed-empty'), badge: txt('bdg-traffic'), title: $('bdg-traffic').title,
+                run: txt('tr-run'), wait: txt('tr-wait')});
+        """)
+        self.assertEqual((r["run"], r["wait"]), ("8", "4"), r)
+        self.assertEqual(r["badge"], "12", "the badge follows the engine's count, not the empty table's")
+        self.assertIn("12 requests are running on the engine, sent to :30000 directly, not through the proxy", r["empty"])
+        self.assertIn("their details are not in this table", r["empty"])
+        self.assertIn("counted by the engine on :30000", r["title"])
+
+    def test_with_rows_present_the_note_says_how_many_went_direct(self):
+        r = run(self, self.SERVES + r"""
+        feed({feed: {rows: [{ts: '2026-11-19T21:00:00', peer: '127.0.0.1:50001', path: '/v1/chat/completions', bytes: 900,
+                             secs: null, age: 3.0, kind: 'live', outcome: 'in flight', detail: null}]}});
+        report({note: txt('feed-note'), shown: !$('feed-note').hidden, badge: txt('bdg-traffic')});
+        """)
+        self.assertEqual(r["badge"], "12", r)
+        self.assertTrue(r["shown"], r)
+        self.assertIn("11 of the 12 in flight on the engine were sent to :30000 directly, not through the proxy", r["note"])
+
+    def test_an_engine_that_said_nothing_keeps_the_old_message_and_a_dark_badge(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        feed({engine_fast: {load: null}});
+        feed({feed: {rows: []}});
+        report({empty: txt('feed-empty'), badge: txt('bdg-traffic'), note: txt('feed-note')});
+        """)
+        self.assertIn("No request has gone through the proxy yet", r["empty"])
+        self.assertEqual(r["badge"], "")
+        self.assertEqual(r["note"], "")
+
+
+class TheTranscribeLaneRequestsShowInTraffic(unittest.TestCase):
+    """The lane serves on its own port, which the proxy never relays: its in-flight requests are
+    read there by the cockpit (collect_transcribe: counts and port, the key server-side only) and
+    shown in Traffic while it serves (review 2026-11-19)."""
+
+    SERVES = r"""
+    const U = JSON.parse(JSON.stringify(UNITS));
+    U.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
+    U.units['qwen38-transcribe.service'] = {active: 'active', enabled: 'enabled'};
+    feed({config: CONFIG, units: U, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+    feed({engine_fast: {load: null}});
+    feed({feed: {rows: []}});
+    """
+
+    def test_its_running_and_waiting_are_shown_with_the_port_and_counted_in_the_badge(self):
+        r = run(self, self.SERVES + r"""
+        feed({transcribe: {serving: true, read: true, port: 30036, running: 2, waiting: 1}});
+        report({note: txt('feed-note'), shown: !$('feed-note').hidden, badge: txt('bdg-traffic'),
+                title: $('bdg-traffic').title, empty: txt('feed-empty')});
+        """)
+        self.assertEqual(r["badge"], "3", r)
+        self.assertTrue(r["shown"], r)
+        self.assertIn("2 running, 1 waiting", r["note"])
+        self.assertIn("own port :30036", r["note"])
+        self.assertIn("not through the proxy", r["note"])
+        self.assertIn("Transcribe lane, on :30036", r["title"])
+        self.assertIn("No request has gone through the proxy yet", r["empty"], "the table's own message stays true")
+
+    def test_a_failed_read_is_said_and_no_count_is_invented(self):
+        r = run(self, self.SERVES + r"""
+        feed({transcribe: {serving: true, read: false, port: 30036, why: 'HTTP 503'}});
+        report({note: txt('feed-note'), shown: !$('feed-note').hidden, badge: txt('bdg-traffic')});
+        """)
+        self.assertTrue(r["shown"], r)
+        self.assertIn("serves on :30036, but its counters did not answer (HTTP 503)", r["note"])
+        self.assertEqual(r["badge"], "")
+
+    def test_not_serving_nothing_is_shown(self):
+        r = run(self, self.SERVES + r"""
+        feed({transcribe: {serving: false}});
+        report({note: txt('feed-note'), shown: !$('feed-note').hidden, badge: txt('bdg-traffic')});
+        """)
+        self.assertFalse(r["shown"], r)
+        self.assertEqual(r["note"], "")
+        self.assertEqual(r["badge"], "")
+
+
 FLASH_REPO = "RadixArk/Qwen3.8-Flash-Next-NVFP4"
 FLASH_UNC_REPO = "dealignai/Qwen3.8-Flash-Next-ABLITERATED-NVFP4"
 
