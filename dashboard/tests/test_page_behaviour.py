@@ -413,6 +413,8 @@ class TheTranscribeLaneOnNow(unittest.TestCase):
     feed({config: CONFIG, units: U, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})}),
           api: api, engine_info: {served_target: 'transcribe', info: {served_model_name: ''}}});
     """
+    BOOT = SERVES.replace("eng('ready', {target: 'transcribe'})", "eng('loading-weights', {target: 'transcribe'})")
+    DEGRADED = SERVES.replace("eng('ready', {target: 'transcribe'})", "eng('degraded', {target: 'transcribe'})")
 
     def test_the_activity_panel_says_speech_to_text_and_where_it_listens(self):
         r = run(self, self.SERVES + r"""
@@ -461,6 +463,22 @@ class TheTranscribeLaneOnNow(unittest.TestCase):
         self.assertNotIn("30036", r["facts"])
         self.assertNotIn("Copy a transcribe test", r["labels"])
         self.assertIn("Copy a test", r["labels"])
+
+    def test_while_the_lane_boots_no_transcribe_test_is_offered(self):
+        """"Copy a transcribe test" was offered as soon as the lane was not stopped, so during its boot
+        the copied curl failed, connection refused on its port: it is offered only at ready or degraded,
+        like the capsule (second review of v1.53.0, 2026-11-19)."""
+        r = run(self, self.BOOT + r"""
+        report({facts: txt('api-facts'), labels: [...$('api-copy').querySelectorAll('button')].map(b => b.textContent)});
+        """)
+        self.assertNotIn("Copy a transcribe test", r["labels"])
+        self.assertNotIn("30036", r["facts"])
+
+    def test_at_degraded_the_transcribe_test_is_offered(self):
+        r = run(self, self.DEGRADED + r"""
+        report([...$('api-copy').querySelectorAll('button')].map(b => b.textContent));
+        """)
+        self.assertIn("Copy a transcribe test", r)
 
 
 

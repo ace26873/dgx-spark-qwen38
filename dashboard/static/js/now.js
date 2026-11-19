@@ -263,9 +263,9 @@ function renderApi(){
   // claude-local sets Claude Code up for the lane that serves (proxy, key, model, budgets: docs/clients.md); the test
   // reads the key from its file, on the box, and never shows it
   const testCmd = `curl -s ${base}/v1/chat/completions -H ${keyHeader} -H 'Content-Type: application/json' -d '{"model":"${m}","messages":[{"role":"user","content":"Say ok."}],"max_tokens":8}'`;
-  // the transcribe lane serves no text: while it serves, its own address is the one to give a client,
-  // and the proxy's rows say they do not reach it (review of v1.53.0, 2026-11-19)
-  const tr = transcribeServing() && d.transcribe && d.transcribe.installed ? d.transcribe : null;
+  // the transcribe lane serves no text: once it answers (ready or degraded, like the capsule), its own
+  // address is the one to give a client, and the proxy's rows say they do not reach it (review of v1.53.0, 2026-11-19)
+  const tr = transcribeReady() && d.transcribe && d.transcribe.installed ? d.transcribe : null;
   const rows = [
     ['OpenAI API', `${base}/v1`, 'wrap', `${base}/v1`, 'Copy the OpenAI API address'],
     ['Anthropic API', base, 'wrap', base, 'Copy the Anthropic API address'],

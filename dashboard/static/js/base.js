@@ -288,6 +288,9 @@ function textReady(){ const s = servingEngine(); return servingReady() && !!s &&
 const imageServing = () => { const s = servingEngine(); return !!s && isImageLane(s[0]); };
 const videoServing = () => { const s = servingEngine(); return !!s && s[0] === VIDEO_UNIT; };
 const transcribeServing = () => { const s = servingEngine(); return !!s && s[0] === TRANSCRIBE_UNIT; };
+// answering on its own port: only at ready or degraded, like the capsule of the Now view, so a copied
+// test is not offered while the lane boots and its curl would fail (review of v1.53.0, 2026-11-19)
+const transcribeReady = () => { const s = servingEngine(); return !!s && s[0] === TRANSCRIBE_UNIT && (s[1].state === 'ready' || s[1].state === 'degraded'); };
 function bootSeconds(unit){
   const b = ((engines()[unit] || {}).boots || []).slice().sort((a, c) => a - c), n = b.length;
   // the median: the middle boot, or the mean of the two middle ones for an even count
