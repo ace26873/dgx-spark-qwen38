@@ -37,25 +37,25 @@ PROC="${QWEN38_PREFLIGHT_PROC:-/proc}"
 STEP_S="${QWEN38_PREFLIGHT_STEP_S:-2}"
 SMI_TIMEOUT_S="${QWEN38_PREFLIGHT_SMI_TIMEOUT_S:-10}"
 # The llama.cpp lanes' containers, and the docker that says their ids (2026-11-12; every lane
-# of that engine since 2026-11-19, the transcribe lane's included): each lane the registry calls
-# llamacpp, its unit's name without ".service" (lane_registry.py, beside this script in the
-# repository, so a lane added there is covered here with no list to forget). The copy the units
-# run (in the box's config folder, the units' ExecStartPre) has no registry beside it: it reads the units'
-# directory, where each llama.cpp lane's unit runs the files' check (llamacpp-files.sh, the
-# marker the uninstall reads too, llamacpp-lane.sh) and names its container (--name).
+# of that engine since 2026-11-19, the transcribe lane's included): read in the units' directory,
+# where each llama.cpp lane's unit runs the files' check (llamacpp-files.sh, the marker the
+# uninstall reads too, llamacpp-lane.sh) and names its container (--name), so a lane added is
+# covered with no list to forget. QWEN38_PREFLIGHT_REGISTRY names lane_registry.py instead, for
+# the tests: each lane the registry calls llamacpp, its unit's name without ".service".
 # QWEN38_PREFLIGHT_LLAMACPP_CONTAINER overrides both with one container, for a test.
 llamacpp_containers(){
   local dir reg u out
   if [ -n "${QWEN38_PREFLIGHT_LLAMACPP_CONTAINER:-}" ]; then
     printf '%s\n' "$QWEN38_PREFLIGHT_LLAMACPP_CONTAINER"; return 0
   fi
-  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  reg="${QWEN38_PREFLIGHT_REGISTRY:-$dir/lane_registry.py}"
-  if [ -f "$reg" ] && command -v python3 >/dev/null 2>&1; then
+  # the registry only when a caller names it (the tests): the script looks for nothing beside itself, as the side
+  # lanes run it from a view of the config folder that shows it alone (tests/test_side_lanes_config_read_only.py)
+  reg="${QWEN38_PREFLIGHT_REGISTRY:-}"
+  if [ -n "$reg" ] && [ -f "$reg" ] && command -v python3 >/dev/null 2>&1; then
     out="$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1])
 import lane_registry as r
 print(" ".join(r.LANES[l]["unit"][:-len(".service")] for l in r.lanes(engine="llamacpp")))' \
-      "$(dirname "$reg")" 2>/dev/null)" && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+      "${reg%/*}" 2>/dev/null)" && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
   fi
   for u in $(grep -lsF 'llamacpp-files.sh' "${QWEN38_PREFLIGHT_UNITS_DIR:-/etc/systemd/system}"/qwen38-*.service 2>/dev/null); do
     grep -hoE -- '--name qwen38-[a-z0-9-]+' "$u" 2>/dev/null | awk '{print $2}'

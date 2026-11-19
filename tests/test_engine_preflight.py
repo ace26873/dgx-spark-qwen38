@@ -109,7 +109,9 @@ class Box:
                "QWEN38_PREFLIGHT_SMI": str(self.t / "smi"), "QWEN38_PREFLIGHT_PROC": str(self.proc),
                "QWEN38_PREFLIGHT_WAIT_S": str(wait_s), "QWEN38_PREFLIGHT_STEP_S": "1",
                "QWEN38_PREFLIGHT_SMI_TIMEOUT_S": str(smi_timeout_s),
-               "QWEN38_PREFLIGHT_DOCKER": str(self.t / "docker"), **(extra or {})}
+               "QWEN38_PREFLIGHT_DOCKER": str(self.t / "docker"),
+               # the repository's registry, named: the script looks for nothing beside itself
+               "QWEN38_PREFLIGHT_REGISTRY": str(REPO / "lane_registry.py"), **(extra or {})}
         t0 = time.monotonic()
         r = subprocess.run(["bash", str(GUARD), "qwen38-test.service"], capture_output=True, text=True,
                            env=env, timeout=120)
