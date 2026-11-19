@@ -1375,6 +1375,132 @@ def transcribe_engine_state(unit: str, *, active: str, sub: str, prev_state: str
     return st, boot, running
 
 
+# ── the Transcription tab's relay: one audio file to the lane, with the box's key ──────────────────
+# The browser never talks to the lane and never holds its key: it posts the file as a base64 data
+# URL to /api/transcribe, and this process relays it to /v1/audio/transcriptions on the lane's port
+# with the key read from the config file, as the engine lanes' own clients do (docs/transcribe-lane.md).
+# The lane reads WAV, MP3 and FLAC (llama.cpp b12316, tools/mtmd/mtmd-helper.cpp is_audio_file sniffs
+# RIFF/WAVE, ID3 or a MPEG sync word, fLaC, and decodes with miniaudio), so no conversion happens here:
+# the page records its microphone as WAV because a browser's MediaRecorder gives webm or ogg, which
+# the lane refuses. Its answer at that revision is {"type": "transcript.text.done", "text": ...,
+# "usage": ...} (server-task.cpp to_json_oaicompat_asr): no segments, no timestamps, and any
+# response_format but "json" is refused, so there is no .srt to download.
+# The cap is on the DECODED file and on the body before it is read: 64 MB of audio, which at the
+# 32 kB/s the page records (WAV, 16 kHz, mono, 16 bits) is 33 minutes, and this process runs on the
+# unified memory it shares with the lane, so a bigger body is refused before it is buffered (the same
+# reason the other routes cap theirs: 256 MiB sent to one route took this process from 22 to 281 MiB,
+# 2026-09-24). Past it, cut or convert the file first (ffmpeg -i meeting.m4a -ar 16000 -ac 1 meeting.wav).
+TRANSCRIBE_MAX_AUDIO = 64 * 1024 * 1024
+# base64 of that plus the fields: 4/3 of 64 MiB is about 85.4 MB, the cap leaves room for them
+TRANSCRIBE_MAX_POST = 90 * 1024 * 1024
+# The lane serves one transcription at a time (its unit passes no -np, docs/transcribe-lane.md), and
+# two at once are what the image lane's lock refuses: same shape here.
+TRANSCRIBE_LOCK = threading.Lock()
+# 33 minutes of audio transcribed at the measured real time factor 0.096 takes about 3.5 min; the
+# timeout is the image lane's, with room to spare.
+TRANSCRIBE_TIMEOUT = 1800.0
+# The language is a two or three letter code, or empty for the auto detect: llama-server puts it in
+# its prompt as "(language: %s)" (server-chat.cpp convert_transcriptions_to_chatcmpl), so anything
+# else is refused here rather than sent as a prompt.
+TRANSCRIBE_LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
+
+
+def transcribe_status() -> dict:
+    """What the Transcription tab's lane card reads: the lane's own facts, as the Lanes view's card."""
+    out = {"unit": TRANSCRIBE_UNIT, "installed": TRANSCRIBE_UNIT_PATH.exists(),
+           "port": transcribe_port(), "host": transcribe_flag("--host", "127.0.0.1"),
+           "state": "not installed", "available": False}
+    if not out["installed"]:
+        return out
+    with LIFE_LOCK:
+        states = dict(LIFE.get("states", {}))
+    out["state"] = states.get(TRANSCRIBE_UNIT) or "unknown"
+    out["available"] = out["state"] in ("ready", "degraded")
+    return out
+
+
+def _transcribe_filename(name) -> str:
+    """The browser's file name for the multipart's Content-Disposition: a name with a quote or a
+    newline would break that header, so it is reduced to plain characters here."""
+    if not isinstance(name, str):
+        return "audio.wav"
+    clean = re.sub(r"[^A-Za-z0-9._-]", "_", name)[-100:].strip("._")
+    return clean or "audio.wav"
+
+
+def transcribe_call(payload: dict) -> tuple[int, dict]:
+    """One transcription, relayed to the lane on its port with the box's key. This process is the
+    gate: the route checked the session and the CSRF token before the body was read, and the body's
+    cap was checked before that."""
+    ref = payload.get("audio")
+    if not isinstance(ref, str) or not ref.startswith("data:audio/"):
+        return 400, {"error": "audio must be a data URL of an audio file (data:audio/...;base64,...)"}
+    head, _, b64 = ref.partition(",")
+    if ";base64" not in head or not b64:
+        return 400, {"error": "the audio data URL must carry base64 after its comma"}
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except Exception:                               # noqa: BLE001
+        return 400, {"error": "the audio data URL is not valid base64"}
+    if not raw:
+        return 400, {"error": "the audio file is empty"}
+    if len(raw) > TRANSCRIBE_MAX_AUDIO:
+        return 400, {"error": f"the audio file is {len(raw)} bytes ({len(raw) / 1e6:.1f} MB) and the cap is "
+                              f"{TRANSCRIBE_MAX_AUDIO} bytes ({TRANSCRIBE_MAX_AUDIO / 1e6:.0f} MB, about 33 minutes "
+                              "at the 16 kHz mono the page records); cut it or convert it first, "
+                              "the lane reads wav, mp3 and flac"}
+    language = payload.get("language", "")
+    if language is None:
+        language = ""
+    if not isinstance(language, str) or (language and not TRANSCRIBE_LANGUAGE_RE.fullmatch(language)):
+        return 400, {"error": "language is a two or three letter code (fr, en, ...), or empty to detect it"}
+    mime = head[len("data:"):].split(";", 1)[0] or "audio/wav"
+    filename = _transcribe_filename(payload.get("filename"))
+    # Only these fields reach the lane: response_format json is the only one it accepts at b12316
+    # (anything else is refused by its own server), and the browser chooses nothing else.
+    fields = {"response_format": "json"}
+    if language:
+        fields["language"] = language
+    boundary = "----cockpit" + secrets.token_hex(16)
+    out = bytearray()
+    for k, v in fields.items():
+        out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").encode()
+    out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: {mime}\r\n\r\n").encode()
+    out += raw + b"\r\n"
+    out += f"--{boundary}--\r\n".encode()
+    body = bytes(out)
+    # The key goes in this header only: never in the URL (it would land in logs), never in a form
+    # field (the test asserts it is in neither).
+    key = api_key()
+    req = urllib.request.Request(transcribe_base() + "/v1/audio/transcriptions", body,
+                                 {"Content-Type": f"multipart/form-data; boundary={boundary}",
+                                  "Authorization": f"Bearer {key}"})
+    if not TRANSCRIBE_LOCK.acquire(blocking=False):
+        return 409, {"error": "this lane transcribes one file at a time, and one is already running. "
+                              "Wait for it to finish."}
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=TRANSCRIBE_TIMEOUT) as r:
+            answer = json.loads(r.read().decode())
+        return 200, {"text": answer.get("text", ""), "usage": answer.get("usage"),
+                     "seconds": round(time.time() - t0, 2)}
+    except urllib.error.HTTPError as e:
+        raw_err = e.read()
+        try:
+            detail = json.loads(raw_err.decode())
+        except Exception:                           # noqa: BLE001
+            detail = raw_err[:400].decode("utf-8", "replace")
+        return e.code, {"refused": detail, "seconds": round(time.time() - t0, 2)}
+    except Exception as e:                          # noqa: BLE001 (isolated route)
+        return 502, {"error": f"the transcribe lane did not answer ({type(e).__name__}). Load NVIDIA "
+                              f"Nemotron Transcribe from the Lanes view to start it (or "
+                              f"./switch-model.sh transcribe)",
+                     "seconds": round(time.time() - t0, 2)}
+    finally:
+        TRANSCRIBE_LOCK.release()
+
+
 def llamacpp_engine_info(models: list | None = None):
     """The engine panel's facts for a llama.cpp lane, in the names SGLang's /server_info gives them: what it serves and
     the window of a request (/v1/models, /props), its version (/props build_info, as engines.py's reports has it), the
@@ -7814,6 +7940,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(image_status())
         if path == "/api/video":
             return self.send_json(video_status())
+        if path == "/api/transcribe":
+            return self.send_json(transcribe_status())
         if path == "/api/video/content":
             vid = urllib.parse.parse_qs(query).get("id", [""])[0].strip()
             code, body, ctype = video_content(vid)
@@ -7846,7 +7974,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # is a key in a JSON object.
         raised = path in ("/api/image/edit", "/api/image/generate")
         video = path == "/api/video/generate"
-        cap = IMAGE_MAX_POST if raised else VIDEO_MAX_POST if video else 4096 if path == "/api/login" else 65536
+        transcribe = path == "/api/transcribe"
+        cap = IMAGE_MAX_POST if raised else VIDEO_MAX_POST if video else TRANSCRIBE_MAX_POST if transcribe else 4096 if path == "/api/login" else 65536
         if length > cap:
             self.close_connection = True
             self.send_json({"error": "body too large"}, 413)
@@ -7945,6 +8074,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(out, code)
         if path == "/api/video/generate":
             code, out = video_call(payload)
+            return self.send_json(out, code)
+        if path == "/api/transcribe":
+            code, out = transcribe_call(payload)
             return self.send_json(out, code)
         return self.send_json({"error": "not found"}, 404)
 

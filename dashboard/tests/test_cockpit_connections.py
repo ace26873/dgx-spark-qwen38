@@ -237,7 +237,7 @@ class NoBodyIsReadBeforeTheSession(Base):
         port = self.serve(self.cp.Server, type("LongHandler", (self.cp.Handler,), {"timeout": 30}))
         for path, length in (("/api/action", 60000), ("/api/csrf", 60000), ("/api/systemone", 60000),
                              ("/nowhere", 60000), ("/api/image/generate", 30_000_000),
-                             ("/api/image/edit", 30_000_000)):
+                             ("/api/image/edit", 30_000_000), ("/api/transcribe", 30_000_000)):
             s = socket.create_connection(("127.0.0.1", port), timeout=3)
             self.addCleanup(s.close)
             s.sendall(f"POST {path} HTTP/1.1\r\nHost: x\r\nContent-Length: {length}\r\n\r\n".encode())

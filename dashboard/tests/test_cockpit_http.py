@@ -19,6 +19,7 @@ What is asserted, in the order an attacker would try it:
     is a plain list of arguments with no shell anywhere near it
   * one job at a time, and the audit log records the exact argv
 """
+import base64
 import http.client
 import importlib.util
 import json
@@ -221,7 +222,7 @@ class Unauthenticated(Base):
         self.assertEqual(before, self.PUBLIC_GET)
         before, _ = self.routes("do_POST", "serve_static")
         self.assertEqual(before - {"/api/image/edit", "/api/image/generate",
-                                   "/api/video/generate"}, self.PUBLIC_POST)
+                                   "/api/video/generate", "/api/transcribe"}, self.PUBLIC_POST)
 
     def test_every_route_behind_the_session_check_refuses_without_one(self):
         _, get = self.routes("do_GET", "do_POST")
@@ -1267,6 +1268,198 @@ class SystemOneRoute(Base):
             self.cp.SYSTEMONE_CACHE.update(data=None, ts=0.0)
         self.assertTrue(out["available"])
         self.assertEqual(out["reason"], "")
+
+
+class _LaneAnswer:
+    """What urllib.request.urlopen returns, with the context manager image_call and
+    transcribe_call use around it."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class FakeLane:
+    """Stands in for urllib.request.urlopen in front of the transcribe lane: records the
+    request, answers like llama-server does ({"type": "transcript.text.done", "text": ...})."""
+
+    def __init__(self, answer=None, error=None):
+        self.seen = []
+        self.answer = {"type": "transcript.text.done", "text": "bonjour le monde",
+                       "usage": {"type": "tokens", "input_tokens": 40, "output_tokens": 3, "total_tokens": 43}} \
+            if answer is None else answer
+        self.error = error
+
+    def __call__(self, req, timeout=None):
+        self.seen.append(req)
+        if self.error is not None:
+            raise self.error
+        return _LaneAnswer(json.dumps(self.answer).encode())
+
+
+class TheTranscribeRelay(Base):
+    """The Transcription tab is a browser sending one audio file to the NVIDIA Nemotron
+    Transcribe lane on its own port. The route relays it with the box's key read here, so the
+    key never reaches the page, and bounds the file before it is read."""
+
+    # a small RIFF/WAVE header plus samples: the lane sniffs the magic bytes, not the size
+    AUDIO = ("data:audio/wav;base64,"
+             + base64.b64encode(b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\x10" * 16 + b"data" + b"\x01\x02" * 32).decode())
+
+    def declared_only(self, path, length):
+        """The status a POST gets for its declared length alone: its body never comes."""
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+        try:
+            s.sendall(f"POST {path} HTTP/1.1\r\nHost: x\r\nContent-Length: {length}\r\n\r\n".encode())
+            head = s.recv(4096)
+        except socket.timeout:
+            head = b""
+        finally:
+            s.close()
+        return int(head.split()[1]) if head.startswith(b"HTTP/1.1 ") else None
+
+    def with_lane(self, lane):
+        real = self.cp.urllib.request.urlopen
+        self.cp.urllib.request.urlopen = lane
+        self.addCleanup(setattr, self.cp.urllib.request, "urlopen", real)
+
+    def post_tr(self, body, cookie):
+        body = dict(body)
+        body["csrf"] = self.csrf(cookie)
+        return self.req("POST", "/api/transcribe", body, cookie=cookie)
+
+    def test_the_status_route_reports_the_lane_for_the_tab(self):
+        st, _, _ = self.req("GET", "/api/transcribe")
+        self.assertEqual(st, 401)
+        # no unit file of its own in this tmp: the box the tests run on has one
+        saved = self.cp.TRANSCRIBE_UNIT_PATH
+        self.cp.TRANSCRIBE_UNIT_PATH = self.tmp / "no-such-unit.service"
+        self.addCleanup(setattr, self.cp, "TRANSCRIBE_UNIT_PATH", saved)
+        cookie = self.login()
+        st, _, data = self.req("GET", "/api/transcribe", cookie=cookie)
+        self.assertEqual(st, 200)
+        out = json.loads(data)
+        self.assertEqual(out["unit"], "qwen38-transcribe.service")
+        self.assertEqual(out["port"], 30036)          # no unit file: the fallback
+        self.assertFalse(out["installed"])
+        self.assertFalse(out["available"])
+
+    def test_the_post_needs_a_session_and_a_csrf_token(self):
+        st, _, _ = self.req("POST", "/api/transcribe", {"audio": self.AUDIO})
+        self.assertEqual(st, 401, "an audio file was accepted with no session")
+        cookie = self.login()
+        st, _, body = self.req("POST", "/api/transcribe", {"audio": self.AUDIO}, cookie=cookie)
+        self.assertEqual((st, json.loads(body)), (403, {"error": "csrf"}))
+
+    def test_the_cap_is_refused_before_the_body_is_read(self):
+        # declared alone, no session: the cap is checked before the auth and before any read
+        self.assertEqual(self.declared_only("/api/transcribe", self.cp.TRANSCRIBE_MAX_POST + 1), 413)
+        self.assertEqual(self.declared_only("/api/transcribe", 30_000_000), 401)
+        self.assertEqual(self.declared_only("/api/action", self.cp.TRANSCRIBE_MAX_POST + 1), 413,
+                         "the transcribe cap leaked onto the other routes")
+
+    def test_bad_payloads_are_refused_before_the_lane_is_called(self):
+        cookie = self.login()
+        lane = FakeLane()
+        self.with_lane(lane)
+        cases = [
+            ({}, "no audio"),
+            ({"audio": "RIFF...."}, "not a data URL"),
+            ({"audio": "data:audio/wav;base64,"}, "empty base64"),
+            ({"audio": "data:audio/wav;base64,!!!not base64!!!"}, "invalid base64"),
+            ({"audio": "data:audio/wav;base64," + base64.b64encode(b"").decode()}, "empty file"),
+            ({"audio": self.AUDIO, "language": "fr; rm -rf /"}, "language as a prompt injection"),
+            ({"audio": self.AUDIO, "language": 5}, "language not a string"),
+        ]
+        for body, why in cases:
+            st, _, data = self.post_tr(body, cookie)
+            self.assertEqual(st, 400, f"{why} was forwarded: {data}")
+        self.assertEqual(lane.seen, [], "a refused payload reached the lane")
+        # a language of two or three lowercase letters is what llama-server puts in its prompt
+        st, _, _ = self.post_tr({"audio": self.AUDIO, "language": "fr"}, cookie)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(lane.seen), 1)
+        # empty language is the auto detect
+        st, _, _ = self.post_tr({"audio": self.AUDIO, "language": ""}, cookie)
+        self.assertEqual(st, 200)
+        self.assertEqual(len(lane.seen), 2)
+
+    def test_the_audio_cap_is_the_decoded_size_with_the_number(self):
+        cookie = self.login()
+        lane = FakeLane()
+        self.with_lane(lane)
+        saved = self.cp.TRANSCRIBE_MAX_AUDIO
+        self.cp.TRANSCRIBE_MAX_AUDIO = 1024
+        self.addCleanup(setattr, self.cp, "TRANSCRIBE_MAX_AUDIO", saved)
+        big = "data:audio/wav;base64," + base64.b64encode(b"\x00" * 2048).decode()
+        st, _, data = self.post_tr({"audio": big}, cookie)
+        self.assertEqual(st, 400)
+        self.assertIn("1024", json.loads(data)["error"])
+        self.assertEqual(lane.seen, [])
+
+    def test_the_call_reaches_the_lane_with_the_box_key_and_the_file(self):
+        cookie = self.login()
+        lane = FakeLane()
+        self.with_lane(lane)
+        st, _, data = self.post_tr({"audio": self.AUDIO, "language": "fr", "filename": "meeting.wav"}, cookie)
+        self.assertEqual(st, 200, data[:300])
+        out = json.loads(data)
+        self.assertEqual(out["text"], "bonjour le monde")
+        self.assertEqual(out["usage"]["total_tokens"], 43)
+        self.assertNotIn(API_KEY, data.decode(), "the box key came back to the browser")
+        req = lane.seen[0]
+        self.assertEqual(req.full_url, CLOSED + "/v1/audio/transcriptions")
+        self.assertEqual(req.headers.get("Authorization"), "Bearer " + API_KEY)
+        body = req.data
+        self.assertIn(b'name="file"; filename="meeting.wav"', body)
+        self.assertIn(b"RIFF", body)                                   # the audio bytes themselves
+        self.assertIn(b'name="language"\r\n\r\nfr\r\n', body)
+        self.assertIn(b'name="response_format"\r\n\r\njson\r\n', body)
+        self.assertNotIn(API_KEY.encode(), body)                       # the key is a header, not a field
+        # a hostile file name is reduced to plain characters, not refused and not passed through
+        st, _, _ = self.post_tr({"audio": self.AUDIO, "filename": 'x"; evil\r\nX: y.wav'}, cookie)
+        self.assertEqual(st, 200)
+        line = lane.seen[-1].data.split(b'name="file"', 1)[1].split(b"\r\n", 1)[0]
+        self.assertEqual(line, b'; filename="x___evil__X__y.wav"')
+
+    def test_a_lane_refusal_is_passed_on_as_it_is(self):
+        cookie = self.login()
+        self.with_lane(FakeLane(error=self.cp.urllib.error.HTTPError(
+            CLOSED + "/v1/audio/transcriptions", 400, "x", {},
+            __import__("io").BytesIO(b'{"detail": "Unable to read WAV audio file from buffer"}'))))
+        st, _, data = self.post_tr({"audio": self.AUDIO}, cookie)
+        self.assertEqual(st, 400)
+        self.assertIn("WAV", json.loads(data)["refused"]["detail"])
+
+    def test_a_lane_that_does_not_answer_says_how_to_start_it(self):
+        cookie = self.login()
+        self.with_lane(FakeLane(error=OSError("connection refused")))
+        st, _, data = self.post_tr({"audio": self.AUDIO}, cookie)
+        self.assertEqual(st, 502)
+        out = json.loads(data)
+        self.assertIn("Load", out["error"])
+        self.assertIn("transcribe", out["error"])
+        self.assertNotIn(API_KEY, json.dumps(out))
+
+    def test_one_transcription_at_a_time(self):
+        cookie = self.login()
+        lane = FakeLane()
+        self.with_lane(lane)
+        self.cp.TRANSCRIBE_LOCK.acquire()
+        try:
+            st, _, data = self.post_tr({"audio": self.AUDIO}, cookie)
+        finally:
+            self.cp.TRANSCRIBE_LOCK.release()
+        self.assertEqual(st, 409)
+        self.assertEqual(lane.seen, [])
 
 
 if __name__ == "__main__":
