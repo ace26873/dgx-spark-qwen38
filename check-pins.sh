@@ -84,8 +84,9 @@ eval "$uline"
 # (PATH=SHA256:SIZE); its image is the Unsloth GGUF lane's, by the same digest, checked below.
 tline="$(grep -E '^TRANSCRIBE_(REPO|REV|FILE|MMPROJ)=' "$REPO_DIR/install-transcribe.sh")"
 eval "$tline"
-# The Liquid AI LFM2.5 24B-A2B lane's: Liquid AI's FP8 and its DSpark draft (its image is the 27B lane's, checked above).
-lline="$(grep -E '^LFM25_(REPO|REV|DRAFT_REPO|DRAFT_REV)=' "$REPO_DIR/install-lfm25.sh")"
+# The Liquid AI LFM2.5 24B-A2B lane's: Liquid AI's FP8 and its DSpark draft (its image is the 27B lane's,
+# tied to it in the Images section).
+lline="$(grep -E '^LFM25_(REPO|REV|DRAFT_REPO|DRAFT_REV|IMAGE)=' "$REPO_DIR/install-lfm25.sh")"
 eval "$lline"
 # The Liquid AI LFM3 lane's: Liquid AI's NVFP4 and vLLM's nightly image, pulled as published.
 l3line="$(grep -E '^LFM3_(REPO|REV|IMAGE)=' "$REPO_DIR/install-lfm3.sh")"
@@ -243,6 +244,16 @@ check_image() {  # $1 label, $2 image reference (name@sha256:... or name:tag): i
     "not json") printf '  \033[0;31mFAIL\033[0m  %-14s %s (the registry answered something that is not JSON, so not checked)\n' "$1" "$2"; unasked ;;
     *) printf '  \033[0;31mFAIL\033[0m  %-14s %s (no linux/arm64 image: %s, and the box is aarch64)\n' "$1" "$2" "$what"; failed ;;
   esac
+}
+
+check_same_image() {  # $1 label, $2 the lane's image, $3 the image it is pinned to share
+  case "$1" in *"$FILTER"*) ;; *) return 0 ;; esac
+  CHECKED=$((CHECKED + 1))
+  if [ "$2" != "$3" ]; then
+    printf '  \033[0;31mFAIL\033[0m  %-14s %s is not the image it shares by design (%s)\n' "$1" "$2" "$3"; failed
+  else
+    printf '  \033[0;32mok\033[0m    %-14s %s (the same image as %s)\n' "$1" "$2" "$3"
+  fi
 }
 
 check_commit() {  # $1 label, $2 owner/repo on GitHub, $3 commit: install-image.sh fetches it by id
@@ -494,6 +505,11 @@ echo "Images"
 img="$(grep -E '^(IMAGE|FLASH_IMAGE)=' "$REPO_DIR/install.sh")"
 eval "$img"
 check_image 27b-base       "$IMAGE"
+# The Liquid AI LFM2.5 lane serves in the 27B lane's image, the same digest on purpose
+# (docs/lfm25-lane.md): a release that moved install.sh's IMAGE and left LFM25_IMAGE behind put
+# the lane on another SGLang than the text lanes', and nothing tied the two (found in review,
+# 2026-11-19).
+check_same_image lfm25-image "$LFM25_IMAGE" "$IMAGE"
 check_image flash-base     "$FLASH_IMAGE"
 check_image kolibri-base   "$KOLIBRI_BASE_IMAGE"
 check_image nemotron-base  "$NEMOTRON_BASE_IMAGE"

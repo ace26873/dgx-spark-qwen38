@@ -580,7 +580,7 @@ class TheEndpointsThatDoNotAnswer(PinsBase):
         for label in self.GITHUB:
             self.assertIn("HTTP 504 from the GitHub API, so not checked", self.line(out, label), out)
             self.assertNotIn("no such", self.line(out, label), out)
-        self.assertIn("9 of 66 pins could not be asked about", out)
+        self.assertIn("9 of 67 pins could not be asked about", out)
         self.assertIn("run it again before re-pinning anything", out)
         self.assertNotIn("A removed upstream revision", out)
 
@@ -664,6 +664,52 @@ class ThePinWatch(unittest.TestCase):
         r, out, slept, asked = self.step(fails=0)
         self.assertEqual(out.strip(), "rc=0")
         self.assertEqual((slept, asked), ([], "1"))
+
+
+class TheLFM25ImageIsThe27BLanes(PinsBase):
+    """check-pins.sh's own comment said the LFM2.5 lane's image is "the 27B lane's, checked
+    above", but nothing tied LFM25_IMAGE to install.sh's IMAGE: a release that moved one and
+    left the other put the lane on another SGLang than the text lanes serve, unseen (found in
+    review, 2026-11-19). docs/lfm25-lane.md says the sharing is the design, so the check
+    refuses the divergence instead of asking the registry twice."""
+
+    def test_the_full_run_says_the_two_images_are_one(self):
+        rc, out = self.run_pins()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok", next(ln for ln in out.splitlines() if " lfm25-image " in ln), out)
+
+    def run_same_image(self, lane, base, filter_=""):
+        t = SCRIPT.read_text()
+        start = t.index("check_same_image() {")
+        block = t[start:t.index("}\n", start) + 2]
+        code = ('set -uo pipefail\n'
+                f'FILTER={filter_!r}; CHECKED=0; FAILED=0; ONE={lane!r}; TWO={base!r}\n'
+                'failed(){ FAILED=$((FAILED + 1)); }\n'
+                + block
+                + 'check_same_image lfm25-image "$ONE" "$TWO"\n'
+                + 'echo "FAILED=$FAILED CHECKED=$CHECKED"')
+        return subprocess.run(["bash", "-c", code], capture_output=True, text=True,
+                              timeout=30, env={"PATH": "/usr/bin:/bin"})
+
+    def test_an_image_that_diverged_from_the_27b_lanes_fails(self):
+        r = self.run_same_image("lmsysorg/sglang@sha256:" + "a" * 64,
+                                "lmsysorg/sglang@sha256:" + "b" * 64)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("FAIL", r.stdout)
+        self.assertIn("is not the image it shares by design", r.stdout)
+        self.assertIn("FAILED=1 CHECKED=1", r.stdout)
+
+    def test_the_same_digest_is_said_ok(self):
+        img = "lmsysorg/sglang@sha256:" + "a" * 64
+        r = self.run_same_image(img, img)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ok", r.stdout)
+        self.assertIn("FAILED=0 CHECKED=1", r.stdout)
+
+    def test_the_filter_keeps_the_check_to_the_lanes_asked_for(self):
+        img = "lmsysorg/sglang@sha256:" + "a" * 64
+        self.assertIn("FAILED=0 CHECKED=1", self.run_same_image(img, img, "lfm25").stdout)
+        self.assertIn("FAILED=0 CHECKED=0", self.run_same_image(img, img, "27b").stdout)
 
 
 if __name__ == "__main__":
