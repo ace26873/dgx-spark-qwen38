@@ -428,7 +428,7 @@ class TheFlashLauncherWaitsByTheSameDecisionAsUnitPut(unittest.TestCase):
     START = TEXT.index('  TMP_LAUNCH="$(mktemp)"; RENDERED+=("$TMP_LAUNCH")')
     BLOCK = TEXT[START:TEXT.index('  rm -f "$TMP_LAUNCH"', START) + len('  rm -f "$TMP_LAUNCH"')]
 
-    def run_block(self, docker_down=False, new_rev=REV2, old_rev=REV1, ckpt_new=False, pending_put=1):
+    def run_block(self, docker_down=False, new_rev=REV2, old_rev=REV1, ckpt_new=False, pending_put=1, prior_wait=False):
         b = Box()
         b.t = self
         b.ckpt("RadixArk/Qwen3.8-Flash-Next-NVFP4", old_rev)
@@ -438,6 +438,14 @@ class TheFlashLauncherWaitsByTheSameDecisionAsUnitPut(unittest.TestCase):
         old = b.launch(rev=old_rev)
         (cfg / "launch-flash.sh").write_text(old)
         os.utime(cfg / "launch-flash.sh", (1_700_000_000, 1_700_000_000))
+        if prior_wait:
+            # an earlier run's wait (its launcher was another, reading a checkpoint absent then)
+            pend = cfg / "pending"
+            pend.mkdir()
+            (pend / "launch-flash.sh").write_text("#!/bin/bash\nolder\n")
+            (pend / "qwen38-flash.service").write_text("[Service]\nExecStart=older\n")
+            (pend / "qwen38-flash.service.needs").write_text(f"checkpoint RadixArk/Qwen3.8-Flash-Next-NVFP4@{REV2}\n")
+            (pend / "qwen38-flash.service.base").write_text("0" * 64 + "\n")
         newf = b.d / "new-launch.sh"
         new = b.launch(rev=new_rev)
         newf.write_text(new)
@@ -483,6 +491,19 @@ class TheFlashLauncherWaitsByTheSameDecisionAsUnitPut(unittest.TestCase):
         b, cfg, old, new, out = self.run_block(pending_put=0)
         self.assertIn("wrote ", out)
         self.assertEqual((cfg / "launch-flash.sh").read_text(), new)
+
+    def test_a_written_launcher_clears_an_earlier_runs_wait(self):
+        # the "wrote" branch puts the new launcher in place: a wait of an earlier run (rendered against
+        # another launcher) is cleared there, as the unchanged branch and unit_put's clear do (sixth review
+        # of v1.52.0, 2026-11-19, GLM 5.3: it stayed, and the Load then prepared for a launcher never posed,
+        # then dropped the wait as stale)
+        b, cfg, old, new, out = self.run_block(ckpt_new=True, prior_wait=True)
+        self.assertIn("wrote ", out)
+        self.assertEqual((cfg / "launch-flash.sh").read_text(), new)
+        pend = cfg / "pending"
+        for f in ("launch-flash.sh", "qwen38-flash.service",
+                  "qwen38-flash.service.needs", "qwen38-flash.service.base"):
+            self.assertFalse((pend / f).exists(), f"{f} stayed beside the new launcher in place")
 
 
 class PrepareReadsTheWaitingUnit(unittest.TestCase):
