@@ -99,6 +99,29 @@ class ApplyPending(unittest.TestCase):
     def test_what_waits_is_read_with_what_it_lacks(self):
         self.assertEqual(self.cp.pending_units(), {UNIT: ["image lmsysorg/sglang@sha256:" + "b" * 64]})
 
+    def test_a_wait_whose_unit_in_place_changed_since_is_marked_stale_before_the_load(self):
+        # said by pending_units, so the card says it and proposes no Load that would download then drop it
+        # (review of v1.52.0, 2026-11-19)
+        self.in_place.write_text("[Service]\nExecStart=switched to another target\n")
+        self.assertEqual(self.cp.pending_units(),
+                         {UNIT: ["stale: the unit in place changed since this update waited (a switch); "
+                                 "it is dropped, ./install.sh writes it again"]})
+
+    def test_the_flash_lanes_wait_is_marked_stale_off_its_launchers_base(self):
+        flash = "qwen38-flash.service"
+        (self.pdir / flash).write_text("[Service]\nExecStart=launch\n")
+        (self.pdir / "launch-flash.sh").write_text("#!/bin/bash\nnew\n")
+        (self.pdir / (flash + ".needs")).write_text("image x\n")
+        launcher = self.cp.CONFIG_DIR / "launch-flash.sh"
+        launcher.write_text("#!/bin/bash\nold\n")
+        import hashlib
+        (self.pdir / (flash + ".base")).write_text(hashlib.sha256(b"another launcher").hexdigest() + "\n")
+        self.assertEqual(self.cp.pending_units()[flash],
+                         ["stale: the unit in place changed since this update waited (a switch); "
+                          "it is dropped, ./install.sh writes it again"])
+        (self.pdir / (flash + ".base")).write_text(hashlib.sha256(launcher.read_bytes()).hexdigest() + "\n")
+        self.assertEqual(self.cp.pending_units()[flash], ["image x"])
+
     def test_a_lane_whose_update_waits_stays_built(self):
         # it serves, or can start, the release it served: its Load prepares the update (the page's journey), and its
         # Start as installed, its runtime's line and Library's Download stay (code review of v1.52.0)

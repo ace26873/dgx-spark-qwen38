@@ -118,9 +118,14 @@ function renderLanes(){
       b.classList.toggle('served', live && t === served);
     });
     // an update that waits for this lane's Load (decision 1409): what its Load downloads, said on the card
-    const pend = (F.pending || {})[unit];
+    const pendAll = (F.pending || {})[unit];
+    // a wait the unit in place changed since (a switch) is marked stale by the cockpit: said here, and no Load
+    // is proposed for it, one that would download what it lacks and then drop it (review of v1.52.0, 2026-11-19)
+    const stale = !!pendAll && pendAll.length > 0 && String(pendAll[0]).startsWith('stale:');
+    const pend = stale ? null : pendAll;
     setText(c.pickLine, `${TARGET_NAME[target]}.` + (TARGET_LINE[target] ? ` ${TARGET_LINE[target]}.` : '') + (live && target === served ? ' Serving now.' : '')
-      + (pend ? ` An update waits for its Load, which downloads ${pend.length ? pend.join('; ') : 'what it lacks'}; until then it serves the release it served.` : ''));
+      + (stale ? ' An update waited for its Load, but the unit in place changed since (a switch): it is dropped, and ./install.sh writes it again.'
+        : pend ? ` An update waits for its Load, which downloads ${pend.length ? pend.join('; ') : 'what it lacks'}; until then it serves the release it served.` : ''));
     const on = !!e && (!UNIT_DOWN.has(st) || !!e.restarting);
     const sameTarget = !laneTarget(unit) || laneTarget(unit) === target;
     // the verbs that make sense now

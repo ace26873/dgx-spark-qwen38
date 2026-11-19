@@ -1603,6 +1603,13 @@ if [ "$TARGET_LANE" = "27b" ]; then
   else
     diff "$STAGE_UNIT" "$TARGET_UNIT" || true   # show exactly what changes
     sudo install -m 644 "$STAGE_UNIT" "$TARGET_UNIT"
+    # the switch rewrote the unit: an update that waited, rendered against the unit before, is caduque, and is
+    # cleared here, as every lane beside clears its wait at its own switch (decision 1408; review of v1.52.0,
+    # 2026-11-19: it stayed, and a Load after this switch downloaded what it lacked then dropped it)
+    if [ -f "$CONFIG_DIR/pending/$TARGET_UNIT_NAME" ]; then
+      unit_pending_clear "$TARGET_UNIT"
+      echo "the update that waited for this lane was dropped: $TARGET_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
+    fi
   fi
 else
   # Flash keeps its serving flags in a plain launch script; the unit just
@@ -1634,6 +1641,14 @@ else
   else
     diff "$TMP_UNIT" "$FLASH_LAUNCH" || true   # show exactly what changes
     install -m 755 "$TMP_UNIT" "$FLASH_LAUNCH"
+    # the switch rewrote the launcher: an update that waited for it is caduque, and is cleared here, as every
+    # lane beside clears its wait at its own switch (decision 1408; review of v1.52.0, 2026-11-19: it stayed, and
+    # a Load after this switch downloaded what it lacked then dropped it)
+    if [ -f "$CONFIG_DIR/pending/launch-flash.sh" ] || [ -f "$CONFIG_DIR/pending/$TARGET_UNIT_NAME" ]; then
+      unit_pending_clear "$FLASH_LAUNCH"
+      unit_pending_clear "$FLASH_UNIT"
+      echo "the update that waited for this lane was dropped: the launch script changed since it was rendered; ./install.sh writes it again"
+    fi
   fi
   # A switch changes the checkpoint, never the serving image: only install.sh builds
   # that. So a box that pulled a repo whose image pin moved would keep serving the old

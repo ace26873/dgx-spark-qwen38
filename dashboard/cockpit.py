@@ -3336,16 +3336,37 @@ def lane_prepared(lane: str):
 PENDING_DIR = CONFIG_DIR / "pending"
 
 
+def pending_stale(unit: str) -> bool:
+    """A waiting unit records the unit in place it was rendered against (lanes.sh's <unit>.base): a switch
+    since rewrote that unit, and putting the waiting one over it would undo the switch."""
+    launch = PENDING_DIR / "launch-flash.sh" if unit == "qwen38-flash.service" else None
+    in_place = CONFIG_DIR / "launch-flash.sh" if launch is not None else UNIT_DIR / unit
+    base = PENDING_DIR / (unit + ".base")
+    if not base.is_file():
+        return False
+    try:
+        return base.read_text().split()[0] != hashlib.sha256(in_place.read_bytes()).hexdigest()
+    except (OSError, IndexError):
+        return True
+
+
 def pending_units() -> dict:
-    """{unit: [what its waiting unit lacks]} for each lane unit whose update waits for its Load."""
+    """{unit: [what its waiting unit lacks]} for each lane unit whose update waits for its Load. A wait whose
+    unit in place changed since it was rendered (a switch) is marked "stale: ..." first: said before the Load,
+    which would otherwise download what it lacks and then drop it (apply_pending)."""
     out = {}
     for unit in sorted(SERVING_UNITS):
         f = PENDING_DIR / unit
-        if f.is_file():
-            try:
-                out[unit] = [ln for ln in (PENDING_DIR / (unit + ".needs")).read_text().splitlines() if ln.strip()]
-            except OSError:
-                out[unit] = []
+        if not f.is_file():
+            continue
+        try:
+            lacks = [ln for ln in (PENDING_DIR / (unit + ".needs")).read_text().splitlines() if ln.strip()]
+        except OSError:
+            lacks = []
+        if pending_stale(unit):
+            lacks = ["stale: the unit in place changed since this update waited (a switch); "
+                     "it is dropped, ./install.sh writes it again"]
+        out[unit] = lacks
     return out
 
 
@@ -3366,15 +3387,9 @@ def job_apply_pending(job: Job):
     launch = PENDING_DIR / "launch-flash.sh" if unit == "qwen38-flash.service" else None
     # what waits was rendered against the unit in place at the update: a switch since (another target, another window)
     # rewrote that unit, and putting the waiting one over it would undo the switch (code review of v1.52.0)
-    in_place = CONFIG_DIR / "launch-flash.sh" if launch is not None else UNIT_DIR / unit
-    base = PENDING_DIR / (unit + ".base")
-    try:
-        now = hashlib.sha256(in_place.read_bytes()).hexdigest()
-        stale = base.is_file() and base.read_text().split()[0] != now
-    except (OSError, IndexError):
-        stale = True
+    stale = pending_stale(unit)
     if stale:
-        for f in (src, launch, PENDING_DIR / (unit + ".needs"), base):
+        for f in (src, launch, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
             if f is not None:
                 f.unlink(missing_ok=True)
         return False, [f"{unit} changed since the update that waited for it (a switch): that update was dropped; "
@@ -3397,7 +3412,7 @@ def job_apply_pending(job: Job):
             os.chmod(tmp, 0o755)
             os.replace(tmp, CONFIG_DIR / "launch-flash.sh")
             launch.unlink()
-        for f in (src, PENDING_DIR / (unit + ".needs"), base):
+        for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
             f.unlink(missing_ok=True)
         audit({"kind": "pending_applied", "unit": unit})
         return True, [f"{unit}: its new launch script is in place; its restart applies it"], {"ok": True}
@@ -3409,7 +3424,7 @@ def job_apply_pending(job: Job):
         if not answered(out):
             return False, lines + [f"{' '.join(argv[2:])} failed: {str(out).strip()[:200]}"], {"ok": False}
     stage.unlink(missing_ok=True)
-    for f in (src, PENDING_DIR / (unit + ".needs"), base):
+    for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
         f.unlink(missing_ok=True)
     audit({"kind": "pending_applied", "unit": unit})
     return True, lines + [f"{unit}: the update that waited for its Load is in place; its restart applies it"], {"ok": True}

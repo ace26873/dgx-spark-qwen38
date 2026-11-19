@@ -870,7 +870,11 @@ function laneJourneySteps(target){
   const lane = SIDE_LANE[unit];
   // an update that waits for this Load (decision 1408): its preparation fetches what the new unit lacks, the step after
   // puts the unit in place; the restart below applies it
-  const pend = (F.pending || {})[unit];
+  const pendAll = (F.pending || {})[unit];
+  // a wait the unit in place changed since (a switch) is marked stale by the cockpit: said before the Load, which
+  // would download what it lacks and then drop it, so no step is proposed for it (review of v1.52.0, 2026-11-19)
+  const stale = !!pendAll && pendAll.length > 0 && String(pendAll[0]).startsWith('stale:');
+  const pend = stale ? null : pendAll;
   // the 27B's and the flash lane's waiting unit or launcher goes in place by apply_pending (their switch rewrites only
   // the target); a lane beside them takes its new unit from its switch, which renders it and fetches its checkpoint
   const applies = !!pend && (unit === U27 || unit === UFLASH);

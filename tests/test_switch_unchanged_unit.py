@@ -24,13 +24,20 @@ UNIT_27B = block('  if cmp -s "$STAGE_UNIT" "$TARGET_UNIT"; then')
 FLASH = block('  if cmp -s "$TMP_UNIT" "$FLASH_LAUNCH"; then')
 
 
-def run(snippet, staged, installed):
+def run(snippet, staged, installed, pending=False):
     d = pathlib.Path(tempfile.mkdtemp(prefix="sw-same-"))
     (d / "staged").write_text(staged)
     (d / "installed").write_text(installed)
+    cfg = d / "cfg" / "pending"
+    cfg.mkdir(parents=True)
+    if pending:
+        (cfg / "qwen38-sglang.service").write_text("waiting\n")
+        (cfg / "launch-flash.sh").write_text("waiting\n")
     script = ("set -euo pipefail\n"
               f'log="{d}/calls"; sudo(){{ echo "sudo $*" >> "$log"; }}; install(){{ echo "install $*" >> "$log"; }}\n'
-              f'CHOICE=stock; STAGE_UNIT="{d}/staged"; TARGET_UNIT="{d}/installed"; '
+              f'unit_pending_clear(){{ echo "clear $*" >> "$log"; }}\n'
+              f'CONFIG_DIR="{d}/cfg"; CHOICE=stock; STAGE_UNIT="{d}/staged"; TARGET_UNIT="{d}/installed"; '
+              f'TARGET_UNIT_NAME=qwen38-sglang.service; FLASH_UNIT="{d}/installed"; '
               f'TMP_UNIT="{d}/staged"; FLASH_LAUNCH="{d}/installed"\n' + snippet + "echo REACHED\n")
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
     calls = (d / "calls").read_text() if (d / "calls").exists() else ""
@@ -49,6 +56,17 @@ class ASwitchToWhatIsInstalledRewritesNothing(unittest.TestCase):
         self.assertIn("sudo install -m 644", calls, out)
         self.assertIn("REACHED", out)
 
+    def test_a_changed_unit_clears_the_wait_the_switch_makes_stale(self):
+        # an update rendered against the unit before this switch is caduque now (review of v1.52.0, 2026-11-19)
+        out, calls = run(UNIT_27B, "ExecStart=x --revision b\n", "ExecStart=x --revision a\n", pending=True)
+        self.assertIn("clear ", calls, out)
+        self.assertIn("was dropped", out)
+
+    def test_an_unchanged_unit_keeps_its_wait(self):
+        out, calls = run(UNIT_27B, "ExecStart=x --revision a\n", "ExecStart=x --revision a\n", pending=True)
+        self.assertNotIn("clear ", calls, out)
+        self.assertIn("REACHED", out)
+
     def test_the_flash_launcher_unchanged_keeps_its_date(self):
         out, calls = run(FLASH, "docker run x\n", "docker run x\n")
         self.assertEqual(calls, "", out)
@@ -57,6 +75,11 @@ class ASwitchToWhatIsInstalledRewritesNothing(unittest.TestCase):
     def test_the_flash_launcher_changed_is_installed(self):
         out, calls = run(FLASH, "docker run y\n", "docker run x\n")
         self.assertIn("install -m 755", calls, out)
+
+    def test_a_changed_launcher_clears_the_wait_the_switch_makes_stale(self):
+        out, calls = run(FLASH, "docker run y\n", "docker run x\n", pending=True)
+        self.assertIn("clear ", calls, out)
+        self.assertIn("was dropped", out)
 
 
 if __name__ == "__main__":

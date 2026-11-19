@@ -314,6 +314,78 @@ class PrepareReadsTheWaitingUnit(unittest.TestCase):
                     self.assertIn("preparing what its new unit reads (image x)", r.stdout)
 
 
+class TheTextLaneSwitchClearsTheWaitItMakesStale(unittest.TestCase):
+    """The 27B's and the flash lane's switch rewrites the unit or the launcher: an update that waited, rendered
+    against the file before, is caduque, and is cleared there, as every lane beside clears its wait at its own
+    switch (review of v1.52.0, 2026-11-19: it stayed, and a Load after the switch downloaded what it lacked then
+    dropped it). The two blocks run here against a pending folder of the test's own."""
+
+    def run_block(self, which, rewritten=True, waiting=True):
+        text = (REPO / "switch-model.sh").read_text()
+        if which == "27b":
+            start = text.index('  if cmp -s "$STAGE_UNIT" "$TARGET_UNIT"; then')
+        else:
+            start = text.index('  if cmp -s "$TMP_UNIT" "$FLASH_LAUNCH"; then')
+        end = text.index("\n  fi\n", start) + len("\n  fi\n")
+        block = text[start:end]
+        d = pathlib.Path(tempfile.mkdtemp(prefix=f"switch-clear-{which}-"))
+        cfg = d / "config"
+        (cfg / "pending").mkdir(parents=True)
+        log = d / "log"
+        log.write_text("")
+        unit_path = d / ("qwen38-sglang.service" if which == "27b" else "qwen38-flash.service")
+        unit_path.write_text("old\n")
+        stage_path = d / "stage"
+        stage_path.write_text("new\n" if rewritten else "old\n")
+        launch = cfg / "launch-flash.sh"
+        launch.write_text("#!/bin/bash\nold\n")
+        if waiting:
+            (cfg / "pending" / "qwen38-sglang.service").write_text("waiting\n")
+            (cfg / "pending" / "qwen38-flash.service").write_text("waiting\n")
+            (cfg / "pending" / "launch-flash.sh").write_text("#!/bin/bash\nwaiting\n")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+CHOICE=stock
+TARGET_UNIT="{unit_path}"; TARGET_UNIT_NAME="{unit_path.name}"
+FLASH_UNIT="{unit_path}"; FLASH_LAUNCH="{launch}"
+STAGE_UNIT="{stage_path}"; TMP_UNIT="{stage_path}"
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + block
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, cfg, log, unit_path
+
+    def test_a_rewritten_unit_clears_what_waited(self):
+        r, cfg, log, unit_path = self.run_block("27b")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("was dropped", r.stdout)
+        self.assertIn(f"clear {unit_path}", log.read_text())
+        self.assertFalse((cfg / "pending" / "qwen38-sglang.service").exists())
+
+    def test_a_rewritten_launcher_clears_what_waited(self):
+        r, cfg, log, unit_path = self.run_block("flash")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("was dropped", r.stdout)
+        self.assertIn(f"clear {cfg}/launch-flash.sh", log.read_text())
+        self.assertIn(f"clear {unit_path}", log.read_text())
+        self.assertFalse((cfg / "pending" / "launch-flash.sh").exists())
+        self.assertFalse((cfg / "pending" / "qwen38-flash.service").exists())
+
+    def test_an_unchanged_unit_keeps_its_wait(self):
+        # the switch did not rewrite the file: the wait was rendered against it and is still applicable
+        r, cfg, log, unit_path = self.run_block("27b", rewritten=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("\nclear ", "\n" + log.read_text())
+        self.assertTrue((cfg / "pending" / "qwen38-sglang.service").exists())
+
+    def test_nothing_waiting_nothing_said(self):
+        r, cfg, log, unit_path = self.run_block("27b", waiting=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("\nclear ", "\n" + log.read_text())
+        self.assertNotIn("dropped", r.stdout)
+
+
 class TheSwitchPutsALaneBesidesNewUnit(unittest.TestCase):
     def test_each_unit_its_switch_puts_in_place_clears_what_waited(self):
         # a lane beside the text lane takes its new unit from its switch, which renders it (code review of v1.52.0)

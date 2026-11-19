@@ -93,5 +93,36 @@ class ALaneBesideWaitsForItsLoad(unittest.TestCase):
         self.assertFalse(any("apply" in s.lower() and "waited for" in s for s in steps), steps)
         self.assertIn("systemctl restart qwen38-flash-local.service", steps[-1])
 
+class AStaleWaitIsSaidBeforeTheLoad(unittest.TestCase):
+    """A wait whose unit in place changed since (a switch) is marked stale by the cockpit's pending_units: the
+    card says it is dropped, and proposes no Load that would download what it lacks then drop it (review of
+    v1.52.0, 2026-11-19)."""
+
+    STALE = ["stale: the unit in place changed since this update waited (a switch); it is dropped, ./install.sh writes it again"]
+
+    def test_the_card_says_it_and_proposes_no_load(self):
+        import json
+        r = run(self, r"""
+        const units = JSON.parse(JSON.stringify(UNITS));
+        units.units['qwen38-sglang.service'] = {active: 'active', enabled: 'enabled'};
+        const now = Date.now() / 1000;
+        apply({config: {data: CONFIG, ts: now}, units: {data: units, ts: now},
+               update: {data: {installed: 'v1.51.0'}, ts: now},
+               lanes_ready: {data: {'27b': true}, ts: now},
+               pending: {data: {'qwen38-sglang.service': %s}, ts: now},
+               lifecycle: {data: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}), ts: now}});
+        showView('lanes');
+        const c = LCARDS.get('qwen38-sglang.service');
+        askJourney('stock');
+        report({loadHidden: c.load.hidden, pick: c.pickLine.textContent,
+                steps: [...$('sh-journey').children].map(li => li.textContent)});
+        """ % json.dumps(self.STALE))
+        self.assertIn("An update waited for its Load", r["pick"])
+        self.assertIn("changed since (a switch)", r["pick"])
+        self.assertIn("dropped", r["pick"])
+        self.assertTrue(r["loadHidden"], r)
+        self.assertFalse(any("prepare-lane.sh" in s or "waited for" in s for s in r["steps"]), r["steps"])
+
+
 if __name__ == "__main__":
     unittest.main()
