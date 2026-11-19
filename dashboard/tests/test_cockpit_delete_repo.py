@@ -313,6 +313,48 @@ class DeleteRepo(unittest.TestCase):
         self.assertEqual(body["status"], "done", body)
         self.assertFalse(spill.exists())
 
+    def silent(self, rc=None):
+        """A docker that ran to no end (rc None: a hung daemon, a timeout) or that answered with an error (rc 1)."""
+        ran = self.cp.Ran("")
+        ran.ok, ran.rc = False, rc
+        return ran
+
+    def test_a_docker_that_does_not_answer_keeps_the_repository_and_the_runtime(self):
+        # whether a container reads or mounts it is then not known: the Delete keeps it (review of the fixes of
+        # v1.51.0, 2026-11-19)
+        spill = self.tmp / ".cache" / "sglang" / "diffusion" / "host_spill"
+        spill.mkdir(parents=True, exist_ok=True)
+        (spill / "w.bin").write_bytes(b"w" * 100)
+
+        def hung(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[:3] == ["docker", "ps", "-q"]:
+                return self.silent()
+            return self.fake_run(argv, timeout, merge_err, errors)
+
+        self.cp.run = hung
+        self.addCleanup(setattr, self.cp, "run", self.fake_run)
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(self.repo.exists())
+        self.assertTrue(any("did not answer" in ln for ln in body["lines"]), body["lines"])
+        code, body = self.runtime("diffusion-caches")
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(spill.exists())
+        self.assertTrue(any("did not answer" in ln for ln in body["lines"]), body["lines"])
+
+    def test_a_docker_whose_daemon_is_down_does_not_keep_anything(self):
+        # docker answered, with an error: its daemon is down, and no container runs
+        def down(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[:3] == ["docker", "ps", "-q"]:
+                return self.silent(rc=1)
+            return self.fake_run(argv, timeout, merge_err, errors)
+
+        self.cp.run = down
+        self.addCleanup(setattr, self.cp, "run", self.fake_run)
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "done", body)
+        self.assertFalse(self.repo.exists())
+
     def test_only_a_known_item(self):
         self.assertEqual(self.runtime("../../etc")[0], 400)
 

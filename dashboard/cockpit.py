@@ -6085,6 +6085,15 @@ def processes_reading(match) -> list[str]:
     return out
 
 
+# docker ran to no end (a hung daemon, a timeout): whether a container reads a path is then not known, and a Delete
+# keeps it. A docker that answered with an error (its daemon down: no container runs) is not this case.
+DOCKER_SILENT = "docker, which did not answer (whether a container uses it is not known)"
+
+
+def docker_unanswered(ran) -> bool:
+    return not answered(ran) and getattr(ran, "rc", None) is None
+
+
 def repo_readers(repo_id: str, real: str | None = None, shared=()) -> list[str]:
     """Who reads a repository now, each said once: a lane unit active or starting that names it; a running
     container whose command, arguments or environment name it (another project's too: the GTA session's gta-vlm
@@ -6109,11 +6118,16 @@ def repo_readers(repo_id: str, real: str | None = None, shared=()) -> list[str]:
         if named(text) and run(["systemctl", "is-active", unit]).strip() in (
                 "active", "activating", "reloading", "deactivating"):
             out.append(f"{unit}, which serves or starts")
-    ids = run(["docker", "ps", "-q", "--no-trunc"], timeout=10).split()
+    ps = run(["docker", "ps", "-q", "--no-trunc"], timeout=10)
+    if docker_unanswered(ps):
+        out.append(DOCKER_SILENT)
+    ids = ps.split()
     if ids:
-        for ln in run(["docker", "inspect", "--format",
-                       "{{.Name}} {{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}", *ids],
-                      timeout=10).splitlines():
+        ins = run(["docker", "inspect", "--format",
+                   "{{.Name}} {{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}", *ids], timeout=10)
+        if docker_unanswered(ins):
+            out.append(DOCKER_SILENT)
+        for ln in ins.splitlines():
             if named(ln):
                 out.append(f"the container {ln.split(' ', 1)[0].lstrip('/')}")
     out += processes_reading(match)
@@ -6131,10 +6145,16 @@ def containers_mounting(paths) -> list[str]:
         return any(src == r or src.startswith(r + "/") or r.startswith(src + "/") for r in reals)
 
     out = []
-    ids = run(["docker", "ps", "-q", "--no-trunc"], timeout=10).split()
+    ps = run(["docker", "ps", "-q", "--no-trunc"], timeout=10)
+    if docker_unanswered(ps):
+        return [DOCKER_SILENT]
+    ids = ps.split()
     if not ids:
         return out
-    for ln in run(["docker", "inspect", "--format", "{{.Name}} {{json .Mounts}}", *ids], timeout=10).splitlines():
+    ins = run(["docker", "inspect", "--format", "{{.Name}} {{json .Mounts}}", *ids], timeout=10)
+    if docker_unanswered(ins):
+        return [DOCKER_SILENT]
+    for ln in ins.splitlines():
         name, _, mounts = ln.partition(" ")
         try:
             srcs = [m.get("Source") for m in json.loads(mounts) if isinstance(m, dict)]
