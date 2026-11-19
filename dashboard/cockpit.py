@@ -6233,10 +6233,13 @@ def job_delete_repo(job: Job):
     after = {m: disk_free(m) for m in mounts}
     with REGISTRY_LOCK:
         REGISTRY_CACHE.update(ts=0.0, data=None)
-    freed = sum(after[m] - before[m] for m in mounts)
+    # a disk whose statvfs failed is in no total: never a "-2.0 GB more free" (revue of v1.51.0, 2026-11-19)
+    read_disks = [m for m in mounts if before[m] >= 0 and after[m] >= 0]
+    freed = sum(after[m] - before[m] for m in read_disks)
     lines = [f"deleted {p['repo']} from {p['cache']}: {plan['bytes'] / 1e9:.2f} GB planned, "
-             + ", ".join(f"{(after[m] - before[m]) / 1e9:.2f} GB more free on {m} ({after[m] / 2**30:.0f} GiB free)"
-                         for m in mounts)]
+             + (", ".join(f"{(after[m] - before[m]) / 1e9:.2f} GB more free on {m} ({after[m] / 2**30:.0f} GiB free)"
+                          for m in read_disks)
+                or "its disk could not be read, what it freed is not said")]
     if plan["kept_why"]:
         lines.append(f"kept {plan['kept_bytes'] / 1e9:.2f} GB of it: " + "; ".join(plan["kept_why"]))
     if plan["reloads"]:
@@ -6346,17 +6349,19 @@ def job_delete_image(job: Job):
     with REGISTRY_LOCK:
         REGISTRY_CACHE.update(ts=0.0, data=None)
     lines = lines[-12:]
+    # a disk whose statvfs failed is in no total: never a "-2.0 GB more free" (revue of v1.51.0, 2026-11-19)
+    freed = after - before if before >= 0 and after >= 0 else None
+    said = (f"{freed / 1e9:.2f} GB more free on {plan['mount']} ({after / 2**30:.0f} GiB free)" if freed is not None
+            else "its disk could not be read, what it freed is not said")
     if not gone:
-        return False, lines + [f"the image is still here after docker rmi of each of its names: "
-                               f"{(after - before) / 1e9:.2f} GB freed on {plan['mount']}"], {"ok": False}
-    lines.append(f"deleted the image {plan['id'][7:19]} ({', '.join(plan['names'])}): "
-                 f"{(after - before) / 1e9:.2f} GB more free on {plan['mount']} ({after / 2**30:.0f} GiB free)")
+        return False, lines + [f"the image is still here after docker rmi of each of its names: {said}"], {"ok": False}
+    lines.append(f"deleted the image {plan['id'][7:19]} ({', '.join(plan['names'])}): {said}")
     if plan["reloads"]:
         lines.append("the next Load of " + ", ".join(u.replace(".service", "") for u in plan["reloads"])
                      + " pulls or builds it again")
     audit({"kind": "image_deleted", "id": plan["id"], "names": plan["names"], "bytes": plan["bytes"],
-           "freed": after - before, "lose": p["lose"]})
-    return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": after - before}
+           "freed": freed, "lose": p["lose"]})
+    return True, lines, {"ok": True, "bytes": plan["bytes"], "freed": freed}
 
 
 ACTIONS["delete_image"] = {
@@ -6522,10 +6527,13 @@ def job_delete_runtime(job: Job):
         else:
             p.unlink()
     after = disk_free(mount)
+    # a disk whose statvfs failed is in no total: never a "-2.0 GB more free" (revue of v1.51.0, 2026-11-19)
+    freed = after - before if before >= 0 and after >= 0 else None
     audit({"kind": "runtime_deleted", "item": item, "paths": [str(p) for p in paths], "bytes": size,
-           "freed": after - before})
-    return True, [f"deleted {', '.join(str(p) for p in paths)}: {size / 1e9:.2f} GB counted, "
-                  f"{(after - before) / 1e9:.2f} GB more free on {mount}",
+           "freed": freed})
+    said = (f"{freed / 1e9:.2f} GB more free on {mount}" if freed is not None
+            else "its disk could not be read, what it freed is not said")
+    return True, [f"deleted {', '.join(str(p) for p in paths)}: {size / 1e9:.2f} GB counted, {said}",
                   "the next start writes them again" if item == "diffusion-caches"
                   else f"the {item} lane's next Load builds it again"], {"ok": True, "bytes": size}
 

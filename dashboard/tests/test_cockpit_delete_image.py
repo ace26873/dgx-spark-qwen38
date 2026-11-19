@@ -189,6 +189,18 @@ class DeleteImage(unittest.TestCase):
                         body["lines"])
         self.assertFalse(any(a.get("kind") == "image_deleted" for a in audits), audits)
 
+    def test_a_disk_that_cannot_be_read_after_the_rmi_is_in_no_total(self):
+        # the docker root's mount went between the plan and the rmi: no "-1000.00 GB more free" is said
+        # (revue of v1.51.0, 2026-11-19)
+        real = self.cp.disk_free
+        self.cp.disk_free = lambda path: -1 if self.rmi else 10**12
+        self.addCleanup(setattr, self.cp, "disk_free", real)
+        code, body = self.act()
+        self.assertEqual(body["status"], "done", body)
+        self.assertIsNone(body["result"]["freed"], body["result"])
+        self.assertTrue(any("could not be read" in ln for ln in body["lines"]), body["lines"])
+        self.assertFalse(any("GB more free" in ln for ln in body["lines"]), body["lines"])
+
     def test_what_another_project_keeps_has_no_delete(self):
         keep = self.tmp / "config" / "library-keep"
         self.addCleanup(lambda: keep.exists() and keep.unlink())

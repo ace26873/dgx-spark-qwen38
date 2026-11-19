@@ -338,6 +338,51 @@ class DeleteRepo(unittest.TestCase):
         self.assertIn("on /repos", body["lines"][0])
         self.assertIn("on /store", body["lines"][0])
 
+    def test_a_disk_whose_statvfs_fails_is_in_no_freed_total(self):
+        # the mount went between the plan and the delete: its -1 enters no "more free" total, never a
+        # "-2.0 GB more free" (revue of v1.51.0, 2026-11-19)
+        sha = "e" * 64
+        store = self.hub / "blobs" / sha[:2] / sha
+        store.parent.mkdir(parents=True)
+        store.write_bytes(b"s" * 20)
+        (store.parent / (sha + ".refs")).write_text(f"models--RadixArk--Qwen3.8-27B-DSpark/blobs/{sha}\n")
+        os.symlink(os.path.relpath(store, self.repo / "blobs"), self.repo / "blobs" / sha)
+        os.symlink(f"../../blobs/{sha}", self.repo / "snapshots" / self.rev / "s.safetensors")
+        self.hub_files[DSPARK].append(sibling("s.safetensors", b"s" * 20))
+        real_mount, real_free = self.cp.rg.mount_of, self.cp.disk_free
+        self.cp.rg.mount_of = lambda path: "/store" if "/hub/blobs/" in os.path.realpath(path) + "/" else "/repos"
+
+        def free(m):
+            if m == "/store":
+                return -1 if not store.exists() else 100     # the mount went once the shared blob is gone
+            return 1000 + (1000 if not self.repo.exists() else 0)
+
+        self.cp.disk_free = free
+        self.addCleanup(setattr, self.cp.rg, "mount_of", real_mount)
+        self.addCleanup(setattr, self.cp, "disk_free", real_free)
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "done", body)
+        self.assertEqual(body["result"]["freed"], 1000, body["result"])
+        self.assertIn("on /repos", body["lines"][0])
+        self.assertNotIn("/store", body["lines"][0], body["lines"])
+
+    def test_a_runtime_delete_whose_disk_cannot_be_read_says_no_total(self):
+        d = self.tmp / ".local" / "share" / "qwen38-image"
+        shutil.rmtree(d, ignore_errors=True)
+        (d / "venv").mkdir(parents=True)
+        (d / "venv" / "f").write_bytes(b"x" * 10)
+        real = self.cp.disk_free
+
+        def free(path):
+            return -1 if not (d / "venv").exists() else 10**12   # the mount went with the deletion
+
+        self.cp.disk_free = free
+        self.addCleanup(setattr, self.cp, "disk_free", real)
+        code, body = self.runtime("image")
+        self.assertEqual(body["status"], "done", body)
+        self.assertTrue(any("could not be read" in ln for ln in body["lines"]), body["lines"])
+        self.assertFalse(any("GB more free" in ln for ln in body["lines"]), body["lines"])
+
     def test_the_registry_scan_walks_no_runtime_and_library_still_shows_them(self):
         calls = []
         real = self.cp.runtime_rows
