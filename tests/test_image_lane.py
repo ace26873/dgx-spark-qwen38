@@ -554,6 +554,7 @@ class TheLocalPatches(unittest.TestCase):
     def _install(self, src, pin):
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
                   f'HERE="{REPO}"; SRC="{src}"; PIN="{pin}"; RUNTIME_NOTE="{src}.runtime-changed"\n'
+                  f'SOURCE_NOTE="{src}.sglang-source"\n'
                   + self._block())
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
         return r.returncode, r.stdout + r.stderr
