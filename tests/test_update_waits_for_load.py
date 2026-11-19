@@ -80,7 +80,8 @@ echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ON
         # every lane beside, the ones install.sh named by their *_UNIT_PATH (whole paths, a doubled path) too
         for side in ("qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                      "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
-                     "qwen38-flash-unsloth.service", "qwen38-image-h3.service"):
+                     "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
+                     "qwen38-lfm25.service", "qwen38-lfm3.service"):
             with self.subTest(side=side):
                 self.assertIn("STATE PENDING_PUT=1 WAITS_LOAD=0 UNITS_ONLY=0",
                               self.run_block(unit=False, prepared=False, image=False, side_unit=side))

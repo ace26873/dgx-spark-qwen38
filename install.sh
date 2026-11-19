@@ -2022,7 +2022,7 @@ if [ "$ALL_WEIGHTS" -eq 0 ]; then
   for _u in "$UNIT_NAME" qwen38-sglang.service qwen38-flash.service \
             qwen38-image.service qwen38-video.service qwen38-image-h3.service qwen38-kolibri.service \
             qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service \
-            qwen38-flash-unsloth.service; do
+            qwen38-flash-unsloth.service qwen38-transcribe.service qwen38-lfm25.service qwen38-lfm3.service; do
     # unit NAMES, as /etc/systemd/system/ is put before them: the *_UNIT_PATH variables are whole paths, and the
     # path they made never existed, so a box holding Kolibri, Nemotron, FP4-Local, Ornith or Unsloth alone did not
     # arm the wait (the CI of 550345d, test_lane_lists_whole, and the box-only test, whose decor gave bare names)
