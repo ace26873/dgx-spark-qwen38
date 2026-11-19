@@ -3331,6 +3331,91 @@ class TheTranscriptionTab(unittest.TestCase):
         """)
         self.assertIn("Copied", r)
 
+    def test_the_micro_button_is_disabled_with_the_reason_outside_a_secure_context(self):
+        r = run(self, r"""
+        window.isSecureContext = false;
+        trSyncMic();
+        report({ok: trMicState().ok, disabled: $('tcr-rec').disabled, title: $('tcr-rec').title,
+                note: txt('tcr-rec-note'), hidden: $('tcr-rec-note').hidden});
+        """)
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["disabled"])
+        self.assertIn("secure context", r["title"])
+        self.assertIn("HTTPS", r["note"])
+        self.assertFalse(r["hidden"])
+
+    def test_the_micro_button_is_disabled_when_the_browser_has_no_getusermedia(self):
+        r = run(self, r"""
+        report({ok: trMicState().ok, why: trMicState().why, disabled: $('tcr-rec').disabled});
+        """)
+        self.assertFalse(r["ok"])          # fakedom's navigator has no mediaDevices
+        self.assertIn("getUserMedia", r["why"])
+        self.assertTrue(r["disabled"])
+
+    def test_a_recording_is_encoded_as_wav_in_the_browser(self):
+        r = run(self, r"""
+        // the wav encoder alone: a RIFF/WAVE header, PCM16 mono, the samples clamped and scaled
+        const pcm = new Float32Array([0, 0.5, -0.5, 1, -1, 2]);
+        const wav = trEncodeWav(pcm, 16000);
+        const v = new DataView(wav.buffer);
+        const str = (o, n) => String.fromCharCode(...wav.slice(o, o + n));
+        const b64 = trBytesToB64(wav);
+        report({riff: str(0, 4), wave: str(8, 4), fmt: str(12, 4), data: str(36, 4),
+                channels: v.getUint16(22, true), rate: v.getUint32(24, true), bits: v.getUint16(34, true),
+                bytes: v.getUint32(40, true), s0: v.getInt16(44, true), s1: v.getInt16(46, true),
+                s2: v.getInt16(48, true), s3: v.getInt16(50, true), s4: v.getInt16(52, true), s5: v.getInt16(54, true),
+                b64: b64, decoded: atob(b64).slice(0, 4)});
+        """)
+        self.assertEqual((r["riff"], r["wave"], r["fmt"], r["data"]), ("RIFF", "WAVE", "fmt ", "data"))
+        self.assertEqual((r["channels"], r["rate"], r["bits"], r["bytes"]), (1, 16000, 16, 12))
+        self.assertEqual([r["s0"], r["s1"], r["s2"], r["s3"], r["s4"], r["s5"]],
+                         [0, 16383, -16384, 32767, -32768, 32767])   # setInt16 truncates; 2 clamps to 1
+        self.assertEqual(r["decoded"], "RIFF")
+
+    def test_the_whole_record_flow_ends_in_a_wav_file_ready_to_send(self):
+        r = run(self, self.LANE_UP + r"""
+        // the browser's own pieces, faked: getUserMedia, MediaRecorder (webm, what Chrome gives),
+        // the decode, the resample to 16 kHz mono, the wav encode
+        const stream = {getTracks: () => [{stop(){}}]};
+        navigator.mediaDevices = {getUserMedia: async () => stream};
+        window.MediaRecorder = class {
+          constructor(s){ this.mimeType = 'audio/webm'; this._chunks = []; }
+          start(){ this.ondataavailable({data: {size: 4}}); }
+          stop(){ this.onstop(); }
+        };
+        window.Blob = class { constructor(parts){ this.parts = parts; this.size = 4; }
+          arrayBuffer(){ return Promise.resolve(new Uint8Array([1, 2, 3, 4]).buffer); } };
+        window.AudioContext = class { decodeAudioData(buf){ return Promise.resolve({duration: 2.5, sampleRate: 48000}); } };
+        window.OfflineAudioContext = class {
+          constructor(ch, len, rate){ this.len = len; }
+          createBufferSource(){ return {connect(){}, start(){}}; }
+          render(){ const pcm = new Float32Array(this.len).fill(0.25);
+            return Promise.resolve({getChannelData: () => pcm}); }
+        };
+        trSyncMic();
+        await trRecordStart(); await __settle();
+        const recOn = !!TRS.recording;
+        $('tcr-rec-stop').click();
+        await __settle(); await __advance(50);
+        const audio = TRS.audio;
+        await trRun(); await __settle();
+        const sent = window.__sent || {};
+        report({recOn, stopShown: !$('tcr-rec-stop').hidden, audio: !!audio,
+                type: audio && audio.type, name: audio && audio.name, dur: audio && audio.duration,
+                head: audio && atob(audio.dataUrl.split(',')[1]).slice(0, 4),
+                sentAudio: String(sent.audio || '').slice(0, 30), sentName: sent.filename || null,
+                sentLang: sent.language, sentLen: String(sent.audio || '').length});
+        """)
+        self.assertTrue(r["recOn"])
+        self.assertTrue(r["audio"])
+        self.assertEqual(r["type"], "audio/wav")
+        self.assertTrue(r["name"].endswith(".wav"))
+        self.assertEqual(r["dur"], 2.5)
+        self.assertEqual(r["head"], "RIFF")
+        self.assertTrue(r["sentAudio"].startswith("data:audio/wav;base64,"))
+        self.assertTrue(r["sentName"].endswith(".wav"))
+        self.assertGreater(r["sentLen"], 100000)      # the whole WAV went out, not a stub
+
 
 if __name__ == "__main__":
     unittest.main()

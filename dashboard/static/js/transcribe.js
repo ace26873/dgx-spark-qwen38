@@ -144,6 +144,95 @@ function trAcceptAudio(name, size, mime, dataUrl, duration, recorded){
   trShowEmpty(); trCurl(); trSync();
 }
 
+// ── the microphone: recorded in the browser, encoded as WAV here ─────────────
+// getUserMedia exists only in a secure context (HTTPS, or localhost), so on the plain HTTP
+// the cockpit is often served on (its Tailscale address), the button is disabled and says why,
+// with no error. MediaRecorder gives webm or ogg, which the lane refuses, so the recording is
+// decoded and re-encoded as WAV (16 kHz mono PCM16) here: no conversion is added server-side.
+function trMicState(){
+  if (!window.isSecureContext)
+    return {ok: false, why: `The browser opens the microphone only on a secure context (HTTPS, or localhost): this page is served over plain HTTP on ${location.host}. Open the cockpit as https://${location.host}, or on http://localhost:${location.port}, to record here.`};
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+    return {ok: false, why: 'This browser has no getUserMedia: record on another browser, or drop an audio file instead.'};
+  if (typeof MediaRecorder === 'undefined' || typeof AudioContext === 'undefined' || typeof OfflineAudioContext === 'undefined')
+    return {ok: false, why: 'This browser cannot record and re-encode here (no MediaRecorder or AudioContext): drop an audio file instead.'};
+  return {ok: true, why: ''};
+}
+function trSyncMic(){
+  const st = trMicState();
+  const b = $('tcr-rec');
+  if (!st.ok && !TRS.recording){
+    b.disabled = true; b.title = st.why;
+    setText('tcr-rec-note', st.why); show('tcr-rec-note', true);
+  } else {
+    b.disabled = !!TRS.recording; b.title = st.why || 'Record from this browser’s microphone';
+    if (!TRS.recording) show('tcr-rec-note', false);
+  }
+}
+async function trRecordStart(){
+  const st = trMicState();
+  if (!st.ok) return toast(st.why, 'warn', 9000);
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia(
+      {audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true}});
+    const rec = new MediaRecorder(stream);
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    let resolveDone;
+    const done = new Promise(r => { resolveDone = r; });
+    rec.onstop = () => resolveDone(new Blob(chunks, {type: rec.mimeType || 'audio/webm'}));
+    rec.start();
+    TRS.recording = {rec, stream, done};
+    show('tcr-rec-stop', true);
+    setText('tcr-rec-note', 'Recording. The browser hands over webm or ogg, so it is decoded and encoded as WAV (16 kHz mono) here, which is what the lane reads.');
+    show('tcr-rec-note', true);
+    trSyncMic();
+  }catch(e){ toast('The microphone was refused: ' + e.message, 'err', 9000); }
+}
+async function trRecordStop(){
+  const rec = TRS.recording; if (!rec) return;
+  TRS.recording = null;
+  show('tcr-rec-stop', false);
+  try{ rec.rec.stop(); } catch { /* already stopped */ }
+  rec.stream.getTracks().forEach(t => { try{ t.stop(); } catch { /* already stopped */ } });
+  trSyncMic();
+  try{
+    const blob = await rec.done;
+    const actx = new AudioContext();
+    const decoded = await actx.decodeAudioData(await blob.arrayBuffer());
+    const rate = 16000;                       // the recipe's sampling rate, mono
+    const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
+    const src = off.createBufferSource(); src.buffer = decoded; src.connect(off.destination); src.start();
+    const rendered = await off.render();
+    const wav = trEncodeWav(rendered.getChannelData(0), rate);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    trAcceptAudio(`recording-${stamp}.wav`, wav.length, 'audio/wav',
+                  'data:audio/wav;base64,' + trBytesToB64(wav), decoded.duration, true);
+    toast(`Recorded ${fmtDur(decoded.duration)} as WAV (16 kHz mono), ready to transcribe.`, 'ok', 5000);
+  }catch(e){ toast('The recording could not be encoded as WAV: ' + e.message, 'err', 9000); }
+}
+// WAV, PCM16, mono: the header the lane's miniaudio reads, then the samples clamped to [-1, 1]
+function trEncodeWav(samples, sampleRate){
+  const n = samples.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const tag = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  tag(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); tag(8, 'WAVE'); tag(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); tag(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++){
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Uint8Array(buf);
+}
+// base64 of bytes, in chunks: String.fromCharCode on a whole recording overflows the stack
+function trBytesToB64(bytes){
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 8192)
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  return btoa(out);
+}
+
 // ── the transcript ───────────────────────────────────────────────────────────
 function trShowEmpty(){
   const sc = $('tcr-screen'); if (!sc) return;
@@ -225,8 +314,10 @@ function wireTranscribe(){
   $('tcr-copy').addEventListener('click', () => { if (TRS.result) copyText(TRS.result.text); });
   $('tcr-dl').addEventListener('click', trDownload);
   $('tcr-curl-copy').addEventListener('click', () => copyText($('tcr-curl').textContent));
+  $('tcr-rec').addEventListener('click', trRecordStart);
+  $('tcr-rec-stop').addEventListener('click', trRecordStop);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && activeView === 'transcribe') trLane(); });
-  trShowEmpty(); trCurl(); trSync();
+  trShowEmpty(); trCurl(); trSync(); trSyncMic();
 }
 onShow('transcribe', trLane);
 onLoadChange(trSync);
