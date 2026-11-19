@@ -49,6 +49,9 @@ function imgUnit(){
 const imgH3 = () => imgUnit() === IMAGE_H3_UNIT;
 const imgSizes = () => imgH3() ? IMG_H3_SIZES : IMG_SIZES;
 const imgMaxPixels = () => imgH3() ? IMG_H3_MAX_PIXELS : IMG_MAX_PIXELS;
+// MiniMax-H3-Image's engine peak as the study measured it: 92.3 GB (images-h3-flux3/BILAN.md), said in
+// GiB like the rest of the page: 92.3e9 / 2^30 = 85.97, so rounded to one decimal 86.0, not truncated
+const H3_PEAK_GIB = (92.3e9 / GIB).toFixed(1);
 // The Turbo checkpoint (./switch-model.sh image-turbo) samples on the eight-step sigma grid
 // its model_index.json carries, whatever num_inference_steps a request says, so the field is
 // left out of its requests (as the cookbook says) and the slider stops offering a choice.
@@ -73,7 +76,7 @@ function imgProblem(){
   const steps = imgSteps(); if (!(steps >= 1 && steps <= 100)) return 'Steps run from 1 to 100; the model default is 40.';
   const n = imgCount(); if (!(n >= 1 && n <= 10)) return 'Between 1 and 10 images per call.';
   const max = imgMaxPixels();
-  if (n * w * h > max) return `${n} image${n > 1 ? 's' : ''} of ${w} × ${h} is ${(n * w * h / 1e6).toFixed(1)} megapixels in one call; the largest measured here is ${(max / 1e6).toFixed(1)} (${imgH3() ? '85.9 GiB for the engine' : '45.5 GiB'} at its peak). The images of a call run as one batch, and running out of memory hangs this machine. Ask for ${imgH3() ? 'a smaller image' : 'fewer or smaller images'}.`;
+  if (n * w * h > max) return `${n} image${n > 1 ? 's' : ''} of ${w} × ${h} is ${(n * w * h / 1e6).toFixed(1)} megapixels in one call; the largest measured here is ${(max / 1e6).toFixed(1)} (${imgH3() ? H3_PEAK_GIB + ' GiB for the engine' : '45.5 GiB'} at its peak). The images of a call run as one batch, and running out of memory hangs this machine. Ask for ${imgH3() ? 'a smaller image' : 'fewer or smaller images'}.`;
   const cfg = Number(imgVal('img-cfg') || 1);
   if (!imgH3() && cfg > 1 && !imgVal('img-neg')) return 'A CFG scale above 1 does nothing without a negative prompt: the engine needs both.';
   if (!imgH3() && imgVal('img-neg') && cfg <= 1) return 'A negative prompt does nothing without a CFG scale above 1: the engine needs both.';
@@ -183,7 +186,7 @@ function imgSync(){
   const secs = imgEstimate(), {w, h} = imgSize();
   setText('img-cost-v', secs ? 'about ' + fmtDur(secs) : '…');
   setText('img-cost-k', w && h ? `${(w * h / 1e6).toFixed(2)} megapixels${imgCount() > 1 ? ' each' : ''}` : '');
-  setText('img-cost-b', h3 ? 'Fitted to three sizes and an edit measured on this box; the engine holds 85.9 GiB at its peak (92.3 GB as measured), alone on the box.'
+  setText('img-cost-b', h3 ? `Fitted to three sizes and an edit measured on this box; the engine holds ${H3_PEAK_GIB} GiB at its peak (92.3 GB as measured), alone on the box.`
     : w * h >= 3.5e6 ? 'Peaks at 45.5 GiB instead of 34.8: four times the pixels cost five times the time.' : 'Fitted to six sizes of both checkpoints measured on this box.');
   const cnt = imgVal('img-prompt').length; setText('img-count', cnt ? cnt + ' characters' : '');
   imgCurl();

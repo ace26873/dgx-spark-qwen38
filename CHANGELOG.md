@@ -130,7 +130,7 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
 
 - Cockpit, UX review of v1.53.0 (2026-11-19): the Now view's memory legend says "GPU allocations" when no lane serves, instead of naming an empty "lane" segment.
 - Cockpit, UX review of v1.53.0: "Copy a test" in Connect a client is offered only when a text lane serves a known model; with none, no curl with a placeholder model is copied.
-- Cockpit, UX review of v1.53.0: the Image view's refusal of a too large MiniMax-H3-Image call says one unit (85.9 GiB, the 92.3 GB the study measured) instead of mixing Go and GiB in one sentence.
+- Cockpit, UX review of v1.53.0: the Image view's refusal of a too large MiniMax-H3-Image call says one unit (86.0 GiB, the 92.3 GB the study measured) instead of mixing Go and GiB in one sentence.
 - Cockpit, UX review of v1.53.0: the Library Recipes panel says its perimeter (the built-in recipes are the 27B and flash lanes'), so an empty list no longer reads as a defect of the box.
 - Cockpit, UX review of v1.53.0: the Machine view's GPU processes table carries the stack class and its cells their column names, so on a phone it becomes cards like the page's other tables. (The Traffic view's tables are another task's.)
 - Cockpit, UX review of v1.53.0: Settings' "Fit the limits to this engine" is disabled with its reason before the click on the lanes whose opencode limits are their own, as the actions menu already did.
