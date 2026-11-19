@@ -129,6 +129,7 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
   cap.
 
 - Cockpit, UX review of v1.53.0 (2026-11-19): the Now view's memory legend says "GPU allocations" when no lane serves, instead of naming an empty "lane" segment.
+- Cockpit, UX review of v1.53.0: "Copy a test" in Connect a client is offered only when a text lane serves a known model; with none, no curl with a placeholder model is copied.
 
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 

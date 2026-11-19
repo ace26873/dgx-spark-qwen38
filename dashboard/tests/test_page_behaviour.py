@@ -420,6 +420,39 @@ class ThePoolLegendNamesNoLaneWhenNoneServes(unittest.TestCase):
         self.assertIn("RadixArk, GPU allocations", r)
 
 
+class CopyATestIsOfferedOnlyWhenAModelIsKnown(unittest.TestCase):
+    """"Copy a test" copied a curl with "model":"MODEL" while no text lane served, and the proxy
+    answers 503 then (review of v1.53.0, 2026-11-19): the button was built in every case."""
+
+    API = r"""
+    const api = {known: true, port: 30001, bind: '127.0.0.1', tls: false, client_keys: false,
+                 key_file: '/home/u/.config/qwen38/api-key', addresses: []};
+    const buttons = () => [...$('api-copy').querySelectorAll('button')].map(b => b.textContent);
+    let copied = null; navigator.clipboard.writeText = async t => { copied = t; };
+    """
+
+    def test_nothing_serving_no_test_button(self):
+        r = run(self, self.API + r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('stopped')}), api: api});
+        report(buttons());
+        """)
+        self.assertNotIn("Copy a test", r)
+        self.assertIn("Copy the address", r)
+
+    def test_a_text_lane_serving_the_test_names_its_model(self):
+        r = run(self, self.API + r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}),
+              engine_info: {served_target: 'stock', info: {served_model_name: 'qwen3.8-27b'}}, api: api});
+        const b = [...$('api-copy').querySelectorAll('button')].find(b => b.textContent === 'Copy a test');
+        b.click(); await __settle();
+        report({labels: buttons(), copied});
+        """)
+        self.assertIn("Copy a test", r["labels"])
+        self.assertIn('"model":"qwen3.8-27b"', r["copied"])
+        self.assertNotIn("MODEL", r["copied"])
+        self.assertIn("$(cat /home/u/.config/qwen38/api-key)", r["copied"])
+
+
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and
     the page kept its last success on screen as "ok, 0.4 s (skipped this round: busy)"."""
