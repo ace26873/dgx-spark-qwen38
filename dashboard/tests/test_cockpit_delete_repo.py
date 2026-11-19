@@ -177,6 +177,31 @@ class DeleteRepo(unittest.TestCase):
         self.assertEqual(self.cp.repo_keep(enc, reg)[0], [])
         self.assertEqual(self.cp.repo_keep(DSPARK, {"targets": [{"target": "image-h3", "state": "complete"}]})[0], [])
 
+    def test_a_partial_scan_refuses_the_delete_of_a_repository(self):
+        # a checkout in progress: the scan missed a pin, so the image-h3 lane reads "unknown" and the part it loads
+        # alone (MiniMax-H3's text_encoder/) would read as deletable. The Delete is refused, like job_delete_strays
+        # (revue of v1.51.0, 2026-11-19)
+        enc = self.cp.rg.PIN_MODELS["IMAGE_H3_ENCODER_PIN_REV"]
+        repo = fake_repo(self.hub, {self.rev: self.files}, name="models--MiniMaxAI--MiniMax-H3")
+        self.hub_files[enc] = [sibling(k, v) for k, v in self.files.items()]
+        real = self.cp.registry_snapshot
+
+        def partial(max_age=300.0):
+            reg = real(max_age=0.0)
+            reg["partial"] = ["IMAGE_H3_ENCODER_PIN_REV not found"]
+            reg["targets"] = [{**t, "state": "unknown"} if t["target"] == "image-h3" else t for t in reg["targets"]]
+            return reg
+
+        self.cp.registry_snapshot = partial
+        self.addCleanup(setattr, self.cp, "registry_snapshot", real)
+        # what the keep would be without the refusal: nothing, text_encoder/ would go with the repository
+        self.assertEqual(self.cp.repo_keep(enc, partial())[0], [])
+        code, body = self.act(self.params(repo=enc))
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(repo.exists())
+        self.assertTrue(any("this scan missed something" in ln and "IMAGE_H3_ENCODER_PIN_REV not found" in ln
+                            for ln in body["lines"]), body["lines"])
+
 
     def runtime(self, item, lose=None):
         code, body = self.cp.start_action("delete_runtime", {"item": item})

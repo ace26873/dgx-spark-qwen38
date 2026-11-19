@@ -6165,6 +6165,12 @@ def repo_delete_plan(cache: str, repo_id: str, hub: bool = True) -> dict:
     reg = registry_snapshot(max_age=0.0)
     if (cache, repo_id) not in {(m["cache"], m["repo_id"]) for m in reg.get("models", []) + reg.get("other_models", [])}:
         return {"refused": "not a repository of the caches the lanes read"}
+    if reg.get("partial"):
+        # a scan that missed anything concludes nothing here either: without a pin read, the part a lane loads alone
+        # (MiniMax-H3's text_encoder/, which MiniMax-H3-Image reads) would read as deletable, as job_delete_strays
+        # refuses too (revue of v1.51.0, 2026-11-19)
+        return {"refused": "this scan missed something (" + ", ".join(reg["partial"][:3]) + "): nothing is deleted "
+                           "until a scan reads the clone whole"}
     who = kept_for([repo_id])
     if who:
         return {"refused": f"kept for {who} (library-keep)"}
