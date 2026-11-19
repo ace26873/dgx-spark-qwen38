@@ -3467,7 +3467,7 @@ if [ "$LANE" = "flash" ]; then
     install -m 755 "$TMP_LAUNCH" "$CONFIG_DIR/launch-flash.sh"
     # the new launcher is in place and reads what the box has: a wait of an earlier run (rendered against
     # another launcher) is cleared here, as the unchanged branch above and unit_put's unit_pending_clear do
-    # (sixth review of v1.52.0, 2026-11-19, GLM 5.3: it stayed, and the Load then prepared for a launcher
+    # (fifth review of v1.52.0, 2026-11-19, GLM 5.3: it stayed, and the Load then prepared for a launcher
     # never posed, then dropped the wait as stale)
     rm -f "$CONFIG_DIR/pending/launch-flash.sh" "$CONFIG_DIR/pending/qwen38-flash.service" \
           "$CONFIG_DIR/pending/qwen38-flash.service.needs" "$CONFIG_DIR/pending/qwen38-flash.service.base"

@@ -282,7 +282,7 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   # review of v1.52.0, read in the default cache they were not)
   hf="$(unit_hf_cache "$1")"
   # read to the end of the line: the cache's path may hold a space (a HOME with one), as the switch reads it
-  # (cut -d= -f3-) (sixth review of v1.52.0, 2026-11-19, GLM 5.3: [^ ]+ stopped at the space)
+  # (cut -d= -f3-) (fifth review of v1.52.0, 2026-11-19, GLM 5.3: [^ ]+ stopped at the space)
   [ -n "$hf" ] || hf="$({ grep -m1 -oE '^Environment=HF_HOME=.*' "$1" || true; } | cut -d= -f3- | tr -s /)"
   hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"
   # a cache that exists but cannot be read (a disk not mounted, a permission): nothing read from it can be
@@ -329,7 +329,7 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   # (review of v1.52.0, 2026-11-19: a pin that moved went in place unseen, and the lane found no encoder at
   # its next start)
   # read line by line, and the quoted form beside the plain one: a path with a space (a HOME or a cache with
-  # one) is one path whole, and a for over $(...) cut it at the space (sixth review of v1.52.0, 2026-11-19,
+  # one) is one path whole, and a for over $(...) cut it at the space (fifth review of v1.52.0, 2026-11-19,
   # GLM 5.3: the snapshot pattern refused the space, and a spaced cache read truncated or nowhere)
   while IFS= read -r f; do
     # a GGUF the unit names as its container sees it (-m /root/.cache/huggingface/... when it mounts the host's

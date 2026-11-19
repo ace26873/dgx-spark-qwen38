@@ -3426,7 +3426,7 @@ def job_apply_pending(job: Job):
     if launch is not None and not launch.is_file():
         # the flash lane's wait is its launcher's: without it there is nothing to pose (src is a copy of the
         # unit in place, not the new launcher), so the incoherent wait is cleared and refused, and unit_needs
-        # is not run on that copy (sixth review of v1.52.0, 2026-11-19, GLM 5.3: the job said ok, posed nothing)
+        # is not run on that copy (fifth review of v1.52.0, 2026-11-19, GLM 5.3: the job said ok, posed nothing)
         for f in (src, launch, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
             if f is not None:
                 f.unlink(missing_ok=True)
@@ -3462,7 +3462,7 @@ def job_apply_pending(job: Job):
         return False, lines + [f"install failed: {str(out).strip()[:200]}"], {"ok": False}
     # the unit is in place: the wait is cleared however the reload goes. A reload that fails must not leave a
     # wait whose .base names the unit before, read as stale at the retry and dropped with a false "switch"
-    # message (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+    # message (fifth review of v1.52.0, 2026-11-19, GLM 5.3)
     stage.unlink(missing_ok=True)
     for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
         f.unlink(missing_ok=True)

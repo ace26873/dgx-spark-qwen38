@@ -75,7 +75,7 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
 
     def test_each_missing_mount_is_one_path_line_in_the_wait(self):
         # unit_pending_put writes the .needs from unit_needs, which already says each bind-mount source it
-        # lacks as a path line: appending them again put every file twice on the card (sixth review of v1.52.0,
+        # lacks as a path line: appending them again put every file twice on the card (fifth review of v1.52.0,
         # 2026-11-19, GLM 5.3)
         (self.bin / "docker").write_text("#!/bin/bash\nexit 1\n")
         (self.bin / "docker").chmod(0o755)
@@ -108,7 +108,7 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
 
     def test_a_mount_source_with_a_space_is_one_missing_file(self):
         # a HOME with a space renders --mount type=bind,source=<spaced path>,...: one source, read whole,
-        # not two halves both read missing (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+        # not two halves both read missing (fifth review of v1.52.0, 2026-11-19, GLM 5.3)
         spaced = self.d / "my cfg"
         spaced.mkdir()
         tmpl = spaced / "chat-template.jinja"

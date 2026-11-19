@@ -1232,7 +1232,7 @@ class TheSwitchReadsTheWaitingUnitsCache(unittest.TestCase):
     """The image, video and MiniMax-H3-Image switches fetch what the unit that waits reads, so the cache
     they fetch into is read from that same unit (IMG_SRC/VID_SRC/H3_SRC), not from the one in place: a cache
     moved by a re-run of install with HF_CACHE= would otherwise be checked where the fetch does not look,
-    and the wait would loop forever saying it stays waiting (sixth review of v1.52.0, 2026-11-19, GLM 5.3)."""
+    and the wait would loop forever saying it stays waiting (fifth review of v1.52.0, 2026-11-19, GLM 5.3)."""
 
     def test_each_branch_reads_the_hf_home_of_the_unit_it_fetches_for(self):
         text = (REPO / "switch-model.sh").read_text()
@@ -1251,7 +1251,7 @@ class TheSwitchReadsTheWaitingUnitsCache(unittest.TestCase):
 
 class PathsWithASpace(unittest.TestCase):
     """A HOME or a cache whose path holds a space: the loops over the unit's paths read line by line, and the
-    patterns naming the cache read it whole (sixth review of v1.52.0, 2026-11-19, GLM 5.3: a for over $(...)
+    patterns naming the cache read it whole (fifth review of v1.52.0, 2026-11-19, GLM 5.3: a for over $(...)
     cut a bind source at the space, and the snapshot and unit_hf_cache patterns refused it, so a spaced cache
     read truncated or nowhere, and a unit was posed without its weights)."""
 

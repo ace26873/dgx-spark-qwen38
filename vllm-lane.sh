@@ -204,7 +204,7 @@ vlane_put_unit(){  # $1 the rendered unit, $2... what else the lane's start read
   if ! cmp -s "$1" "$INSTALLED" && systemctl is-enabled --quiet "$UNIT" 2>/dev/null; then
     local src missing=""
     # line by line: a source with a space (a HOME with one) is one path, and a for over $(...) cut it in two,
-    # both halves read missing (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+    # both halves read missing (fifth review of v1.52.0, 2026-11-19, GLM 5.3)
     while IFS= read -r src; do
       [ -e "$src" ] || missing="$missing $src"
     done < <(grep -o 'type=bind,source=[^,]*' "$1" | cut -d= -f3)

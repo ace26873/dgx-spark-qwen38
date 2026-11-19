@@ -100,6 +100,34 @@ their notes moved, so a moved source pin is applied by the Load's prepare; and t
 are now bounded (`timeout -k 2 10`, the bound overridable for the tests), a daemon that does not answer reading
 "unknown" once it runs out, never a hang. Each new test fails on the code before.
 
+**What the fifth blind review found (GLM 5.3, 2026-11-19 10:32), fixed with tests.** Six defects, each read in the
+code again before fixing, and one "to check" verified on the box and fixed: the flash launcher's "wrote" branch left an
+earlier run's wait in `pending/`, so the Load prepared for a launcher never posed and `apply_pending` then dropped the
+wait as stale (the branch clears it now, as the unchanged branch and `unit_put` do); `apply_pending` ran install then
+daemon-reload in one loop and left the wait when the reload failed, though the unit was already in place, so the retry
+read it as stale (a switch) and dropped it with a false message (the unit in place now clears the wait, and a failed
+reload says so: its restart, or `sudo systemctl daemon-reload`, applies it); the image, video and MiniMax-H3-Image
+switches read the cache (`HF_HOME`) from the unit in place while fetching what the waiting unit reads, so a cache moved
+by a re-run of install looped the wait forever (the cache is read from the same unit as the model); `unit_needs`' path
+loops ran `for` over `$(grep ...)`, cutting a path with a space in two, and the snapshot, mount-cache (`unit_hf_cache`)
+and `HF_HOME` patterns refused the space, so a HOME or a cache with a space read truncated or nowhere and a unit was
+posed without its weights (the loops read line by line, the quoted snapshot form is taken too, and the cache is read
+whole); a flash wait whose launch script was gone was reported applied while nothing was posed, `unit_needs` running on
+the copy of the unit in place (refused and cleared now, before `unit_needs` runs); and a vLLM lane's wait said each
+missing mount twice, once by `unit_needs` and once appended (once now). Of the review's "to check", one held and was
+fixed: `ckpt_cached`'s no-index fallback required `model.safetensors` at the snapshot root, but a diffusion repository
+keeps its shards in subfolders with their own index, and on this box `unit_needs` of the real
+`qwen38-image-h3.service` said `path <snapshot>` forever, so no Load could apply that lane's update (with a
+`model_index.json` at the root, every subfolder index's shards must be there). The others did not hold: the DFlash2
+drafts in this box's cache are single-file (one `model.safetensors`, no index, both repositories), and a begun fetch
+leaves no snapshot link, so `draft_in_cache`'s check reads them whole; `prepare-lane.sh` 27b and flash delegate the
+fetch to the switch of the waiting file's own target, and a pin moved between the update and the Load leaves the wait
+unsatisfied, which `apply_pending` refuses to pose and the next `./install.sh` re-renders; `apply_pending` runs
+`unit_needs` on units that mount their cache or name `HF_HOME`, so the dashboard's environment does not decide the
+cache read; install.sh's copy fallback for the flash wait is neutralized by the refusal above; and a switch that
+re-renders a unit equal to the one in place leaves its wait for the lane's Load to pose and clear. Each new test fails
+on the code before.
+
 **A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
 paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:
 the test always failed, so every update of a llama.cpp lane (flash-unsloth, and the transcribe lane to come) waited as

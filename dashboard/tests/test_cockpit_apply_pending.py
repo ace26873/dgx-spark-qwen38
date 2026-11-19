@@ -194,7 +194,7 @@ class ApplyPending(unittest.TestCase):
     def test_a_daemon_reload_that_fails_after_an_install_that_worked_leaves_no_wait(self):
         # the unit is in place, so the wait is cleared however the reload goes, and the failure says so:
         # a retry must not read the leftover wait as stale (a switch) and drop it with a false message
-        # (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+        # (fifth review of v1.52.0, 2026-11-19, GLM 5.3)
         def failing_run(argv, timeout=5.0, merge_err=False, errors="strict"):
             if argv[0] == "sudo":
                 self.calls.append(argv)
@@ -264,7 +264,7 @@ class ApplyPending(unittest.TestCase):
     def test_a_flash_wait_whose_launcher_is_gone_refuses_and_clears_without_asking_unit_needs(self):
         # pending/qwen38-flash.service without pending/launch-flash.sh: what waits is the launcher, and src
         # is only a copy of the unit in place, so nothing can be posed, unit_needs must not run on that copy,
-        # and the job must not report a success that posed nothing (sixth review of v1.52.0, 2026-11-19,
+        # and the job must not report a success that posed nothing (fifth review of v1.52.0, 2026-11-19,
         # GLM 5.3)
         flash = "qwen38-flash.service"
         (self.pdir / flash).write_text("[Service]\nExecStart=launch\n")
