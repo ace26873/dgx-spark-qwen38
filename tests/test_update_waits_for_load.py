@@ -4,6 +4,7 @@ goes through unit_put with PENDING_PUT=1, and the text lane, when it can serve a
 image, the target whole at its revision, the 27B's draft), gets its units only: none of its downloads, its update
 waiting for its Load. --with-<lane>, --all-weights, a custom model kept, --no-service and a new box download as before.
 The block of install.sh itself, run with the box's facts stubbed."""
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -33,6 +34,12 @@ class UpdateWaits(unittest.TestCase):
             (etc / "qwen38-sglang.service").write_text("x")
         if side_unit:
             (etc / side_unit).write_text("x")
+        # docker as a stub file first in PATH, not a shell function: lanes.sh's docker_probe bounds its
+        # calls with the timeout binary, which looks docker up in PATH and would miss a function
+        binp = d / "bin"
+        binp.mkdir()
+        (binp / "docker").write_text(f'#!/bin/bash\n[ "$1" = "info" ] && exit 0\nexit {0 if image else 1}\n')
+        (binp / "docker").chmod(0o755)
         script = f"""
 set -euo pipefail
 CONFIG_DIR={d}; . "{REPO}/lanes.sh"
@@ -40,12 +47,12 @@ LANE={lane}; UNIT_NAME=qwen38-sglang.service; ALL_WEIGHTS={all_weights}; UNITS_O
 TEXT_NAMED={named}; KEEP_MODEL_VERBATIM={verbatim}; IMAGE={IMAGE}; FLASH_IMAGE={IMAGE}; HF_CACHE={hf}
 MODEL_REPO=RadixArk/Qwen3.8-27B-NVFP4; MODEL_REV={REV}; DRAFT2_REPO=maurienne-ai/Draft; DRAFT2_REV={DREV}
 text_lane_prepared(){{ return {0 if prepared else 1}; }}
-docker(){{ [ "$1" = info ] && return 0; return {0 if image else 1}; }}   # info answers: the daemon is up, only the image is missing
 ckpt_cached(){{ return {0 if ckpt else 1}; }}
 """ + BLOCK.replace("/etc/systemd/system/", f"{etc}/") + """
 echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ONLY"
 """
-        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                           env={**os.environ, "PATH": f"{binp}:{os.environ['PATH']}"})
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 
@@ -212,6 +219,21 @@ class SideInstall(unittest.TestCase):
         self.assertEqual(calls, ["install-image.sh --units-only force=1"])
         self.assertEqual(pend, "new unit\n")
         self.assertEqual(needs, "checkpoint gone\nruntime x\n")
+
+    def test_a_runtime_that_moves_with_the_unit_in_place_lacking_still_waits_and_notes_it(self):
+        # the unit in place already lacks what it reads (its checkpoint deleted from Library) AND the runtime
+        # moved: PENDING_FORCE waits the new unit anyway (lanes.sh's unit_put), so the wait carries the runtime
+        # lines, the NOTE is the wait's, and the lane's Load prepares (the venv again) then poses it; the moved
+        # runtime is never lost (fourth review of v1.52.0, 2026-11-19, GLM 5.3: the new unit went in place,
+        # side_install found no wait, said "its units only", and the Load started the new unit on the old venv)
+        for lane in ("image", "video", "image-h3"):
+            with self.subTest(lane=lane):
+                calls, out, pend, needs = self.run_side(lane=lane, runtime_moves=True, lacks=True)
+                self.assertEqual(calls, [f"install-{lane}.sh --units-only force=1"])
+                self.assertEqual(pend, "new unit\n")
+                self.assertEqual(needs, "checkpoint gone\nruntime x\n")
+                self.assertIn(f"the {lane} lane's update waits for its next Load", out)
+                self.assertNotIn("its units only", out)
 
     def test_a_wait_already_there_with_nothing_moved_is_rerendered_and_replaced(self):
         # every update renders its lane's NEW unit and lanes.sh's unit_put decides alone between in place and

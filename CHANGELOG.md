@@ -80,6 +80,26 @@ start; it reads them now. The others did not: the vLLM lanes' switch fetches its
 checkpoint flag the real text units and launcher name; and a wait always records its `.base` (an empty one reads
 stale on both sides), so one without it cannot be posed over a switch. Each new test fails on the code before.
 
+**What the fourth blind review found (GLM 5.3, 2026-11-19 09:26), fixed with tests.** Three defects, each read in
+the code again before fixing: the flash lane's launch-script wait was a second copy of `unit_put`'s decision without
+its guard, so an "unknown" line (docker not answering during the update) read as "the launcher in place lacks its
+image" and the new launcher, reading a checkpoint absent, went in place at the next boot (the launcher now waits by
+`unit_put_waits`, the same function `unit_put` uses, never a second copy of it); `unit_needs` read a model named by
+its bare snapshot folder (`.../hub/models--<org>--<name>/snapshots/<commit>`, the MiniMax-H3-Image lane's, named
+that way in `--model-path` and in `--speculative-config.model`) with `[ -e ]` only, so a begun fetch of the new
+revision read as whole and `unit_put` posed the unit reading it (the folder is now read whole by `ckpt_cached`, its
+repo and its revision taken from the path itself); and with `PENDING_FORCE=1` (a side lane's runtime moved) a unit
+in place that already lacked what it reads got its new unit in place, so `side_install` found no wait, said "its
+units only", and the moved runtime was lost in silence, the lane starting the new unit on the old venv
+(`unit_put_waits` waits the new unit on `PENDING_FORCE` however the unit in place reads, so the wait carries the
+runtime lines and the lane's Load prepares, the venv again, then poses it). Of the review's "to check": bash's
+`${KOL_TEXT//""/...}` replaces nothing, and the Kolibri template always renders `--gpu-memory-utilization`, so the
+empty-motif case is unreachable and the switch refuses a stage that lost the asked lines anyway; the `--prepare` of
+the image, video and MiniMax-H3-Image lanes re-checks out the pinned SGLang source and reinstalls the wheel when
+their notes moved, so a moved source pin is applied by the Load's prepare; and the two docker probes of `unit_needs`
+are now bounded (`timeout -k 2 10`, the bound overridable for the tests), a daemon that does not answer reading
+"unknown" once it runs out, never a hang. Each new test fails on the code before.
+
 **A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
 paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:
 the test always failed, so every update of a llama.cpp lane (flash-unsloth, and the transcribe lane to come) waited as

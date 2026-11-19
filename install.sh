@@ -3450,10 +3450,12 @@ if [ "$LANE" = "flash" ]; then
     echo "launch script unchanged: $CONFIG_DIR/launch-flash.sh"
     rm -f "$CONFIG_DIR/pending/launch-flash.sh" "$CONFIG_DIR/pending/qwen38-flash.service" \
           "$CONFIG_DIR/pending/qwen38-flash.service.needs" "$CONFIG_DIR/pending/qwen38-flash.service.base"
-  elif [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$CONFIG_DIR/launch-flash.sh" ] && [ -n "$(unit_needs "$TMP_LAUNCH")" ] \
-       && [ -z "$(unit_needs "$CONFIG_DIR/launch-flash.sh")" ]; then
+  elif [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$CONFIG_DIR/launch-flash.sh" ] && unit_put_waits "$TMP_LAUNCH" "$CONFIG_DIR/launch-flash.sh"; then
     # the flash lane's serving command is its launcher (lanes.sh's unit_put says why a new one waits): kept as it is,
-    # the new one waits for the lane's Load beside the unit in place, which is noted as waiting with what it lacks
+    # the new one waits for the lane's Load beside the unit in place, which is noted as waiting with what it lacks.
+    # The wait is lanes.sh's unit_put_waits, the same decision as unit_put's, not a second copy of it (fourth
+    # review of v1.52.0, 2026-11-19, GLM 5.3: this branch's own test read an "unknown" line of a docker that did
+    # not answer as "the launcher in place lacks its image", and the new launcher went in place)
     mkdir -p "$CONFIG_DIR/pending"
     install -m 755 "$TMP_LAUNCH" "$CONFIG_DIR/pending/launch-flash.sh"
     unit_needs "$TMP_LAUNCH" > "$CONFIG_DIR/pending/qwen38-flash.service.needs"

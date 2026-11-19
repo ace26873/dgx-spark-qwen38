@@ -194,27 +194,35 @@ UNIT_DEP_KEYS='^(Description|Documentation|Wants|Requires|Requisite|BindsTo|Part
 # goes in place, and the lane's Load prepares it, as before. Nor when unit_needs cannot conclude on the unit in place
 # (docker did not answer, the cache cannot be read: an "unknown" line): it keeps serving what it served, the new one
 # waits, never the reverse (review of v1.52.0, 2026-11-19). PENDING_FORCE=1 waits the new unit even when it reads
-# nothing the box lacks (install.sh's side_install, when a side lane's runtime moved: the new unit must not run on
-# the old venv at the lane's next boot).
+# nothing the box lacks, and even when the unit in place already lacks what it reads too (install.sh's
+# side_install, when a side lane's runtime moved: the new unit must not run on the old venv at the lane's next
+# boot, and the wait is what tells the lane's Load to prepare, the venv again, then pose it).
+# Whether a rendered unit or launcher waits for its lane's Load while the one in place stays: this very decision,
+# one reading for unit_put and for install.sh's flash launcher, not two copies that diverge (fourth review of
+# v1.52.0, 2026-11-19, GLM 5.3: the launcher's own test read an "unknown" line, not empty, as "the launcher in
+# place lacks its image", and the new launcher, which read a checkpoint absent, went in place; and a PENDING_FORCE
+# unit went in place when the unit in place already lacked what it reads, losing the moved runtime in silence).
+unit_put_waits(){  # $1 the rendered unit or launcher, $2 the one in place
+  local new_needs old_needs
+  [ "${PENDING_FORCE:-0}" = 1 ] && return 0
+  new_needs="$(unit_needs "$1")"; old_needs="$(unit_needs "$2")"
+  # an "unknown" line on the unit in place: unit_needs could not conclude on it (docker did not answer, the
+  # cache cannot be read), so it keeps serving what it served and the new unit waits for its Load, never the
+  # reverse (review of v1.52.0, 2026-11-19: a docker down during the update made the unit in place look
+  # emptied, and the new unit, whose checkpoint was not there, went in place)
+  { [ -z "$old_needs" ] || ! printf '%s\n' "$old_needs" | grep -qv '^unknown '; } && [ -n "$new_needs" ]
+}
 unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written with sudo)
   # Each step returns on its failure: a function run in $(...) does not stop at one under set -e,
   # and the caller, which assigns what it prints, stops on that return.
   # PENDING_FORCE=1 (install.sh's side_install, when a side lane's runtime moved): the rendered unit waits
   # even when it reads nothing the box lacks and is identical to the one in place, or it would run on the old
   # venv at the lane's next boot (review of v1.52.0, 2026-11-19, GLM 5.3).
-  local old new_needs old_needs
+  local old
   if [ "${PENDING_FORCE:-0}" != 1 ] && [ -f "$2" ] && sudo cmp -s "$1" "$2"; then unit_pending_clear "$2"; echo same; return 0; fi
-  if [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$2" ]; then
-    new_needs="$(unit_needs "$1")"; old_needs="$(unit_needs "$2")"
-    # an "unknown" line on the unit in place: unit_needs could not conclude on it (docker did not answer, the
-    # cache cannot be read), so it keeps serving what it served and the new unit waits for its Load, never the
-    # reverse (review of v1.52.0, 2026-11-19: a docker down during the update made the unit in place look
-    # emptied, and the new unit, whose checkpoint was not there, went in place)
-    if { [ -z "$old_needs" ] || ! printf '%s\n' "$old_needs" | grep -qv '^unknown '; } \
-       && { [ -n "$new_needs" ] || [ "${PENDING_FORCE:-0}" = 1 ]; }; then
-      unit_pending_put "$1" "$2" || return 1
-      echo pending; return 0
-    fi
+  if [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$2" ] && unit_put_waits "$1" "$2"; then
+    unit_pending_put "$1" "$2" || return 1
+    echo pending; return 0
   fi
   unit_pending_clear "$2"
   if [ -f "$2" ] && cmp -s <(sudo cat "$2" | grep -vE "$UNIT_DEP_KEYS" || true) <(grep -vE "$UNIT_DEP_KEYS" "$1" || true); then
@@ -225,6 +233,38 @@ unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written 
   fi
   sudo install -m 644 "$1" "$2" || return 1
   echo new
+}
+
+# One bounded call to docker: a daemon that does not answer (suspended, not refusing) must not hold an update
+# forever, and a probe that ran out answers like one that refused, which unit_needs says "unknown", never
+# "missing" (fourth review of v1.52.0, 2026-11-19, GLM 5.3, "à vérifier": the two probes of unit_needs had no
+# delay). The bound is generous for a healthy daemon, which answers both in well under a second.
+docker_probe(){  # same argv as docker
+  timeout -k 2 "${QWEN38_DOCKER_PROBE_TIMEOUT:-10}" docker "$@"
+}
+
+# What a unit reads at a path it names by itself (--model-path, or --speculative-config.model with a path):
+# nothing when the box has it whole, "path <path>" when it lacks it. A bare snapshot folder
+# (.../hub/models--<org>--<name>/snapshots/<commit>, nothing after it, as the MiniMax-H3-Image lane's unit names
+# its model, install-image-h3.sh's MODEL_SNAP) is whole only when every shard its index names is in it, read as
+# ckpt_cached reads a checkpoint by repo and revision: a begun fetch of the revision leaves the folder there
+# and must not read as whole (fourth review of v1.52.0, 2026-11-19, GLM 5.3: [ -e ] read it as whole, and
+# unit_put posed the unit reading it). Any other path exists or it does not. A container's cache path
+# (/root/.cache/huggingface/..., as a unit that mounts the host's cache there names its GGUF) is read where
+# that mount puts it on the host, as the snapshot paths below.
+unit_path_needs(){  # $1 the path as the unit names it, $2 the cache the unit mounts (its hf)
+  local f="$1" dir rev
+  case "$f" in /root/.cache/huggingface/*) f="$2${f#/root/.cache/huggingface}" ;; esac
+  case "$f" in
+    */hub/models--*/snapshots/*)
+      dir="${f%%/snapshots/*}"; rev="${f##*/snapshots/}"; rev="${rev%/}"
+      if [[ "$rev" =~ ^[0-9a-f]{40}$ ]]; then
+        ckpt_cached "$dir" "$rev" || echo "path $f"
+      else
+        [ -e "$f" ] || echo "path $f"
+      fi ;;
+    *) [ -e "$f" ] || echo "path $f" ;;
+  esac
 }
 
 # What a lane's unit (or launcher) reads that this box does not have: one line each, "image <ref>" (by its digest or
@@ -248,13 +288,16 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   # not answer, or an unreadable cache, made the unit in place look emptied, and a new unit whose checkpoint
   # was not there went in place)
   [ ! -e "$hf" ] || [ -r "$hf" ] || { hf_known=0; echo "unknown cache $hf"; }
+  # a daemon that does not answer (suspended, not refusing) is not asked forever: each probe is bounded, and a
+  # probe that ran out is the "did not answer" of the line below, never a missing image (fourth review of
+  # v1.52.0, 2026-11-19, GLM 5.3, "à vérifier": these two calls had no delay at all)
   for img in $(engine_image "$1") $({ grep -oE '[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}' "$1" || true; }) \
              $({ grep -oE 'qwen38-(kolibri|nemotron):[A-Za-z0-9._-]+' "$1" || true; }); do
     case "$seen" in *" $img "*) continue ;; esac
     seen="$seen$img "
-    if docker image inspect "$img" >/dev/null 2>&1; then continue; fi
+    if docker_probe image inspect "$img" >/dev/null 2>&1; then continue; fi
     # the daemon not answering is not the image missing: said unknown, and unit_put keeps the unit in place
-    if docker info >/dev/null 2>&1; then echo "image $img"; else echo "unknown image $img (docker did not answer)"; fi
+    if docker_probe info >/dev/null 2>&1; then echo "image $img"; else echo "unknown image $img (docker did not answer)"; fi
   done
   if [ "$hf_known" = 1 ]; then
   repo="$({ grep -m1 -oE -- '(--model-path|vllm serve) [^ ]+' "$1" || true; } | head -1 | awk '{print $NF}')"
@@ -263,7 +306,7 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   rev="$({ grep -m1 -oE -- '--revision [^ ]+' "$1" || true; } | head -1 | cut -d' ' -f2)"
   case "$repo" in
     "") ;;
-    /*) [ -e "$repo" ] || echo "path $repo" ;;
+    /*) unit_path_needs "$repo" "$hf" ;;
     *) ckpt_cached "$hf/hub/models--${repo//\//--}" "${rev:-main}" || echo "checkpoint $repo@${rev:-main}" ;;
   esac
   if ! draft_in_cache "$1"; then
@@ -275,7 +318,7 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   if [ -n "$repo" ]; then
     rev="$({ grep -m1 -oE -- '--speculative-config\.revision [^ ]+' "$1" || true; } | awk '{print $2}')"
     case "$repo" in
-      /*) [ -e "$repo" ] || echo "path $repo" ;;
+      /*) unit_path_needs "$repo" "$hf" ;;
       *) ckpt_cached "$hf/hub/models--${repo//\//--}" "${rev:-main}" || echo "draft $repo@${rev:-main}" ;;
     esac
   fi

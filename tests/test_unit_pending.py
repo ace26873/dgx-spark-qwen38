@@ -26,7 +26,7 @@ class Box:
         self.images = self.d / "images"
         self.images.write_text(OLD_IMG + "\n")
         (self.bin / "docker").write_text(
-            f'#!/bin/bash\n[ -n "${{DOCKER_DOWN:-}}" ] && exit 2\n[ "$1" = "info" ] && exit 0\n'
+            f'#!/bin/bash\n[ -n "${{DOCKER_HANG:-}}" ] && {{ sleep 60; exit 2; }}\n[ -n "${{DOCKER_DOWN:-}}" ] && exit 2\n[ "$1" = "info" ] && exit 0\n'
             f'[ "$1 $2" = "image inspect" ] || exit 2\ngrep -qxF -- "${{@: -1}}" "{self.images}"\n')
         for f in ("sudo", "docker"):
             (self.bin / f).chmod(0o755)
@@ -48,6 +48,11 @@ class Box:
                 f"  {img} \\\n  python3 -m sglang.launch_server --model-path RadixArk/Qwen3.8-27B-NVFP4 --revision {rev} \\\n"
                 f"  --speculative-draft-model-path maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal "
                 f"--speculative-draft-model-revision {DREV} \\\n  --speculative-num-draft-tokens 16'\n")
+
+    def launch(self, img=OLD_IMG, rev=REV1):
+        return (f"docker run --rm --network host -v {self.hf}:/root/.cache/huggingface \\\n"
+                f"  {img} \\\n"
+                f"  python3 -m sglang.launch_server --model-path RadixArk/Qwen3.8-Flash-Next-NVFP4 --revision {rev} --port 31000\n")
 
     def sh(self, script, env=None):
         r = subprocess.run(["bash", "-c", f'set -euo pipefail\nCONFIG_DIR="{self.config}"; . "{REPO}/lanes.sh"\n' + script],
@@ -189,6 +194,76 @@ class UnitNeeds(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.splitlines(), [f"unknown image {OLD_IMG} (docker did not answer)"])
 
+    def test_a_suspended_daemon_is_not_asked_forever(self):
+        # the two docker probes of unit_needs are bounded: a daemon that never answers (suspended, not
+        # refusing) reads "unknown ...", after a few seconds, not a hang (fourth review of v1.52.0, 2026-11-19,
+        # GLM 5.3, "à vérifier": the two calls had no delay at all)
+        import time
+        f = self.b.d / "rendered"
+        f.write_text(self.b.text())
+        t0 = time.time()
+        r = self.b.sh(f'unit_needs "{f}"', env={"DOCKER_HANG": "1", "QWEN38_DOCKER_PROBE_TIMEOUT": "2"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), [f"unknown image {OLD_IMG} (docker did not answer)"])
+        self.assertLess(time.time() - t0, 30, "the probes are bounded, not asked forever")
+
+    def test_a_model_named_by_its_bare_snapshot_folder_is_read_whole(self):
+        # the MiniMax-H3-Image lane's unit names its checkpoint by the snapshot's folder itself
+        # (install-image-h3.sh's MODEL_SNAP: .../hub/models--<org>--<name>/snapshots/<rev>, nothing after): a
+        # begun fetch of the revision leaves the folder and must read as not whole, as ckpt_cached reads a
+        # checkpoint by repo and revision (fourth review of v1.52.0, 2026-11-19, GLM 5.3: [ -e ] read it as
+        # whole, and unit_put posed the unit reading it)
+        snap = self.b.hf / "hub" / "models--MiniMaxAI--MiniMax-H3-Image" / "snapshots" / REV1
+        snap.mkdir(parents=True)
+        (snap / "model.safetensors.index.json").write_text(json.dumps(
+            {"weight_map": {"a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}))
+        (snap / "model-00001-of-00002.safetensors").write_bytes(b"1")
+        text = (f"[Service]\nEnvironment=HF_HOME={self.b.hf}\n"
+                f"ExecStart=/x/venv/bin/python -m sglang serve --model-path {snap} --port 30026\n")
+        self.assertEqual(self.b.needs(text), [f"path {snap}"])
+        (snap / "model-00002-of-00002.safetensors").write_bytes(b"2")
+        self.assertEqual(self.b.needs(text), [])
+        (snap / "model-00002-of-00002.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"path {snap}"], "a shard gone: not whole")
+        (snap / "model.safetensors.index.json").unlink()
+        (snap / "model.safetensors").write_bytes(b"w")
+        self.assertEqual(self.b.needs(text), [], "no index: the one file is the check, as ckpt_cached")
+        (snap / "model.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"path {snap}"])
+
+    def test_a_drafter_named_by_its_bare_snapshot_folder_is_read_whole(self):
+        # the same for --speculative-config.model with a path, the vLLM drafter of a lane that names it so
+        # (fourth review of v1.52.0, 2026-11-19, GLM 5.3: the case read [ -e ] only)
+        snap = self.b.hf / "hub" / "models--nvidia--Bolt-Draft" / "snapshots" / REV2
+        snap.mkdir(parents=True)
+        (snap / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "d-1.safetensors"}}))
+        self.b.ckpt("nvidia/Nemotron-Bolt", REV1)
+        text = (f"ExecStart=/usr/bin/docker run --rm -v {self.b.hf}:/root/.cache/huggingface {OLD_IMG} \\\n"
+                f"  vllm serve nvidia/Nemotron-Bolt --revision {REV1} \\\n"
+                f"  --speculative-config.method dflash --speculative-config.model {snap} \\\n"
+                f"  --speculative-config.revision main --port 30000\n")
+        self.assertEqual(self.b.needs(text), [f"path {snap}"])
+        (snap / "d-1.safetensors").write_bytes(b"d")
+        self.assertEqual(self.b.needs(text), [])
+        (snap / "d-1.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"path {snap}"])
+
+    def test_a_bare_snapshot_named_as_the_container_sees_it_is_read_where_its_mount_puts_it(self):
+        # -v <hf>:/root/.cache/huggingface and --model-path /root/.cache/huggingface/hub/.../snapshots/<rev>:
+        # read at <hf>/hub/... on the host, /root being 0700 (as the GGUF parts of the llama.cpp lanes)
+        rel = f"hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/{REV1}"
+        snap = self.b.hf / rel
+        snap.mkdir(parents=True)
+        (snap / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "m-1.safetensors"}}))
+        (snap / "m-1.safetensors").write_bytes(b"1")
+        text = (f"ExecStart=/usr/bin/docker run --rm -v {self.b.hf}:/root/.cache/huggingface:ro \\\n"
+                f"  {OLD_IMG} \\\n"
+                f"  python3 -m sglang.launch_server --model-path /root/.cache/huggingface/{rel} --port 30026\n")
+        self.assertEqual(self.b.needs(text), [])
+        (snap / "m-1.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"path {self.b.hf}/{rel}"])
+
+
     @unittest.skipIf(os.geteuid() == 0, "root reads a folder of mode 000")
     def test_an_unreadable_cache_is_said_unknown_not_missing(self):
         self.b.hf.chmod(0)
@@ -317,14 +392,97 @@ class UnitPutOnAnUpdate(unittest.TestCase):
         self.assertEqual(pathlib.Path(str(self.pending) + ".base").read_text().strip(),
                          hashlib.sha256(self.b.unit.read_bytes()).hexdigest())
 
-    def test_a_forced_unit_still_goes_in_place_when_the_lane_cannot_serve_as_it_is(self):
-        # emptied: nothing to keep serving, the new unit goes in place and its Load prepares it
+    def test_a_forced_unit_waits_even_when_the_lane_cannot_serve_as_it_is(self):
+        # emptied, with PENDING_FORCE: the new unit waits anyway, so the wait is what tells the lane's Load to
+        # prepare (the venv again, the image) and then pose it; the moved runtime is never lost (fourth review
+        # of v1.52.0, 2026-11-19, GLM 5.3: it went in place, side_install found no wait, and the Load started it
+        # on the old venv)
         self.b.images.write_text("")
         new = self.b.text(img=NEW_IMG)
-        self.assertEqual(self.b.put(new, force=True), "PUT=new")
-        self.assertEqual(self.b.unit.read_text(), new)
-        self.assertFalse(self.pending.exists())
+        self.assertEqual(self.b.put(new, force=True), "PUT=pending")
+        self.assertEqual(self.b.unit.read_text(), self.b.text(), "the unit in place is untouched")
+        self.assertEqual(self.pending.read_text(), new)
 
+    def test_a_forced_unit_waits_even_when_the_unit_in_place_lacks_what_it_reads(self):
+        # the unit in place reads a checkpoint deleted since (emptied from Library), the runtime moved:
+        # PENDING_FORCE waits the new unit anyway, so side_install notes the runtime lines on the wait and the
+        # Load prepares (the venv again) then poses it (fourth review of v1.52.0, 2026-11-19, GLM 5.3: the new
+        # unit went in place, side_install said "its units only", the runtime move was lost in silence, and the
+        # Load started the new unit on the old venv)
+        self.b.unit.write_text(self.b.text(rev=REV2))       # the unit in place reads REV2, not in the cache
+        new = self.b.text(img=NEW_IMG)
+        self.assertEqual(self.b.put(new, force=True), "PUT=pending")
+        self.assertEqual(self.b.unit.read_text(), self.b.text(rev=REV2), "the unit in place is untouched")
+        self.assertEqual(self.pending.read_text(), new)
+        self.assertEqual(pathlib.Path(str(self.pending) + ".needs").read_text(), f"image {NEW_IMG}\n")
+
+
+
+class TheFlashLauncherWaitsByTheSameDecisionAsUnitPut(unittest.TestCase):
+    """install.sh's flash-launcher branch waits by lanes.sh's unit_put_waits, the same decision as unit_put's,
+    not a second copy of it (fourth review of v1.52.0, 2026-11-19, GLM 5.3: its own test read an "unknown"
+    line of a docker that did not answer, not empty, as "the launcher in place lacks its image", and the new
+    launcher, which read a checkpoint absent, went in place). The block of install.sh runs here with the
+    box's facts stubbed, against a docker and a cache of the test's own."""
+    TEXT = (REPO / "install.sh").read_text()
+    START = TEXT.index('  TMP_LAUNCH="$(mktemp)"; RENDERED+=("$TMP_LAUNCH")')
+    BLOCK = TEXT[START:TEXT.index('  rm -f "$TMP_LAUNCH"', START) + len('  rm -f "$TMP_LAUNCH"')]
+
+    def run_block(self, docker_down=False, new_rev=REV2, old_rev=REV1, ckpt_new=False, pending_put=1):
+        b = Box()
+        b.t = self
+        b.ckpt("RadixArk/Qwen3.8-Flash-Next-NVFP4", old_rev)
+        if ckpt_new:
+            b.ckpt("RadixArk/Qwen3.8-Flash-Next-NVFP4", new_rev)
+        cfg = b.config
+        old = b.launch(rev=old_rev)
+        (cfg / "launch-flash.sh").write_text(old)
+        os.utime(cfg / "launch-flash.sh", (1_700_000_000, 1_700_000_000))
+        newf = b.d / "new-launch.sh"
+        new = b.launch(rev=new_rev)
+        newf.write_text(new)
+        script = (f'REPO_DIR="{REPO}"\nRENDERED=()\nrender_tpl(){{ cat "{newf}"; }}\ndie(){{ echo "DIE: $*" >&2; exit 1; }}\n'
+                  + self.BLOCK + "\n")
+        env = {"PENDING_PUT": str(pending_put)}
+        if docker_down:
+            env["DOCKER_DOWN"] = "1"
+        r = b.sh(script, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return b, cfg, old, new, r.stdout
+
+    def test_a_docker_down_during_the_update_keeps_the_launcher_in_place_and_waits(self):
+        # the launcher in place cannot be concluded on (its image reads "unknown"): it stays, the new one,
+        # which reads a checkpoint absent, waits for the lane's Load, never the reverse (fourth review of
+        # v1.52.0, 2026-11-19, GLM 5.3: the branch's own test read the "unknown" line as a lack of the
+        # launcher in place and installed the new one over it)
+        import hashlib
+        b, cfg, old, new, out = self.run_block(docker_down=True)
+        self.assertIn("its new launch script waits for its Load", out)
+        self.assertNotIn("wrote ", out)
+        self.assertEqual((cfg / "launch-flash.sh").read_text(), old, "the launcher in place is untouched")
+        self.assertEqual(int((cfg / "launch-flash.sh").stat().st_mtime), 1_700_000_000)
+        pend = cfg / "pending"
+        self.assertEqual((pend / "launch-flash.sh").read_text(), new)
+        self.assertIn(f"checkpoint RadixArk/Qwen3.8-Flash-Next-NVFP4@{REV2}", (pend / "qwen38-flash.service.needs").read_text())
+        self.assertEqual((pend / "qwen38-flash.service.base").read_text().strip(),
+                         hashlib.sha256(old.encode()).hexdigest())
+
+    def test_a_launcher_whose_new_checkpoint_is_absent_waits_as_before(self):
+        b, cfg, old, new, out = self.run_block()
+        self.assertIn("its new launch script waits for its Load", out)
+        self.assertEqual((cfg / "launch-flash.sh").read_text(), old)
+        self.assertEqual((cfg / "pending" / "launch-flash.sh").read_text(), new)
+
+    def test_a_launcher_whose_new_pins_are_all_here_is_written(self):
+        b, cfg, old, new, out = self.run_block(ckpt_new=True)
+        self.assertIn("wrote ", out)
+        self.assertEqual((cfg / "launch-flash.sh").read_text(), new)
+        self.assertFalse((cfg / "pending" / "launch-flash.sh").exists())
+
+    def test_a_run_that_does_not_ask_for_it_writes_the_launcher_as_before(self):
+        b, cfg, old, new, out = self.run_block(pending_put=0)
+        self.assertIn("wrote ", out)
+        self.assertEqual((cfg / "launch-flash.sh").read_text(), new)
 
 
 class PrepareReadsTheWaitingUnit(unittest.TestCase):
