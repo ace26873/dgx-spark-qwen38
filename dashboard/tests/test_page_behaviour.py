@@ -3321,6 +3321,34 @@ class TheTranscriptionTab(unittest.TestCase):
         """)
         self.assertIn("one file at a time", r)
 
+    def test_a_busy_lane_disables_the_run_and_says_why(self):
+        # GET /api/transcribe reports the lane's lock ("busy"), and a 409 sets it too: the run
+        # button says someone else's file is being transcribed, until the next poll says the lane
+        # is free again
+        r = run(self, r"""
+        __fetch = async (url, init) => url === '/api/csrf' ? __response(200, {token: 't'})
+          : url === '/api/transcribe' && init && init.method === 'POST' ? __response(409, {error: 'this lane transcribes one file at a time'})
+          : url === '/api/transcribe' ? __response(200, {unit: 'qwen38-transcribe.service', installed: true, port: 30036, host: '127.0.0.1', state: 'ready', available: true, busy: true})
+          : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+        showView('transcribe'); await __settle();
+        window.FileReader = class { readAsDataURL(f){ this.result = f.dataUrl; queueMicrotask(() => this.onload && this.onload()); } };
+        trPickFiles([{name: 'a.wav', size: 10, type: 'audio/wav', dataUrl: 'data:audio/wav;base64,AAAA'}]);
+        await __settle();
+        const before = {busy: TRS.busy, why: txt('tcr-why'), runDisabled: $('tcr-run').disabled, cap: txt('tcr-cap')};
+        await trRun(); await __settle();
+        report({before, busyAfter409: TRS.busy, why: txt('tcr-why'), runDisabled: $('tcr-run').disabled, cap: txt('tcr-cap'), toast: toastText()});
+        """)
+        self.assertTrue(r["before"]["busy"], "the status route's busy never reached the page")
+        self.assertIn("Someone else", r["before"]["why"])
+        self.assertTrue(r["before"]["runDisabled"])
+        self.assertEqual(r["before"]["cap"], "transcribing")
+        self.assertTrue(r["busyAfter409"])
+        self.assertIn("Someone else", r["why"])
+        self.assertTrue(r["runDisabled"])
+        self.assertEqual(r["cap"], "transcribing")
+        self.assertIn("one file at a time", r["toast"])
+
     def test_the_copy_button_copies_the_transcript(self):
         r = run(self, self.LANE_UP + r"""
         trPickFiles([{name: 'a.wav', size: 10, type: 'audio/wav', dataUrl: 'data:audio/wav;base64,AAAA'}]);

@@ -1352,6 +1352,23 @@ class TheTranscribeRelay(Base):
         self.assertFalse(out["installed"])
         self.assertFalse(out["available"])
 
+    def test_the_status_route_reports_the_lock(self):
+        # the page reads "busy" to say another transcription is running on the lane
+        cookie = self.login()
+        saved = self.cp.TRANSCRIBE_UNIT_PATH
+        self.cp.TRANSCRIBE_UNIT_PATH = self.tmp / "no-such-unit.service"
+        self.addCleanup(setattr, self.cp, "TRANSCRIBE_UNIT_PATH", saved)
+        st, _, data = self.req("GET", "/api/transcribe", cookie=cookie)
+        self.assertEqual(st, 200)
+        self.assertIs(json.loads(data)["busy"], False)
+        self.cp.TRANSCRIBE_LOCK.acquire()
+        try:
+            st, _, data = self.req("GET", "/api/transcribe", cookie=cookie)
+        finally:
+            self.cp.TRANSCRIBE_LOCK.release()
+        self.assertEqual(st, 200)
+        self.assertIs(json.loads(data)["busy"], True)
+
     def test_the_post_needs_a_session_and_a_csrf_token(self):
         st, _, _ = self.req("POST", "/api/transcribe", {"audio": self.AUDIO})
         self.assertEqual(st, 401, "an audio file was accepted with no session")

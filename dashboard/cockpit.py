@@ -1418,7 +1418,9 @@ def transcribe_status() -> dict:
     """What the Transcription tab's lane card reads: the lane's own facts, as the Lanes view's card."""
     out = {"unit": TRANSCRIBE_UNIT, "installed": TRANSCRIBE_UNIT_PATH.exists(),
            "port": transcribe_port(), "host": transcribe_flag("--host", "127.0.0.1"),
-           "state": "not installed", "available": False}
+           "state": "not installed", "available": False,
+           # the page reads this to say another transcription is running on the lane
+           "busy": TRANSCRIBE_LOCK.locked()}
     if not out["installed"]:
         return out
     with LIFE_LOCK:

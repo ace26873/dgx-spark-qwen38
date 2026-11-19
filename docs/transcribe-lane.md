@@ -121,7 +121,10 @@ URL, the file name, the language), and the cockpit relays it to `/v1/audio/trans
 lane's port with the box's key read from its file, one file at a time under a lock, with the body
 capped at 90 MB and the decoded audio at 64 MB before anything is read (about 33 minutes at the
 16 kHz mono the page records, and the cockpit process shares the box's unified memory with the
-lane). `GET /api/transcribe` reports the lane for the view's card. What the lane accepts and answers
+lane). `GET /api/transcribe` reports the lane for the view's card, and the lock as `busy` while
+another transcription runs. A 401 from the lane (its key file changed while it runs) is answered
+as a 502 that says the key, never passed through: the page would read a 401 as an expired session.
+What the lane accepts and answers
 is read out of its server at its pinned revision (b12316, commit 5d4c8eeb24db), not assumed:
 
 - **files**: `tools/mtmd/mtmd-helper.cpp` `is_audio_file` sniffs RIFF/WAVE, MP3 (ID3 or a MPEG sync

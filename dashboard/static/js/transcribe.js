@@ -93,6 +93,7 @@ async function trLane(){
     const r = await fetch('/api/transcribe'); if (r.status === 401) return;
     const d = await r.json();
     TRS.port = d.port || 30036; TRS.host = d.host || '127.0.0.1';
+    TRS.busy = !!d.busy;               // the lane's lock: another transcription is running
     trRenderLane(); trSync();
   }catch{ cap('tcr-cap', 'unknown', 'warn'); }
 }
@@ -281,6 +282,7 @@ async function trRun(){
     const {status, ok, out} = await postJSON('/api/transcribe', body);
     if (!ok){
       const why = out.error || (out.refused ? JSON.stringify(out.refused).slice(0, 300) : 'HTTP ' + status);
+      if (status === 409){ TRS.busy = true; trSync(); }   // the next trLane poll clears it when the lane is free
       toast((status === 409 ? '' : `Refused (${status}): `) + why, status === 409 ? 'warn' : 'err', 8000);
       return;
     }
