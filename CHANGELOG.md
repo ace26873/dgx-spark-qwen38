@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.50.0 (2026-11-19): MiniMax-H3-Image, a second image lane
+
+**MiniMax-H3-Image, a second image lane (`image-h3`).** MiniMax's `MiniMaxAI/MiniMax-H3-Image` (@ `5f90473`), text to
+image and image editing with up to ten references in six steps, from 2048 x 2048 to about 16.9 megapixels, served by
+SGLang Diffusion in a venv of its own on `127.0.0.1:30026`, beside Qwen-Image 2.1, which stays the image lane a plain
+install serves first. A plain `./install.sh` puts in its unit and its first Load builds its runtime and fetches its
+weights; `./install.sh --with-image-h3` does it all at install and proves it with a generation; `--no-image-h3`
+leaves it out. Its text encoder is MiniMax-H3's `text_encoder/` at the revision the video lane pins, the same files,
+so a box whose video lane has its weights downloads none for it. Its runtime is the `sglang[diffusion]` 0.5.23 wheel,
+then SGLang's main at `49f1a44ee348` (this model's support is in no release yet), then the DGX Spark recipe's kernel
+packages, each FlashInfer wheel checked by the sha256 its release publishes. It fits beside no other lane, and a 64 GB
+DGX Spark is refused. Measured on the reference box (study G8, in the recipe's container): 2048 x 2048 in 15.6 s, 4736
+x 3552 in 81.1 s, an edit with one reference in 23.6 s. Measured again with this release, through the cockpit, the
+GPU clock capped at 2,000 MHz by its slider (the lane's page says why: 95 to 97.5 C uncapped): its runtime takes 17.3
+GB on disk, it was ready 493 s after its Load and made 2048 x 2048 in 20 s, the box kept 24 GiB available at the
+lowest and the chip stayed at 69 C at most.
+
+**What the box proofs found before this release.** The runtime's install checks what SGLang's sources at the pinned
+commit ask for (their `pyproject.toml`) against what it put in the venv, and installs `blake3`, which the main of that
+commit imports and the 0.5.23 wheel does not carry: the first proof's generation stopped on its import. And the unit
+names its checkpoint by the path of its Hugging Face snapshot, not by the repository's name: offline, huggingface_hub
+1.33 checks a snapshot against the repository's full list of files, and the lane fetches only those it serves (no
+transformer variants, the video lane's text encoder), so the engine restarted in a loop (84 times on the reference
+box) on `IncompleteSnapshotError`. `switch-model.sh` and the cockpit read the repository and its revision off that path.
+
+**Its licence, said where it is chosen.** The MiniMax-H3-Image Community License, and MiniMax-H3's for its text
+encoder, are not granted in the European Union, the United Kingdom, South Korea or the United States (their Excluded
+Territories), and ask MiniMax's written authorization above USD 1 million of annual revenue or for a service hosted
+for third parties. The installer, the lane's page, its card and the Image view's Generate button say so.
+
+**One Image view for the image lane that serves.** The cockpit's Image view addresses the image lane that serves,
+else the one installed, and takes its rules: for MiniMax-H3-Image its sizes up to 6272 x 2688, one image per call, its
+six steps, up to ten references. The Now view says the port of the image lane that serves, read from its unit, and that
+lane's own default until the cockpit answers (it said no address, and kept the other lane's port after a switch).
+
+**Proxy v6.58.** A client is told the box serves images while either image lane serves.
+
+**A test that read a temporary folder's name as a placeholder.** `test_flash_local_stage` refused any "__" in a path:
+the box's temporary folder held one about one run in 200 (GitHub's CI of v1.49.0's notes). It reads a placeholder's
+shape, as the other tests do.
+
 ## v1.49.0 (2026-11-15): Arete 27B, a fifth target of the 27B lane, and UD-IQ3_XXS, the Unsloth GGUF lane's default
 
 **Arete 27B, a fifth target of the 27B lane (`arete`).** [Arete 27B](https://huggingface.co/NousResearch/Arete-27B),
