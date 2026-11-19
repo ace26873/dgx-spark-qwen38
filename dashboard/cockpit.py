@@ -876,7 +876,7 @@ FLASH_LOCAL_UNIT_PATH = Path("/etc/systemd/system/qwen38-flash-local.service")
 # loader, with an MTP head: the family's fourth lane, its boot read as FP4-Local's is (the same
 # loader's lines, measured on the reference box, 2026-10-21), its name in a sentence its own.
 ORNITH_UNIT = "qwen38-ornith-122b.service"
-ORNITH_UNIT_PATH = Path("/etc/systemd/system/qwen38-ornith-122b.service")
+ORNITH_122B_UNIT_PATH = Path("/etc/systemd/system/qwen38-ornith-122b.service")
 # The Liquid AI LFM3 lane runs vLLM's own nightly image, without b12x: read as the family's lanes are (the same routes,
 # the same /metrics, the same engine panel, its boot read from vLLM's own lines), from a table beside theirs
 # (TABLE_LANES below), its name in a sentence and its refusals its own.
@@ -907,7 +907,7 @@ def nemotron_unit_path(unit: str) -> Path:
     if unit == FLASH_LOCAL_UNIT:
         return FLASH_LOCAL_UNIT_PATH
     if unit == ORNITH_UNIT:
-        return ORNITH_UNIT_PATH
+        return ORNITH_122B_UNIT_PATH
     if unit == LFM3_UNIT:
         return LFM3_UNIT_PATH
     return NEMOTRON_SUPER_UNIT_PATH if unit == NEMOTRON_SUPER_UNIT else NEMOTRON_UNIT_PATH
@@ -2908,6 +2908,36 @@ def unit_invocation(unit: str) -> str | None:
     return dict(ln.split("=", 1) for ln in raw.splitlines() if "=" in ln).get("InvocationID", "")
 
 
+_ON_DEMAND_LANES: dict = {}
+
+
+def on_demand_lanes() -> dict:
+    """The lanes a box holds only when it asked for them, by unit: lane_registry.py's list, each
+    with its own installer (install.sh's two text lanes are every box's own). The registry is the
+    one place that says what each lane is, so a lane added there is guarded in collect_lifecycle
+    the day it is added, not the day a review finds its card on a box that lacks its unit (found
+    in review, 2026-11-19: the LFM2.5 lane had no guard). Read once: none of it changes while the
+    cockpit runs."""
+    if "lanes" not in _ON_DEMAND_LANES:
+        try:
+            spec = importlib.util.spec_from_file_location("lane_registry_for_cockpit", REPO_DIR / "lane_registry.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _ON_DEMAND_LANES["lanes"] = {f["unit"]: lane for lane, f in mod.LANES.items()
+                                         if f["installer"] != "install.sh"}
+        except Exception:  # noqa: BLE001 (a registry that cannot be read guards nothing, never a dead panel)
+            _ON_DEMAND_LANES["lanes"] = {}
+    return _ON_DEMAND_LANES["lanes"]
+
+
+def on_demand_unit_path(unit: str) -> Path:
+    """The unit file of a lane installed on demand: the module's own constant for it when it has
+    one (tests move those), the directory every unit lives in otherwise."""
+    lane = on_demand_lanes().get(unit, "")
+    named = globals().get(lane.replace("-", "_").upper() + "_UNIT_PATH") if lane else None
+    return named if isinstance(named, Path) else Path("/etc/systemd/system") / unit
+
+
 @guard
 def collect_lifecycle():
     """Explicit per-engine state + progress + ETA + action gates (2s tier)."""
@@ -2937,16 +2967,13 @@ def collect_lifecycle():
         is_nemotron = unit in TABLE_LANES      # the vLLM lanes on b12x (Nemotron's two, FP4-Local, Ornith) and LFM3
         is_llamacpp = unit in LLAMACPP_LANES      # llama.cpp's: the Unsloth GGUF lane
         is_transcribe = unit == TRANSCRIBE_UNIT   # llama.cpp's too, on a port of its own
-        if (is_image or is_video) and not (image_unit_path(unit).exists() if is_image else VIDEO_UNIT_PATH.exists()):
+        # Every lane installed on demand (lane_registry.py's list, each with its own installer;
+        # install.sh's two text lanes are the box's own) is a lane a box may not hold: absent, it
+        # has no card, no pill and no gate, and its Start is refused before any sudo command
+        # (base.js), not run into systemd's "unit not found" (found in review, 2026-11-19: the
+        # LFM2.5 lane had no guard here).
+        if unit in on_demand_lanes() and not on_demand_unit_path(unit).exists():
             continue                    # not installed: no card, no pill, no gate
-        if is_kolibri and not KOLIBRI_UNIT_PATH.exists():
-            continue
-        if is_nemotron and not nemotron_unit_path(unit).exists():
-            continue
-        if is_llamacpp and not FLASH_UNSLOTH_UNIT_PATH.exists():
-            continue
-        if is_transcribe and not TRANSCRIBE_UNIT_PATH.exists():
-            continue
         # the lanes the cockpit follows on their own facts, not the SGLang text belts
         own_facts = is_image or is_video or is_kolibri or is_nemotron or is_llamacpp or is_transcribe
         # The checkpoint the unit names, read once per unit and per poll; and the one this
@@ -3417,7 +3444,7 @@ def lane_prepared(lane: str):
     needs. None when the lane is not installed (no unit, no launcher)."""
     unit = {"image": IMAGE_UNIT_PATH, "video": VIDEO_UNIT_PATH, "kolibri": KOLIBRI_UNIT_PATH,
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
-            "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
+            "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_122B_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
             "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH,
             "flash": UNIT_PATHS["qwen38-flash.service"], "27b": UNIT_PATHS["qwen38-sglang.service"]}[lane]
@@ -3665,7 +3692,7 @@ def lane_startable(lane: str):
     unit = UNIT_OF_LANE[lane]
     path = {"image": IMAGE_UNIT_PATH, "video": VIDEO_UNIT_PATH, "kolibri": KOLIBRI_UNIT_PATH,
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
-            "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_UNIT_PATH,
+            "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_122B_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
             "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
     try:
@@ -3947,7 +3974,7 @@ def _lane_unit_texts() -> list[str]:
     texts = []
     for path in (UNIT_PATHS["qwen38-sglang.service"], UNIT_PATHS["qwen38-flash.service"],
                  KOLIBRI_UNIT_PATH, NEMOTRON_UNIT_PATH, NEMOTRON_SUPER_UNIT_PATH, FLASH_LOCAL_UNIT_PATH,
-                 ORNITH_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH,
+                 ORNITH_122B_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH,
                  TRANSCRIBE_UNIT_PATH, LFM25_UNIT_PATH, LFM3_UNIT_PATH):
         try:
             texts.append(path.read_text(errors="replace"))
@@ -4242,7 +4269,7 @@ def target_unit(target: str) -> Path:
     if target == "flash-local":
         return FLASH_LOCAL_UNIT_PATH
     if target == "ornith-122b":
-        return ORNITH_UNIT_PATH
+        return ORNITH_122B_UNIT_PATH
     if target.startswith("flash-unsloth"):
         return FLASH_UNSLOTH_UNIT_PATH
     if target == "transcribe":

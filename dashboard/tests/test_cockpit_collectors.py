@@ -1989,5 +1989,78 @@ class WhereAClientSendsItsRequests(Base):
         self.assertEqual((d["known"], d["port"], d["bind"]), (False, 30001, "0.0.0.0"))
 
 
+class ALaneTheBoxDoesNotHoldHasNoCardPillOrGate(Base):
+    """collect_lifecycle recorded a state for a lane whose unit was not on the box: its card said
+    "stopped" of nothing, and its Start left for a sudo command systemd answers "unit not found"
+    (found in review, 2026-11-19: the LFM2.5 lane had no guard, where each other lane installed on
+    demand had one). The guard is one rule over lane_registry.py's on-demand lanes, so the next
+    lane is covered the day it is added, not the day a review finds it."""
+
+    def setUp(self):
+        self.cp.BOOT_SEEN.clear()
+        with self.cp.STATE_LOCK:
+            self.cp.STATE["engine_fast"] = {"data": {"healthy": False}}
+
+    def registry_on_demand(self):
+        spec = importlib.util.spec_from_file_location("lane_registry_for_guard", REPO / "lane_registry.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return {f["unit"]: lane for lane, f in mod.LANES.items() if f["installer"] != "install.sh"}
+
+    def move_unit(self, unit, path):
+        """The lane's unit path constant, moved to path: the module's own constant when it has
+        one (the registry names the lane, the constant is named for the lane), restored after."""
+        lane = self.cp.on_demand_lanes()[unit]
+        name = lane.replace("-", "_").upper() + "_UNIT_PATH"
+        saved = (getattr(self.cp, name), name) if hasattr(self.cp, name) else (None, name)
+        if saved[0] is not None:
+            setattr(self.cp, name, path)
+        self.addCleanup(lambda: saved[0] is not None and setattr(self.cp, name, saved[0]))
+        return saved[1]
+
+    def test_the_one_rule_covers_exactly_the_registry_on_demand_lanes(self):
+        # the registry is the one list: a lane it holds and lifecycle follows is guarded by the
+        # one rule, and a lane lifecycle follows but the registry lacks fails here (the speech
+        # lane is on demand too, but it is no engine: lifecycle does not follow it)
+        on_demand = self.registry_on_demand()
+        self.assertEqual(self.cp.on_demand_lanes(), on_demand)
+        followed = set(self.cp.lc.ENGINE_UNITS) - {"qwen38-sglang.service", "qwen38-flash.service"}
+        self.assertEqual(set(on_demand) & set(self.cp.lc.ENGINE_UNITS), followed)
+        # and each of them has a unit path constant of its own, so no test reads the box's real
+        # /etc/systemd/system behind the guard's back
+        for unit in followed:
+            lane = on_demand[unit]
+            self.assertTrue(hasattr(self.cp, lane.replace("-", "_").upper() + "_UNIT_PATH"), unit)
+
+    def test_every_on_demand_lane_absent_from_the_box_is_left_out(self):
+        for unit in self.cp.on_demand_lanes():
+            if unit not in self.cp.lc.ENGINE_UNITS:
+                continue
+            with self.subTest(unit=unit):
+                self.move_unit(unit, self.tmp / f"absent-{unit}")
+                self.box({f"systemctl show {unit}": "ActiveState=active\nSubState=running\n"})
+                out = self.cp.collect_lifecycle()
+                self.assertNotIn(unit, (out.get("data", out))["engines"],
+                                 "a lane whose unit is not on the box has no state")
+
+    def test_every_on_demand_lane_present_on_the_box_is_followed(self):
+        for unit in self.cp.on_demand_lanes():
+            if unit not in self.cp.lc.ENGINE_UNITS:
+                continue
+            with self.subTest(unit=unit):
+                path = self.tmp / f"present-{unit}"
+                path.write_text("ExecStart=/bin/true\n")
+                self.move_unit(unit, path)
+                self.box({f"systemctl show {unit}": "ActiveState=inactive\nSubState=dead\n"})
+                out = self.cp.collect_lifecycle()
+                self.assertIn(unit, (out.get("data", out))["engines"])
+
+    def test_the_two_text_lanes_are_followed_with_no_unit_file(self):
+        # install.sh installs them both: their card is the box's own, whatever a test box holds
+        self.box({"systemctl show qwen38-sglang.service": "ActiveState=inactive\nSubState=dead\n"})
+        out = self.cp.collect_lifecycle()
+        self.assertIn("qwen38-sglang.service", (out.get("data", out))["engines"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

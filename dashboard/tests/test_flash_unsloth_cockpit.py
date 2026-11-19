@@ -128,7 +128,7 @@ class Base(unittest.TestCase):
             "    --spec-type ngram-mod,draft-dflash --spec-draft-n-max 7 --spec-draft-p-min 0.5 \\\n"
             "    --metrics --no-ui --api-key-file /out/api-key --host 127.0.0.1 --port 30000'\n")
         cls.ck.FLASH_UNSLOTH_UNIT_PATH = cls.unit
-        for name in ("NEMOTRON_UNIT_PATH", "NEMOTRON_SUPER_UNIT_PATH", "ORNITH_UNIT_PATH", "FLASH_LOCAL_UNIT_PATH"):
+        for name in ("NEMOTRON_UNIT_PATH", "NEMOTRON_SUPER_UNIT_PATH", "ORNITH_122B_UNIT_PATH", "FLASH_LOCAL_UNIT_PATH"):
             setattr(cls.ck, name, cls.box / f"absent-{name.lower()}.service")
         cls.real_run = cls.ck.run
 

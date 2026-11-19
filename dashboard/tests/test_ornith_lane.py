@@ -81,7 +81,7 @@ class Base(unittest.TestCase):
                             f"  vllm serve {REPO_ID} --revision " + "d" * 40 + " \\\n"
                             "    --speculative-config.method mtp --speculative-config.num_speculative_tokens 2 \\\n"
                             "    --port 30000'\n")
-        cls.ck.ORNITH_UNIT_PATH = cls.unit
+        cls.ck.ORNITH_122B_UNIT_PATH = cls.unit
         # the other lanes of the family, not installed here
         cls.ck.NEMOTRON_UNIT_PATH = cls.box / "absent-nemotron.service"
         cls.ck.NEMOTRON_SUPER_UNIT_PATH = cls.box / "absent-nemotron-super.service"
@@ -196,7 +196,7 @@ class ItsUnit(Base):
         self.assertIn("install-ornith-122b.sh", self.ck.rg.PIN_FILES)
         self.assertEqual(self.ck.lc.LANE_PROVIDER[U], "ornith-122b")
         self.assertEqual(self.ck.target_lane("ornith-122b"), "ornith-122b")
-        self.assertEqual(self.ck.target_unit("ornith-122b"), self.ck.ORNITH_UNIT_PATH)
+        self.assertEqual(self.ck.target_unit("ornith-122b"), self.ck.ORNITH_122B_UNIT_PATH)
         self.assertEqual(self.ck.ACTIONS["prepare"]["argv"]({"target": "ornith-122b"})[-1], "ornith-122b")
 
     def test_it_is_prepared_once_the_image_its_unit_names_is_here(self):
@@ -205,12 +205,12 @@ class ItsUnit(Base):
         self.assertTrue(self.ck.lane_prepared("ornith-122b"))
         self.ck.run = lambda argv, **kw: ""
         self.assertFalse(self.ck.lane_prepared("ornith-122b"))
-        saved = self.ck.ORNITH_UNIT_PATH
-        self.ck.ORNITH_UNIT_PATH = self.box / "absent.service"
+        saved = self.ck.ORNITH_122B_UNIT_PATH
+        self.ck.ORNITH_122B_UNIT_PATH = self.box / "absent.service"
         try:
             self.assertIsNone(self.ck.lane_prepared("ornith-122b"))
         finally:
-            self.ck.ORNITH_UNIT_PATH = saved
+            self.ck.ORNITH_122B_UNIT_PATH = saved
 
     def test_its_journal_goes_in_the_diagnostics_bundle(self):
         src = (DASH / "cockpit.py").read_text()
