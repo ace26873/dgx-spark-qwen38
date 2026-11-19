@@ -1047,7 +1047,10 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   # names the repo with HF_HUB_OFFLINE=1, so its refs/main IS the served commit, and one an
   # install made with IMAGE_MODEL_REV= stays served. The installer's pin answers when the ref
   # is missing or holds no commit, and main for a checkpoint of the unit's own.
-  IMG_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$IMAGE_UNIT" | cut -d= -f3- || true)"
+  # the cache read from the same unit the fetch is for (IMG_SRC, the pending one when an update waits), not
+  # from the unit in place: the fetch verifies and fills the cache the waiting unit reads (sixth review of
+  # v1.52.0, 2026-11-19, GLM 5.3: it read the one in place, and a moved cache looped the wait forever)
+  IMG_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$IMG_SRC" | cut -d= -f3- || true)"
   IMG_MODEL_DIR="${IMG_HF:-$HF_CACHE}/hub/models--${IMG_MODEL//\//--}"
   IMG_REV=""
   if [ -f "$IMG_MODEL_DIR/refs/main" ]; then IMG_REV="$(cat "$IMG_MODEL_DIR/refs/main")"; fi
@@ -1213,7 +1216,7 @@ if [ "$CHOICE" = "video" ]; then
   fi
   VID_MODEL="$(grep -oE -- '--model-path [^ ]+' "$VID_SRC" | head -1 | cut -d' ' -f2 || true)"
   VID_MODEL="${VID_MODEL:-MiniMaxAI/MiniMax-H3}"
-  VID_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$VIDEO_UNIT" | cut -d= -f3- || true)"
+  VID_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$VID_SRC" | cut -d= -f3- || true)"
   printf '\n\033[1;36m── Verifying %s in the cache (resumable)\033[0m\n' "$VID_MODEL"
   echo "MiniMax-H3: its licence, the MiniMax H3 Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE)."
   # Only the partition the installed unit serves is verified and fetched, by the same
@@ -1380,7 +1383,7 @@ if [ "$CHOICE" = "image-h3" ]; then
   done
   unset _v
   H3_MODEL="$(grep -oE -- '--model-path [^ ]+' "$H3_SRC" | head -1 | cut -d' ' -f2 || true)"
-  H3_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$IMAGE_H3_UNIT" | cut -d= -f3- || true)"
+  H3_HF="$(grep -m1 -E '^Environment=HF_HOME=' "$H3_SRC" | cut -d= -f3- || true)"
   H3_REV=""
   # The unit names the checkpoint by its snapshot's path (v1.50.0: by name, an offline start refused the snapshot this
   # lane fetches only in part): the repository and the revision are that path's. A unit of before names the repository,

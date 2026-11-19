@@ -1209,5 +1209,26 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
                       "the image fetch reads the asked target even when a wait exists")
 
 
+class TheSwitchReadsTheWaitingUnitsCache(unittest.TestCase):
+    """The image, video and MiniMax-H3-Image switches fetch what the unit that waits reads, so the cache
+    they fetch into is read from that same unit (IMG_SRC/VID_SRC/H3_SRC), not from the one in place: a cache
+    moved by a re-run of install with HF_CACHE= would otherwise be checked where the fetch does not look,
+    and the wait would loop forever saying it stays waiting (sixth review of v1.52.0, 2026-11-19, GLM 5.3)."""
+
+    def test_each_branch_reads_the_hf_home_of_the_unit_it_fetches_for(self):
+        text = (REPO / "switch-model.sh").read_text()
+        pat = 'grep -m1 -E ' + chr(39) + '^Environment=HF_HOME=' + chr(39) + ' "$'
+        starts = {"image": 'if [ "$CHOICE" = "image" ] ||', "video": 'if [ "$CHOICE" = "video" ]; then',
+                  "image-h3": 'if [ "$CHOICE" = "image-h3" ]; then'}
+        for branch, src, unit in (("image", "IMG_SRC", "IMAGE_UNIT"), ("video", "VID_SRC", "VIDEO_UNIT"),
+                                  ("image-h3", "H3_SRC", "IMAGE_H3_UNIT")):
+            with self.subTest(branch=branch):
+                i = text.index(starts[branch])
+                block = text[i:text.index("exit 0", i)]
+                self.assertIn(pat + src + '"', block)
+                self.assertNotIn(pat + unit + '"', block,
+                                 "the cache is read from the unit in place, not from the one that waits")
+
+
 if __name__ == "__main__":
     unittest.main()
