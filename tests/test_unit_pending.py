@@ -138,6 +138,20 @@ class UnitNeeds(unittest.TestCase):
         text = f"ExecStart=/usr/bin/docker run --rm {OLD_IMG} -m {part} --port 30000\n"
         self.assertEqual(self.b.needs(text), [f"path {part}"])
 
+    def test_a_gguf_named_by_its_path_in_the_container_is_looked_for_where_its_mount_puts_it_on_the_host(self):
+        # the Unsloth lane's unit mounts <hf>:/root/.cache/huggingface and names its -m /root/.cache/huggingface/...
+        # (install-flash-unsloth.sh renders it so): /root is 0700 on the host, so the container's path tested as it
+        # is never exists, and every update of the lane waited for a file the box has (review of v1.52.0, 2026-11-19)
+        rel = f"hub/models--unsloth--Qwen3.8-Flash-Next-GGUF/snapshots/{'e' * 40}/UD-IQ3_XXS/m-00001-of-00004.gguf"
+        text = (f"ExecStart=/usr/bin/docker run --rm -v {self.b.hf}:/root/.cache/huggingface:ro {OLD_IMG} "
+                f"-m /root/.cache/huggingface/{rel} --port 30000\n")
+        part = self.b.hf / rel
+        part.parent.mkdir(parents=True)
+        part.write_bytes(b"GGUF")
+        self.assertEqual(self.b.needs(text), [])
+        part.unlink()
+        self.assertEqual(self.b.needs(text), [f"path {self.b.hf}/{rel}"])
+
 
 class UnitPutOnAnUpdate(unittest.TestCase):
     def setUp(self):

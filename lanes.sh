@@ -256,6 +256,11 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
     esac
   fi
   for f in $({ grep -oE '/[^ "=]*/hub/models--[^ "/]+/snapshots/[0-9a-f]{40}/[^ "]+\.gguf' "$1" || true; } | sort -u); do
+    # a GGUF the unit names as its container sees it (-m /root/.cache/huggingface/... when it mounts the host's
+    # cache there, another than the default one or not: hf, unit_hf_cache's) is looked for where that mount puts
+    # it on the host: /root is 0700, so the container's path tested as it is never exists (review of v1.52.0,
+    # 2026-11-19). A path already on the host matches no mount and stays as it is.
+    case "$f" in /root/.cache/huggingface/*) f="$hf${f#/root/.cache/huggingface}" ;; esac
     [ -e "$f" ] || echo "path $f"
   done
 }
