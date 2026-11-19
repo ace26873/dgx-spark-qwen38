@@ -44,7 +44,7 @@ class UpdateWaits(unittest.TestCase):
 set -euo pipefail
 CONFIG_DIR={d}; . "{REPO}/lanes.sh"
 LANE={lane}; UNIT_NAME=qwen38-sglang.service; ALL_WEIGHTS={all_weights}; UNITS_ONLY={units_only}; NO_SERVICE={no_service}
-TEXT_NAMED={named}; KEEP_MODEL_VERBATIM={verbatim}; IMAGE={IMAGE}; FLASH_IMAGE={IMAGE}; HF_CACHE={hf}
+TEXT_NAMED={named}; KEEP_MODEL_VERBATIM={verbatim}; IMAGE={IMAGE}; FLASH_IMAGE={IMAGE}; SERVE_IMAGE={IMAGE}; FLASH_SERVE_IMAGE={IMAGE}; HF_CACHE={hf}
 MODEL_REPO=RadixArk/Qwen3.8-27B-NVFP4; MODEL_REV={REV}; DRAFT2_REPO=maurienne-ai/Draft; DRAFT2_REV={DREV}
 text_lane_prepared(){{ return {0 if prepared else 1}; }}
 ckpt_cached(){{ return {0 if ckpt else 1}; }}
@@ -307,6 +307,63 @@ class TheWaitsLoadProbeCoversWhatTheRealUnitsRead(unittest.TestCase):
                                        r"speculative-config\.revision)\b", t)):
                 with self.subTest(tpl=tpl, flag=flag):
                     self.assertIn(flag, probe_flags)
+
+
+class TheWaitsLoadProbeReadsTheImageTheRenderedUnitServes(unittest.TestCase):
+    """The WAITS_LOAD probe tests the image the unit this run renders will serve, SERVE_IMAGE_FINAL
+    (SERVE_IMAGE= / FLASH_SERVE_IMAGE=, a documented option, substituted into __IMAGE__ below),
+    not the pinned one: a box serving an override while the pin is absent does not lack it, and its
+    update must not go units-only with a message saying its Load will download an image the unit
+    never reads (sixth review of v1.52.0, 2026-11-19, GLM 5.3). The probe block runs here with a
+    docker that knows which images are on the box."""
+
+    BLOCK = TEXT[TEXT.index("  _wimg="):TEXT.index("\n  fi\n", TEXT.index("WAITS_LOAD=1", TEXT.index("  _wimg="))) + len("\n  fi\n")]
+    PIN = "lmsysorg/sglang@sha256:" + "a" * 64
+    OTHER_PIN = "lmsysorg/sglang@sha256:" + "b" * 64
+
+    def run_probe(self, lane, serve_image):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="waits-img-"))
+        hf = d / "hf"
+        hf.mkdir()
+        binp = d / "bin"
+        binp.mkdir()
+        # the pinned image is absent, the serving override is there
+        (binp / "docker").write_text(
+            '#!/bin/bash\ncase "$1 $2" in\n'
+            '  "image inspect") case "$3" in ' + self.PIN + '|' + self.OTHER_PIN + ') exit 1 ;; *) exit 0 ;; esac ;;\n'
+            '  "info "*) exit 0 ;;\nesac\nexit 0\n')
+        (binp / "docker").chmod(0o755)
+        script = f"""
+set -euo pipefail
+CONFIG_DIR={d}; . "{REPO}/lanes.sh"
+LANE={lane}; PENDING_PUT=1; UNITS_ONLY=0; WAITS_LOAD=0; WAITS_WHAT=""
+IMAGE={self.PIN}; FLASH_IMAGE={self.OTHER_PIN}; SERVE_IMAGE={serve_image}; FLASH_SERVE_IMAGE={serve_image}
+HF_CACHE={hf}
+MODEL_REPO=RadixArk/Qwen3.8-27B-NVFP4; MODEL_REV={REV}; DRAFT2_REPO=maurienne-ai/Draft; DRAFT2_REV={DREV}
+ckpt_cached(){{ return 0; }}
+draft_in_cache(){{ return 0; }}
+""" + self.BLOCK + """
+echo "STATE WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ONLY WAITS_WHAT=$WAITS_WHAT"
+"""
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                           env={**os.environ, "PATH": f"{binp}:{os.environ['PATH']}"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_a_serving_override_present_and_the_pin_absent_is_no_lack(self):
+        for lane in ("27b", "flash"):
+            with self.subTest(lane=lane):
+                out = self.run_probe(lane, "mon-build:local")
+                self.assertIn("STATE WAITS_LOAD=0 UNITS_ONLY=0 WAITS_WHAT=", out)
+                self.assertNotIn("needs downloads", out)
+
+    def test_the_pin_absent_and_no_override_is_a_lack(self):
+        # no SERVE_IMAGE=: the pin is what the unit serves, and its absence sends the update to its Load
+        for lane in ("27b", "flash"):
+            with self.subTest(lane=lane):
+                out = self.run_probe(lane, self.PIN if lane == "27b" else self.OTHER_PIN)
+                self.assertIn("STATE WAITS_LOAD=1 UNITS_ONLY=1", out)
+                self.assertIn("image " + (self.PIN if lane == "27b" else self.OTHER_PIN), out)
 
 
 if __name__ == "__main__":

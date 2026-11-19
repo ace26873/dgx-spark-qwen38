@@ -1922,7 +1922,11 @@ if [ "$PENDING_PUT" -eq 1 ] && [ "$UNITS_ONLY" -eq 0 ] && [ "$NO_SERVICE" -eq 0 
    && [ "$KEEP_MODEL_VERBATIM" -eq 0 ] && text_lane_prepared "$LANE"; then
   # what its new pins read, written as its unit names them and asked as every unit is (lanes.sh's unit_needs): one test
   # for the run and for the unit it would write, not two that could disagree (code review of v1.52.0)
-  _wimg="$IMAGE"; [ "$LANE" = flash ] && _wimg="$FLASH_IMAGE"
+  # the image the unit this run renders will serve, not the pin: SERVE_IMAGE=/FLASH_SERVE_IMAGE= is a documented
+  # option and __IMAGE__ is SERVE_IMAGE_FINAL below, so a box serving an override while the pin is absent does not
+  # lack it (sixth review of v1.52.0, 2026-11-19, GLM 5.3: the probe tested the pin, said the image was missing, and
+  # the update went units-only with a message that said its Load would download an image the unit never reads)
+  _wimg="$SERVE_IMAGE"; [ "$LANE" = flash ] && _wimg="$FLASH_SERVE_IMAGE"
   _wunit="$(mktemp)"
   { printf -- '-v %s:/root/.cache/huggingface \\\n  %s \\\n' "$HF_CACHE" "$_wimg"
     printf '  python3 -m sglang.launch_server --model-path %s --revision %s' "$MODEL_REPO" "$MODEL_REV"
