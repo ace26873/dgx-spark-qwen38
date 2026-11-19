@@ -396,6 +396,30 @@ class TheTranscribeLaneServesNoText(unittest.TestCase):
         self.assertEqual(r, "qwen38-transcribe")
 
 
+class ThePoolLegendNamesNoLaneWhenNoneServes(unittest.TestCase):
+    """The reservoir's legend named a "lane" segment while no lane served: its first item read
+    "lane, GPU allocations: 0.0 GiB" of nothing (review of v1.53.0, 2026-11-19)."""
+
+    def test_the_legend_says_gpu_allocations_alone(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('stopped')}),
+              machine: {mem: {MemTotal: 128e9, MemAvailable: 100e9, Cached: 5e9, SwapTotal: 0, SwapFree: 0}},
+              gpu: {procs: []}});
+        report(txt('pool-legend'));
+        """)
+        self.assertIn("GPU allocations", r)
+        self.assertNotIn("lane, GPU allocations", r)
+
+    def test_a_serving_lane_keeps_its_name_in_the_legend(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')}),
+              machine: {mem: {MemTotal: 128e9, MemAvailable: 100e9, Cached: 5e9, SwapTotal: 0, SwapFree: 0}},
+              gpu: {procs: [{mem: '40000 MiB'}]}});
+        report(txt('pool-legend'));
+        """)
+        self.assertIn("RadixArk, GPU allocations", r)
+
+
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and
     the page kept its last success on screen as "ok, 0.4 s (skipped this round: busy)"."""

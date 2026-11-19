@@ -74,7 +74,7 @@ function renderPool(){
   $('reservoir').setAttribute('aria-label', `Unified memory: ${fmtGiB(p.inUse)} in use of ${fmtGiB(p.total)}, ${fmtGiB(p.avail)} available`);
   const lg = $('pool-legend'); clear(lg);
   const item = (color, label, v) => { const sp = el('span'); const i = el('i'); i.style.background = color; sp.append(i, label + ' '); sp.append(el('b', null, v)); lg.append(sp); };
-  item(s ? `var(--lane-${LANE_META[s[0]].lane})` : 'var(--brand-lane)', laneName ? `${laneName}, GPU allocations` : 'lane, GPU allocations', fmtGiB(p.lane));
+  item(s ? `var(--lane-${LANE_META[s[0]].lane})` : 'var(--brand-lane)', laneName ? `${laneName}, GPU allocations` : 'GPU allocations', fmtGiB(p.lane));
   item('var(--slate)', 'System and apps', fmtGiB(p.other));
   item('var(--steel)', 'Page cache', fmtGiB(p.cache));
   item('color-mix(in srgb, var(--ok) 45%, transparent)', 'Free', fmtGiB(p.free));
