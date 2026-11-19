@@ -75,6 +75,47 @@ let `TimeoutExpired` escape with the proxy (port 0) still running: 37 orphans of
 found on the box on 2026-11-19. The test now kills that process by its own pid on `TimeoutExpired` and
 fails with a clear message. Proven by mutation (a proxy that does not refuse the certificate: before, a
 process outlives the test; after, none).
+## Unreleased: the Transcription tab
+
+The cockpit gets a **Transcription** view (in the Create group, after Video) that drives the
+NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video views drive theirs.
+
+- **The relay, server-side.** `POST /api/transcribe` takes the audio file as a base64 data URL with
+  the file name and the language, and relays it to the lane's `/v1/audio/transcriptions` on its own
+  port (30036, read from its unit) with the box's key read from `~/.config/qwen38/api-key`: the key
+  never reaches the page and is asserted in neither the forwarded body nor any answer. Same
+  session cookie and same CSRF token as every mutating POST. The body is capped at 90 MB and the
+  decoded audio at 64 MB, both checked before anything is read (about 33 minutes at the 16 kHz mono
+  the page records, and the cockpit process shares the box's unified memory with the lane), and one
+  transcription runs at a time under a lock, as the lane serves one request at a time (its unit
+  passes no `-np`). `GET /api/transcribe` reports the lane for the view's card. The language is a
+  two or three letter code or empty to detect it, since the lane's server puts it in its prompt.
+- **What the lane accepts and answers, read out of its server at its pinned revision (llama.cpp
+  b12316, commit 5d4c8eeb24db), not assumed.** It reads **wav, mp3 and flac** (`tools/mtmd/mtmd-helper.cpp`
+  sniffs RIFF/WAVE, ID3 or a MPEG sync word, fLaC, and decodes with miniaudio); anything else is
+  refused by the lane, so the page refuses it first with the ffmpeg line that converts it, and no
+  conversion was added server-side. Its answer is `{"type": "transcript.text.done", "text": ...,
+  "usage": ...}` (`server-task.cpp to_json_oaicompat_asr`): no segments, no timestamps, no detected
+  language, and any `response_format` but `json` is refused (`server-chat.cpp`), so the view offers
+  a `.txt` download and **no `.srt`**.
+- **The view.** Drop or pick an audio file, or record from the microphone: the record button is
+  disabled with the reason on a plain-HTTP page, because `getUserMedia` exists only in a secure
+  context (HTTPS or localhost), and the recording is decoded and encoded as WAV (16 kHz mono
+  PCM16) in the browser, since MediaRecorder gives webm or ogg, which the lane refuses. The
+  language is detected by default or chosen in a short list (French, English, and the other
+  languages NVIDIA's model card puts at its "Leading" level). The transcript shows with the same
+  Copy button as the other fields, a `.txt` download, and the same call as a curl with the key read
+  on the box, never printed. The lane loads on demand like the others: the card in the view says
+  whether it serves and offers the same Load journey as the Lanes view when it does not, and the
+  lane's bay in Now opens the tab once it serves.
+- **Tests.** The relay's guards over HTTP in `dashboard/tests/test_cockpit_http.py` (auth, CSRF,
+  the caps before any read, the key in the header only, the refusals, the lock, the status route),
+  red before and green after; the page in `dashboard/tests/test_page_behaviour.py` (the tab in the
+  rail, the section and the router together, the lane card and its Load, the file sent and the
+  transcript shown with copy and `.txt`, the format and cap refusals, the microphone disabled
+  outside a secure context, the WAV encoding, the whole record flow), red before and green after.
+  `docs/cockpit.md` and `docs/transcribe-lane.md` document the view, the formats, the answer and the
+  cap.
 
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 

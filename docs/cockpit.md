@@ -348,6 +348,35 @@ serves (generation, editing with up to ten references, native RGBA; see
 serves (text to video with joint video-and-audio, first/last-frame conditioning; see
 [docs/video-lane.md](video-lane.md)).
 
+## The Transcription view: speech to text, from a browser
+
+**Transcription** drives the NVIDIA Nemotron Transcribe lane when it serves (see
+[docs/transcribe-lane.md](transcribe-lane.md)). The lane answers on its own port (30036) with the
+box's key, so the view never talks to it directly: the browser sends the audio file to the
+cockpit's `POST /api/transcribe`, and the cockpit relays it to `/v1/audio/transcriptions` with the
+key it reads from `~/.config/qwen38/api-key`, the way the image and video routes relay to their
+lanes. The key is in neither the page nor any answer; a test asserts it.
+
+- **an audio file, dropped or picked**, or **recorded from the microphone** in the browser. The
+  lane reads wav, mp3 and flac (what its server sniffs at its pinned llama.cpp revision), so a
+  file in anything else is refused in the page with the ffmpeg line that converts it; nothing is
+  converted server-side. The microphone needs a secure context (HTTPS or localhost), so on the
+  plain HTTP the cockpit is often served on, the button is disabled and says why, with no error.
+  A recording is encoded as WAV (16 kHz mono PCM16) in the browser, because MediaRecorder gives
+  webm or ogg, which the lane refuses.
+- **the language**: detected by default, or chosen in a short list (French, English, and the
+  other languages NVIDIA's card puts at its "Leading" level), sent as the two or three letter
+  code the lane's server puts in its prompt.
+- **the transcript**, with the same Copy button as the other fields, a `.txt` download, and the
+  same call as a curl (the key read on the box, never printed). There is no `.srt`: the lane's
+  answer at its pinned revision is `{"text": ...}` only, with no segments or timestamps, and any
+  `response_format` but `json` is refused by its server.
+- **the lane on demand**, like the other lanes: the card in the view says whether it serves, and
+  offers the same Load journey as the Lanes view when it does not.
+- **a bounded file**: 64 MB of decoded audio (about 33 minutes at the 16 kHz mono the page
+  records), refused before it is read, because the cockpit process shares the box's unified memory
+  with the lane; one transcription at a time, as the lane serves one request at a time.
+
 ## Being told there is a newer version
 
 A box that runs an old release does not know it. The answer existed from v1.6 in the

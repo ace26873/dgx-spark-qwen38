@@ -48,7 +48,9 @@ but `/health` and `/v1/health`. The key is the box's, read from its file, never 
 line:
 
 ```bash
-# a WAV file, as its proof and its trial sent; convert anything else first: ffmpeg -i meeting.m4a meeting.wav
+# a WAV file, as its proof and its trial sent; the server at its pinned revision (b12316) also reads
+# mp3 and flac (its mtmd-helper sniffs RIFF/WAVE, ID3 or a MPEG sync word, fLaC); convert anything
+# else first: ffmpeg -i meeting.m4a meeting.wav
 printf 'Authorization: Bearer %s\n' "$(cat ~/.config/qwen38/api-key)" \
   | curl -s http://127.0.0.1:30036/v1/audio/transcriptions -H @- -F file=@meeting.wav -F language=fr
 ```
@@ -112,6 +114,31 @@ demand. Its port and its bind are read from its own unit, not invented (`TRANSCR
 lane's is: its container, its `/health` on its port, and its boot read in its log while it is not
 healthy, the same llama-server milestones, so the card says warming-up while its 35 GB load. Its
 journal is one button away, as any lane's.
+
+The **Transcription** view drives the lane when it serves. The browser never talks to the lane and
+never holds its key: it sends the audio file to the cockpit's `POST /api/transcribe` (a base64 data
+URL, the file name, the language), and the cockpit relays it to `/v1/audio/transcriptions` on the
+lane's port with the box's key read from its file, one file at a time under a lock, with the body
+capped at 90 MB and the decoded audio at 64 MB before anything is read (about 33 minutes at the
+16 kHz mono the page records, and the cockpit process shares the box's unified memory with the
+lane). `GET /api/transcribe` reports the lane for the view's card. What the lane accepts and answers
+is read out of its server at its pinned revision (b12316, commit 5d4c8eeb24db), not assumed:
+
+- **files**: `tools/mtmd/mtmd-helper.cpp` `is_audio_file` sniffs RIFF/WAVE, MP3 (ID3 or a MPEG sync
+  word) and FLAC, and decodes with miniaudio: those three, and nothing else. A webm, ogg or m4a is
+  refused by the lane, so the page refuses it first with the ffmpeg line that converts it, and the
+  microphone recording is encoded as WAV in the browser (MediaRecorder gives webm or ogg). No
+  conversion happens on the server.
+- **the answer**: `server-task.cpp` `to_json_oaicompat_asr` answers `{"type": "transcript.text.done",
+  "text": ..., "usage": ...}`: no segments, no timestamps, no detected language, and
+  `server-chat.cpp` refuses any `response_format` but `json`. So the view offers a `.txt` download
+  and no `.srt`.
+- **the language**: a two or three letter code, or empty to detect it; the server puts it in its
+  prompt as `(language: %s)`, so the cockpit refuses anything else. The page's list is the lane's own
+  measurements (French, English) plus the languages NVIDIA's model card puts at its "Leading"
+  level.
+
+See [docs/cockpit.md](cockpit.md#the-transcription-view-speech-to-text-from-a-browser) for the view.
 
 ## Limits
 
