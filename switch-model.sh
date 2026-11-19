@@ -1566,6 +1566,11 @@ if [ "$CHOICE" = "transcribe" ]; then
     sudo install -m 644 "$TRANSCRIBE_STAGE" "$TRANSCRIBE_UNIT"
     unit_pending_clear "$TRANSCRIBE_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     TR_REWRITTEN=1
+  else
+    # the rendered unit is the one in place (a pin moved back between two versions before the
+    # Load): a wait for the NVIDIA Nemotron Transcribe lane is nothing to apply any more, cleared as Kolibri's and
+    # Nemotron's else branch clears theirs (blind review of v1.53.1, 2026-11-19, latent defect h)
+    [ -f "$CONFIG_DIR/pending/$TRANSCRIBE_UNIT_NAME" ] && unit_pending_clear "$TRANSCRIBE_UNIT"
   fi
   rm -f "$TRANSCRIBE_STAGE"
   # Which text lane this box served, written down before it is disabled.
@@ -1663,6 +1668,11 @@ if [ "$CHOICE" = "lfm25" ]; then
     sudo install -m 644 "$LFM25_STAGE" "$LFM25_UNIT"
     unit_pending_clear "$LFM25_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     LFM25_REWRITTEN=1
+  else
+    # the rendered unit is the one in place (a pin moved back between two versions before the
+    # Load): a wait for the Liquid AI LFM2.5 24B-A2B lane is nothing to apply any more, cleared as Kolibri's and
+    # Nemotron's else branch clears theirs (blind review of v1.53.1, 2026-11-19, latent defect h)
+    [ -f "$CONFIG_DIR/pending/$LFM25_UNIT_NAME" ] && unit_pending_clear "$LFM25_UNIT"
   fi
   rm -f "$LFM25_STAGE"
   # Which lane this box served at boot, written down before it is disabled: removing this lane
@@ -1791,6 +1801,11 @@ if [ "$CHOICE" = "lfm3" ]; then
     sudo install -m 644 "$LFM3_STAGE" "$LFM3_UNIT"
     unit_pending_clear "$LFM3_UNIT"   # its new unit is in place: an update that waited for this Load is applied
     LFM3_REWRITTEN=1
+  else
+    # the rendered unit is the one in place (a pin moved back between two versions before the
+    # Load): a wait for the Liquid AI LFM3 lane is nothing to apply any more, cleared as Kolibri's and
+    # Nemotron's else branch clears theirs (blind review of v1.53.1, 2026-11-19, latent defect h)
+    [ -f "$CONFIG_DIR/pending/$LFM3_UNIT_NAME" ] && unit_pending_clear "$LFM3_UNIT"
   fi
   rm -f "$LFM3_STAGE"
   # Which lane this box served at boot, written down before it is disabled: removing this lane
