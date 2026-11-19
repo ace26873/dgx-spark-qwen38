@@ -679,7 +679,7 @@ mount_of(){{ if [ "$2" = "/root/.cache/huggingface" ]; then echo "/hf"; fi; }}
 image_as_the_switch_reads(){{ :; }}
 box_mem_class(){{ echo 128; }}
 target_fits(){{ return 0; }}
-""" + self.block(which) + f'\necho "TARGET=$target MODEL=$model REV=${{rev:-}} TREPO=${{trepo:-}} TREV=${{trev:-}}"\n'
+""" + self.block(which) + '\necho "TARGET=$target MODEL=$model REV=${rev:-} TREPO=${trepo:-} TREV=${trev:-}"\n'
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
         return r
 
