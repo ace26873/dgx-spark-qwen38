@@ -108,6 +108,29 @@ text ignored), 4 requests one at a time, and from 8 at once up, twice as many re
 The total stops growing past 128 requests at once. One prompt alone, 64 tokens out: 32,768 tokens computed in
 1.68 s to the first token, 131,072 in 10.24 s, 250,000 in 22.86 s (medians of two).
 
+**At the box's maximum, with no GPU clock cap (2026-11-19, decision 1523).** Method: `vllm bench serve` inside
+the lane's own container (arm "lane": the lane as the cockpit serves it, port 30000, key required) and inside a
+trial container of the same image (arm "debit": 127.0.0.1:30099, no key, loopback only) tuned for throughput,
+`--max-num-seqs 1024 --max-num-batched-tokens 16384 --max-model-len 4096 --gpu-memory-utilization 0.75`
+(0.90 buys nothing for a 1.7B model and comes close to the unified-memory livelock). `--ignore-eos`, random
+prompts, two shapes, 1,024 tokens in / 512 out and 128 / 128, concurrency tiers from 1 to 1,024, four requests
+per tier of concurrency capped at 2,048, three passes (seeds 0, 1, 2), the median of the three kept. No GPU
+clock cap and no thermal guard during the load (decision 1345), one engine at a time on the GPU, a probe every
+2 s (MemAvailable, GPU temperature, clock, power). Results, medians of the three passes, 2026-11-19:
+
+- one stream alone: 90.8 tokens/s out on the lane arm, 90.7 on the tuned one (1,024 in / 512 out);
+- the lane as it serves: **7,042.7 tokens/s out at 256 requests at once** (shape 128/128; 14,085.3 tokens/s in
+  all), 86 °C at that tier;
+- the tuned container: **7,140.6 tokens/s out at 512 requests at once** (128/128; 14,281.3 in all), and
+  **3,740.9** on the 1,024/512 shape at the same 512;
+- the bench's temperature max: **90 °C** (on the tuned arm, 1,024/512 at 512), MemAvailable never under 18.3 GiB.
+
+**The 1,024 tier is discarded.** On the tuned arm at 1,024 requests at once, 1,059 of the 2,048 requests failed
+on every pass, client-side: `vllm bench serve` ran out of file descriptors ("Too many open files", the
+`docker exec` limit), so its 7,091.7 tokens/s out is no valid figure. The tuned container's valid maximum is
+512 at once, 7,140.6 tokens/s out, every request completed; the 1,024 tier would need a rerun with a higher
+`ulimit -n`.
+
 **Quality**: GSM8K, 250 questions, with `sglang.test.run_eval` from the 27B lane's SGLang image (v0.5.22) against
 the test container, 8 at once, temperature 0, at most 2,048 tokens per answer, the reasoning on (the template's
 default): 0.896.
