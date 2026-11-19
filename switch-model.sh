@@ -487,6 +487,11 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
       rm -f "$NEM_LANE_STAGE"
       sudo systemctl daemon-reload
       echo "the update that waited for this Load is in place: $NEM_UNIT_NAME"
+      # the posed unit is in place: a wait that stays kept (the revalidation below can die, the
+      # rewrite can fail) names the unit in place now, so the retry does not read it as changed
+      # since it was rendered and drop it
+      [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME" ] \
+        && sha256sum "$NEM_UNIT" | cut -d' ' -f1 > "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base"
       # read back what is in place now, for the rewrite to the asked revision below
       NEM_CUR="$(grep -m1 -oE -- "[^ ]+ --revision [0-9a-f]{40}" "$NEM_UNIT" || true)"
       NEM_CUR_GMU="$(grep -m1 -oE -- "--gpu-memory-utilization [0-9.]+" "$NEM_UNIT" || true)"
@@ -526,6 +531,11 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
       sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
       [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_SUPER_UNIT"   # posed and rewritten to the asked revision: the wait is applied
     fi
+    # a wait that stays waiting (not posed: it still lacks something) keeps a .base naming the unit
+    # from before this rewrite: the next Load would drop it as changed since it was rendered; it
+    # names the unit in place now
+    [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME" ] \
+      && sha256sum "$NEM_UNIT" | cut -d' ' -f1 > "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base"
     rm -f "$NEM_LANE_STAGE"
     NEM_REWRITTEN=1
   else

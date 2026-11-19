@@ -1531,7 +1531,8 @@ class TheNemotronSwitchRewritesTheWaitingUnitToTheAskedRevision(unittest.TestCas
         end = text.index("  # Which lane this box served at boot", start)
         return text[start:end]
 
-    def run_block(self, pending_text, unit_text="old unit\n", needs=""):
+    def dirs(self, pending_text, unit_text):
+        import hashlib
         d = pathlib.Path(tempfile.mkdtemp(prefix="switch-nem-rev-"))
         cfg, etc = d / "config", d / "etc"
         (cfg / "pending").mkdir(parents=True)
@@ -1541,12 +1542,14 @@ class TheNemotronSwitchRewritesTheWaitingUnitToTheAskedRevision(unittest.TestCas
         pend = cfg / "pending" / "qwen38-nemotron.service"
         pend.write_text(pending_text)
         (cfg / "pending" / "qwen38-nemotron.service.needs").write_text("image qwen38-nemotron:newtag\n")
-        import hashlib
         (cfg / "pending" / "qwen38-nemotron.service.base").write_text(
             hashlib.sha256(unit.read_bytes()).hexdigest() + "\n")
         log = d / "log"
         log.write_text("")
-        script = f"""
+        return cfg, unit, pend, log
+
+    def script(self, cfg, unit, log, needs=""):
+        return f"""
 set -euo pipefail
 CONFIG_DIR="{cfg}"
 CHOICE="nemotron"
@@ -1569,8 +1572,20 @@ sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi
 unit_needs(){{ if [ -n "$NEEDS" ]; then printf '%s\\n' "$NEEDS"; fi; }}
 unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
 """ + self.block() + f'\necho "UNIT=$(cat "{unit}")"\necho "REWRITTEN=$NEM_REWRITTEN"\n'
-        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+
+    def run_bash(self, script):
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+
+    def run_block(self, pending_text, unit_text="old unit\n", needs=""):
+        cfg, unit, pend, log = self.dirs(pending_text, unit_text)
+        r = self.run_bash(self.script(cfg, unit, log, needs))
         return r, unit, pend, cfg, log
+
+    def run_block_twice(self, pending_text, unit_text="old unit\n", needs=""):
+        # the same switch twice against the same pending folder: the run, then the retry
+        cfg, unit, pend, log = self.dirs(pending_text, unit_text)
+        script = self.script(cfg, unit, log, needs)
+        return self.run_bash(script), self.run_bash(script), unit, pend, cfg, log
 
     def test_the_waiting_unit_is_posed_then_rewritten_to_the_asked_revision(self):
         pend_text = (f"image qwen38-nemotron:newtag \\\\\n  r/old --revision {self.OLD} \\\\\n"
@@ -1604,6 +1619,11 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertIn("still lacks image qwen38-nemotron:newtag", r.stdout)
         self.assertIn(f"r/new --revision {self.NEW}", r.stdout, "the unit in place serves the asked revision")
         self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+        import hashlib
+        base = cfg / "pending" / "qwen38-nemotron.service.base"
+        self.assertEqual(base.read_text().strip(), hashlib.sha256(unit.read_bytes()).hexdigest(),
+                         "the kept wait's .base names the unit in place after the rewrite")
+
     def test_a_malformed_waiting_unit_dies_before_the_wait_is_cleared(self):
         # blind review of v1.52.1 (2026-11-19, GLM 5.3): the pose cleared the wait BEFORE the rewrite
         # to the asked revision, and the fields read back from the posed unit were not revalidated:
@@ -1617,6 +1637,28 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertIn("DIE:", r.stderr)
         self.assertTrue(pend.exists(), "the wait is kept: the rewrite died before it was applied")
         self.assertNotIn("clear ", log.read_text(), "nothing was cleared")
+
+    def test_a_pose_that_dies_keeps_a_wait_the_retry_does_not_drop(self):
+        # blind review of v1.52.1 (2026-11-19, GLM 5.3), second pass: the pose installed the
+        # waiting unit and the revalidation died with the wait kept, but pending/<unit>.base still
+        # named the unit from before the pose, so the retry's own .base check dropped the wait as
+        # "changed since it was rendered". The pose now rewrites the .base to the unit it put in
+        # place, and the retry keeps the wait. Replayed here: the block runs twice against the same
+        # pending folder, the run then the retry.
+        import hashlib
+        pend_text = (f"image qwen38-nemotron:newtag \\\\\n  r/old --revision {self.OLD} \\\\\n"
+                     f"  --speculative-config.model d/old \\\\\n"
+                     f"  --speculative-config.revision {self.OLD} \\\\\n  --max-num-seqs 8\n")
+        r1, r2, unit, pend, cfg, log = self.run_block_twice(pend_text)
+        self.assertNotEqual(r1.returncode, 0, "the malformed posed unit dies at the revalidation")
+        self.assertIn("DIE:", r1.stderr)
+        self.assertNotIn("was dropped", r1.stdout)
+        self.assertEqual(unit.read_text(), pend_text, "the first run posed the waiting unit whole")
+        base = cfg / "pending" / "qwen38-nemotron.service.base"
+        self.assertEqual(base.read_text().strip(), hashlib.sha256(unit.read_bytes()).hexdigest(),
+                         "the kept wait's .base names the posed unit, the one in place")
+        self.assertNotIn("was dropped", r2.stdout, "the retry does not drop the wait as changed since rendered")
+        self.assertTrue(pend.exists(), "the wait is still there after the retry, for ./install-nemotron.sh --no-smoke")
 
 
 if __name__ == "__main__":

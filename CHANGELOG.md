@@ -19,8 +19,9 @@ revision, so with the pins moved since the update was rendered the lane served t
 output said the asked one was queued, the fetched checkpoint unused; the wait is posed whole first (its image
 line), then rewritten like any unit in place, and is cleared only once the posed unit is in place AND rewritten to
 the asked revision (the fields read back from the posed unit are revalidated as the ones of the unit in place were,
-so a malformed waiting unit dies with the wait kept, for the retry), and a wait that still lacks stays waiting and
-is not cleared by
+so a malformed waiting unit dies with the wait kept, and the kept wait's `.base` is rewritten to the posed unit, the
+one in place, so the retry does not read it as changed since it was rendered and drop it), and a wait that still
+lacks stays waiting, its `.base` naming the unit in place after that rewrite, and is not cleared by
 that rewrite. And a switch to the other target of a lane whose wait serves the asked one but still lacks
 something (Kolibri's `KOL_STAYS`, the image lane's `IMG_STAYS`) rewrote nothing while printing "Switch queued" for
 a target the unit in place did not serve; the unit in place is now rewritten to the asked target or checkpoint,
