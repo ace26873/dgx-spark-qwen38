@@ -635,5 +635,99 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertIn('grep -oE -- \'--model-path [^ ]+\' "$IMG_SRC"', text)
 
 
+class ThePrepareReadsTheWaitingTarget(unittest.TestCase):
+    """prepare-lane.sh flash (and 27b) prepares what the waiting launcher (unit) reads: its own target, not the
+    one the card proposed, which comes from the file in place (review of v1.52.0, 2026-11-19, GLM 5.3: the
+    card's target won, and a Load whose waiting launcher served another target fetched that other
+    checkpoint, 136 GB for the flash lane, then apply_pending refused it). The block runs here against a
+    pending folder of the test's own."""
+
+    def block(self, which):
+        text = (REPO / "prepare-lane.sh").read_text()
+        if which == "flash":
+            start = text.index("  # an update left its new launch script waiting for this Load")
+            end = text.index("  # what it downloads, summed on each disk", start)
+        else:
+            start = text.index("  # an update left its new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what that unit reads")
+            end = text.index("  # by its name, a target given by its repo", start)
+        return text[start:end]
+
+    def run_block(self, which, in_place_model, waiting_model, target=""):
+        d = pathlib.Path(tempfile.mkdtemp(prefix=f"prepare-{which}-"))
+        cfg = d / "config"
+        (cfg / "pending").mkdir(parents=True)
+        launch = cfg / ("launch-flash.sh" if which == "flash" else "qwen38-sglang.service")
+        launch.write_text(f"--model-path {in_place_model}\n")
+        (cfg / "pending" / launch.name).write_text(f"--model-path {waiting_model}\n")
+        (cfg / "pending" / "qwen38-flash.service.needs").write_text("checkpoint r/nvda@f\n")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+TARGET="{target}"
+pend=""
+unit="{cfg}/qwen38-sglang.service"; launch="{cfg}/launch-flash.sh"
+FLASH_REPO=r/flash; FLASH_REV="{'f' * 40}"; FLASH_NVDA_REPO=r/nvda; FLASH_NVDA_REV="{'n' * 40}"
+FLASH_UNC_REPO=r/unc; FLASH_UNC_REV="{'u' * 40}"
+STOCK_REPO=r/stock; STOCK_REV="{'s' * 40}"; UNC_REPO=r/unc27; UNC_REV="{'c' * 40}"
+FP8_REPO=r/fp8; FP8_REV="{'8' * 40}"; UNCFP8_REPO=r/uncfp8; UNCFP8_REV="{'p' * 40}"; ARETE_REPO=r/arete; ARETE_REV="{'a' * 40}"
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+unit_pending_says(){{ echo "checkpoint r/nvda@{'f' * 40}"; }}
+flash_cannot_start(){{ return 1; }}
+engine_image(){{ echo "img@sha256:{'i' * 64}"; }}
+arg_of(){{ {{ grep -m1 -oE -- "$2 [^ ]+" "$1" || true; }} | head -1 | cut -d' ' -f2; }}
+mount_of(){{ if [ "$2" = "/root/.cache/huggingface" ]; then echo "/hf"; fi; }}
+image_as_the_switch_reads(){{ :; }}
+box_mem_class(){{ echo 128; }}
+target_fits(){{ return 0; }}
+""" + self.block(which) + f'\necho "TARGET=$target MODEL=$model REV=${{rev:-}} TREPO=${{trepo:-}} TREV=${{trev:-}}"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r
+
+    def test_flash_a_waiting_launcher_serves_another_target(self):
+        # the launcher in place serves flash, the waiting one flash-nvda, the card proposes flash: the Load
+        # prepares flash-nvda, what the wait reads, never the 136 GB of a target it does not read
+        r = self.run_block("flash", "r/flash", "r/nvda", target="flash")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"TARGET=flash-nvda MODEL=r/nvda REV={'n' * 40}", r.stdout)
+
+    def test_flash_without_a_wait_the_card_target_is_prepared(self):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="prepare-flash-nopend-"))
+        cfg = d / "config"
+        cfg.mkdir()
+        launch = cfg / "launch-flash.sh"
+        launch.write_text("--model-path r/flash\n")
+        text = (REPO / "prepare-lane.sh").read_text()
+        start = text.index("  # an update left its new launch script waiting for this Load")
+        end = text.index("  # what it downloads, summed on each disk", start)
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+TARGET="flash-nvda"
+pend=""
+launch="{cfg}/launch-flash.sh"
+FLASH_REPO=r/flash; FLASH_REV="{'f' * 40}"; FLASH_NVDA_REPO=r/nvda; FLASH_NVDA_REV="{'n' * 40}"
+FLASH_UNC_REPO=r/unc; FLASH_UNC_REV="{'u' * 40}"
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+unit_pending_says(){{ echo x; }}
+flash_cannot_start(){{ return 1; }}
+engine_image(){{ echo "img"; }}
+arg_of(){{ {{ grep -m1 -oE -- "$2 [^ ]+" "$1" || true; }} | head -1 | cut -d' ' -f2; }}
+mount_of(){{ if [ "$2" = "/root/.cache/huggingface" ]; then echo "/hf"; fi; }}
+image_as_the_switch_reads(){{ :; }}
+""" + text[start:end] + '\necho "TARGET=$target MODEL=$model REV=$rev"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"TARGET=flash-nvda MODEL=r/nvda REV={'n' * 40}", r.stdout)
+
+    def test_27b_a_waiting_unit_serves_another_target(self):
+        # the unit in place serves stock, the waiting one uncensored, the card proposes stock: the Load
+        # prepares uncensored, what the wait reads
+        r = self.run_block("27b", "r/stock", "r/unc27", target="stock")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("TARGET=uncensored", r.stdout)
+        self.assertIn("TREPO=r/unc27", r.stdout)
+        self.assertIn(f"TREV={'c' * 40}", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

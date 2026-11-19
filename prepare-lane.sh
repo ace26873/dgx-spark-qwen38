@@ -79,12 +79,13 @@ pins_or_die(){  # the pins install.sh declares, the one place they are, each che
 }
 
 prepare_flash(){
-  local launch="$CONFIG_DIR/launch-flash.sh" img model hf ple map target rev why
+  local launch="$CONFIG_DIR/launch-flash.sh" img model hf ple map target rev why pend="" want
   [ -f "$launch" ] || die "the flash lane is not installed on this box (no $launch): ./install.sh installs it"
   # an update left its new launch script waiting for this Load (install.sh, decision 1408): what it reads is what this
   # prepares; the cockpit puts it in place next (apply_pending)
   if [ -f "$CONFIG_DIR/pending/launch-flash.sh" ]; then
     launch="$CONFIG_DIR/pending/launch-flash.sh"
+    pend=1
     echo "the flash lane's update waits for this Load: preparing what its new launch script reads ($(unit_pending_says qwen38-flash.service))"
   fi
   # its image and its checkpoint (223 GB in all) for a lane that cannot start on a GB10 outside
@@ -99,7 +100,12 @@ prepare_flash(){
   if [ -z "$img" ] || [ -z "$model" ] || [ -z "$hf" ]; then
     die "$launch names no image, model or cache where this expects it (hand-edited?): ./install.sh writes it again"
   fi
-  case "${TARGET:-$model}" in
+  # When an update waits, this Load prepares what its new launcher reads: its own target, not the one the
+  # card proposed (read from the launcher in place), never a checkpoint the wait does not read (review of
+  # v1.52.0, 2026-11-19, GLM 5.3: the card's target won, and the Load fetched 136 GB for a target the
+  # waiting launcher does not serve, then apply_pending refused it).
+  want="$model"; [ -z "$pend" ] && want="${TARGET:-$model}"
+  case "$want" in
     flash|"$FLASH_REPO") target=flash; model="$FLASH_REPO"; rev="$FLASH_REV" ;;
     flash-nvda|"$FLASH_NVDA_REPO") target=flash-nvda; model="$FLASH_NVDA_REPO"; rev="$FLASH_NVDA_REV" ;;
     flash-uncensored|"$FLASH_UNC_REPO") target=flash-uncensored; model="$FLASH_UNC_REPO"; rev="$FLASH_UNC_REV" ;;
@@ -132,12 +138,13 @@ prepare_flash(){
 }
 
 prepare_27b(){
-  local unit=/etc/systemd/system/qwen38-sglang.service img model draft drev hf target trepo trev tok=()
+  local unit=/etc/systemd/system/qwen38-sglang.service img model draft drev hf target trepo trev tok=() pend="" want
   [ -f "$unit" ] || die "the 27B lane is not installed on this box (no $unit): ./install.sh installs it"
   # an update left its new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what that unit reads (its
   # image, its draft) is what this prepares; the cockpit puts it in place next (apply_pending)
   if [ -f "$CONFIG_DIR/pending/qwen38-sglang.service" ]; then
     unit="$CONFIG_DIR/pending/qwen38-sglang.service"
+    pend=1
     echo "the 27B lane's update waits for this Load: preparing what its new unit reads ($(unit_pending_says /etc/systemd/system/qwen38-sglang.service))"
   fi
   img="$(engine_image "$unit")"; model="$(arg_of "$unit" --model-path)"; hf="$(mount_of "$unit" /root/.cache/huggingface)"
@@ -147,7 +154,10 @@ prepare_27b(){
   if [ -z "$img" ] || [ -z "$model" ] || [ -z "$hf" ]; then
     die "$unit names no image, model or cache where this expects it (hand-edited?): ./install.sh writes it again"
   fi
-  case "${TARGET:-$model}" in
+  # as for the flash lane: when an update waits, this Load prepares what its new unit reads, its own target
+  # (review of v1.52.0, 2026-11-19, GLM 5.3)
+  want="$model"; [ -z "$pend" ] && want="${TARGET:-$model}"
+  case "$want" in
     stock|"$STOCK_REPO") target=stock; trepo="$STOCK_REPO"; trev="$STOCK_REV" ;;
     uncensored|"$UNC_REPO") target=uncensored; trepo="$UNC_REPO"; trev="$UNC_REV" ;;
     fp8|"$FP8_REPO") target=fp8; trepo="$FP8_REPO"; trev="$FP8_REV" ;;
