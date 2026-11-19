@@ -29,6 +29,11 @@ def link(src: Path, target: Path):
     os.symlink(os.path.relpath(target, src.parent), src)
 
 
+def blocks(*paths):
+    """The bytes of files as the disks line counts them: st_blocks * 512."""
+    return sum(os.stat(p).st_blocks * 512 for p in paths)
+
+
 class Cache:
     """A hub folder: repositories whose files are their own blobs, or blobs of the shared store."""
 
@@ -73,8 +78,9 @@ class DeleteRepo(unittest.TestCase):
         (self.c.hub / ".locks" / repo.name).mkdir(parents=True)
         plan = rg.repo_deletion_plan(repo)
         self.assertTrue(plan["whole"])
-        self.assertEqual(plan["bytes"], 1002)
-        self.assertEqual(rg.apply_repo_deletion(plan), 1002)
+        want = blocks(*(repo / "blobs").iterdir())
+        self.assertEqual(plan["bytes"], want)
+        self.assertEqual(rg.apply_repo_deletion(plan), want)
         self.assertFalse(repo.exists())
         self.assertFalse((self.c.hub / ".locks" / repo.name).exists())
 
@@ -83,7 +89,7 @@ class DeleteRepo(unittest.TestCase):
         link = self.c.hub / far.name
         os.symlink(far, link)
         plan = rg.repo_deletion_plan(link)
-        self.assertEqual((plan["whole"], plan["bytes"]), (True, 64))
+        self.assertEqual((plan["whole"], plan["bytes"]), (True, blocks(far / "blobs" / "h3000")))
         rg.apply_repo_deletion(plan)
         self.assertFalse(os.path.lexists(link))
         self.assertFalse(far.exists())
@@ -97,7 +103,7 @@ class DeleteRepo(unittest.TestCase):
         keeper = self.c.repo("n", {"config.json": b"{}"}, {"b.safetensors": other})
         plan = rg.repo_deletion_plan(repo)
         # its own blob, and the shared blob it alone uses; never the one repository n still links to
-        self.assertEqual(plan["bytes"], 2 + 500)
+        self.assertEqual(plan["bytes"], blocks(repo / "blobs" / "m000", alone))
         self.assertEqual(plan["shared"], [os.path.realpath(alone)])
         rg.apply_repo_deletion(plan)
         for f in (alone, Path(str(alone) + ".refs"), Path(str(alone) + ".lock")):
@@ -123,7 +129,12 @@ class DeleteRepo(unittest.TestCase):
         repo = self.c.repo("h3", files)
         plan = rg.repo_deletion_plan(repo, keep=["text_encoder/*"])
         self.assertFalse(plan["whole"])
-        self.assertEqual((plan["bytes"], plan["kept_bytes"]), (4002, 300))
+        snap = repo / "snapshots" / REV
+        kept = [os.path.realpath(p) for p in snap.rglob("*") if p.is_symlink()
+                and "text_encoder" in str(p.relative_to(snap))]
+        gone = [os.path.realpath(p) for p in snap.rglob("*") if p.is_symlink()
+                and "text_encoder" not in str(p.relative_to(snap))]
+        self.assertEqual((plan["bytes"], plan["kept_bytes"]), (blocks(*gone), blocks(*kept)))
         rg.apply_repo_deletion(plan)
         snap = repo / "snapshots" / REV
         self.assertEqual(sorted(str(p.relative_to(snap)) for p in snap.rglob("*") if p.is_symlink()),
@@ -131,6 +142,34 @@ class DeleteRepo(unittest.TestCase):
         self.assertTrue(all(p.exists() for p in snap.rglob("*")), "a kept link broken")
         self.assertEqual(len(list((repo / "blobs").iterdir())), 3)
         self.assertFalse((snap / "transformer").exists())
+
+    def test_the_snapshots_real_files_the_deletion_removes_are_counted(self):
+        # a config an installer rewrote is a real file in the snapshot, and the original it kept as .pre-yarn
+        # another: the deletion removes them too, and the plan counts their bytes in blocks, as the disks line
+        # (hub_bytes) counts them, shown in the same view (revue of v1.51.0, 2026-11-19)
+        repo = self.c.repo("m", {"model.safetensors": b"x" * 1000})
+        snap = repo / "snapshots" / REV
+        write(snap / "config.json", b'{"rope": "yarn"}')
+        write(snap / "config.json.pre-yarn", b'{"rope": null}')
+        plan = rg.repo_deletion_plan(repo)
+        want = blocks(repo / "blobs" / "m000", snap / "config.json", snap / "config.json.pre-yarn")
+        self.assertEqual(plan["bytes"], want, plan)
+        self.assertEqual(rg.apply_repo_deletion(plan), want)
+        self.assertFalse(repo.exists())
+        # in a kept part: its real files are counted as kept, in blocks too
+        repo = self.c.repo("h3", {"text_encoder/config.json": b'{"k": 1}', "model.safetensors": b"y" * 100})
+        snap = repo / "snapshots" / REV
+        write(snap / "text_encoder" / "config.json.rewritten", b'{"k": 2}')
+        plan = rg.repo_deletion_plan(repo, keep=["text_encoder/*"])
+        kept = [os.path.realpath(p) for p in snap.rglob("*") if p.is_symlink()
+                and "text_encoder" in str(p.relative_to(snap))]
+        gone = [os.path.realpath(p) for p in snap.rglob("*") if p.is_symlink()
+                and "text_encoder" not in str(p.relative_to(snap))]
+        self.assertEqual(plan["kept_bytes"], blocks(*kept, snap / "text_encoder" / "config.json.rewritten"), plan)
+        self.assertEqual(plan["bytes"], blocks(*gone), plan)
+        rg.apply_repo_deletion(plan)
+        self.assertTrue((snap / "text_encoder" / "config.json.rewritten").exists())
+        self.assertFalse((snap / "model.safetensors").exists())
 
     def test_link_out_of_the_cache_goes_alone(self):
         outside = self.root / "etudes" / "table.gguf"
@@ -141,7 +180,7 @@ class DeleteRepo(unittest.TestCase):
         link(repo / "blobs" / ("f" * 64), outside)
         link(repo / "snapshots" / REV / "big.gguf", repo / "blobs" / ("f" * 64))
         plan = rg.repo_deletion_plan(repo)
-        self.assertEqual(plan["bytes"], 2)
+        self.assertEqual(plan["bytes"], blocks(repo / "blobs" / "g000"))   # the link out of the cache frees nothing
         rg.apply_repo_deletion(plan)
         self.assertEqual(outside.read_bytes(), b"t" * 700)
 
@@ -174,7 +213,7 @@ class DeleteRepo(unittest.TestCase):
         self.assertIn("refused", rg.repo_deletion_plan(repo))
         old = time.time() - rg.ACTIVE_S - 60
         os.utime(part, (old, old))
-        self.assertEqual(rg.repo_deletion_plan(repo)["bytes"], 3)   # what an interrupted download left goes too
+        self.assertEqual(rg.repo_deletion_plan(repo)["bytes"], blocks(repo / "blobs" / "m000", part))   # the interrupted download's file goes too
 
     def test_not_a_repository(self):
         (self.c.hub / "blobs").mkdir(exist_ok=True)

@@ -369,9 +369,12 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
     keep: patterns (as allowed() reads them) of the snapshot paths another lane still reads in it (MiniMax-H3's
     text_encoder/, which MiniMax-H3-Image loads): those links, the blobs they reach and what names those blobs stay.
     Each real file is counted and removed once: the repository's own blob, or the blob of the cache's shared store
-    (hub/blobs/<xx>/<sha256>) a repository blob links to. A shared blob goes only when every line of its .refs is a
-    repository blob that goes: another repository's line keeps it (the scan counted it in both, and frees it in
-    neither). Nothing is removed here: apply_repo_deletion does it, from a plan made just before.
+    (hub/blobs/<xx>/<sha256>) a repository blob links to. The snapshot's files that are real files, not links to a
+    blob (a config an installer rewrote, the original it kept as .pre-yarn), are counted and removed too. Bytes are
+    counted in blocks, each inode once, as hub_bytes counts the disks line of the same view. A shared blob goes only
+    when every line of its .refs is a repository blob that goes: another repository's line keeps it (the scan counted
+    it in both, and frees it in neither). Nothing is removed here: apply_repo_deletion does it, from a plan made
+    just before.
     {"refused": why} for a folder that is not a repository, or one a download is writing to now."""
     repo_dir = Path(repo_dir)
     snaps, blobs_dir = repo_dir / "snapshots", repo_dir / "blobs"
@@ -418,7 +421,7 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
             if len(mine) == len(lines):
                 if key not in seen:
                     seen.add(key)
-                    size += st.st_size
+                    size += st.st_blocks * 512
                     shared.append(real)
             elif mine:
                 rewrite[real + ".refs"] = [ln for ln in lines if ln not in mine]
@@ -426,7 +429,20 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
         if parent != own or key in seen:
             continue                                    # not this cache's file (a link out of it): only the link goes
         seen.add(key)
-        size += st.st_size
+        size += st.st_blocks * 512
+    # the snapshot's files that are real files, not links to a blob (a config an installer rewrote, the original kept
+    # as .pre-yarn): the deletion removes them too (the whole folder's rmtree, or their unlink), counted as the disks
+    # line counts them
+    for p in links:
+        if p.is_symlink():
+            continue
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if (st.st_dev, st.st_ino) not in seen:
+            seen.add((st.st_dev, st.st_ino))
+            size += st.st_blocks * 512
     for p in kept:
         try:
             st = os.stat(p)
@@ -434,7 +450,7 @@ def repo_deletion_plan(repo_dir: Path, keep=None) -> dict:
             continue
         if (st.st_dev, st.st_ino) not in seen:
             seen.add((st.st_dev, st.st_ino))
-            kept_bytes += st.st_size
+            kept_bytes += st.st_blocks * 512
     # the cache's own folder too, whose entry for the repository goes (a link to another disk: the link)
     folder = unwritable([os.path.realpath(repo_dir), repo_dir] + [os.path.dirname(s) for s in shared])
     if folder:

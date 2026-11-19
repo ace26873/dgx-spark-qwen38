@@ -110,9 +110,10 @@ class DeleteRepo(unittest.TestCase):
         return {"repo": repo, "cache": self.cache, "lose": lose}
 
     def test_a_repository_the_hub_serves_alike_goes_whole(self):
+        want = sum(os.stat(b).st_blocks * 512 for b in (self.repo / "blobs").iterdir())
         code, body = self.act(self.params())
         self.assertEqual((code, body["status"]), (202, "done"), body)
-        self.assertEqual(body["result"]["bytes"], 12, body)
+        self.assertEqual(body["result"]["bytes"], want, body)
         self.assertFalse(self.repo.exists())
         self.assertTrue(any(f"deleted {DSPARK}" in ln for ln in body["lines"]), body["lines"])
 
