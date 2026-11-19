@@ -128,6 +128,24 @@ cache read; install.sh's copy fallback for the flash wait is neutralized by the 
 re-renders a unit equal to the one in place leaves its wait for the lane's Load to pose and clear. Each new test fails
 on the code before.
 
+**What the sixth blind review found (GLM 5.3, 2026-11-19 11:51), fixed with tests.** Four defects (its 3 and 4 go to
+v1.52.1, its diff will have its own review), each read in the code again before fixing: the Load's prepare fetched the
+new revision with `switch-model.sh <target> --fetch`, which stops right after the download, so on the serving lane's
+short path (prepare, apply_pending, restart, no switch) the new checkpoint's `config.json` was never YaRN-patched for
+a 1M unit (which does not load on an unpatched config), never restored for a native one, Arete's fp8 KV cache was
+never declared and the chat template was never regenerated from the new revision (the switch's steps 2, 2a and 2b are
+now one function, `lanes.sh`'s `patch_served_checkpoint`, which the switch calls with the unit in place and the Load's
+`prepare-lane.sh` with the unit that waits and the cache it mounts, when an update waits for this Load and this Load
+loads its target, so the 27B and the flash serve their new revision with those steps done on the short path as on the
+other); the same fetch passed no `HF_CACHE`, so the switch downloaded into the cache of the unit in place while the
+prepare read the waiting unit's, and a cache moved by a re-run of install looped the Load forever (the fetch now
+passes the waiting unit's cache, as the image, video and image-h3 switches already read it); the `WAITS_LOAD` probe
+tested the pinned image instead of the one the rendered unit serves (`SERVE_IMAGE=` / `FLASH_SERVE_IMAGE=`, a
+documented option), so a box serving an override with the pin absent went units-only with a false message (the probe
+reads the serving image now); and `side_install` read an "unknown" line of `unit_needs` (docker not answering, the
+cache unreadable) as a lack, skipping the rest of a side lane's update with a false "its units only" (read as no lack
+now, as `unit_put_waits` does). Each new test fails on the code before.
+
 **A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
 paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:
 the test always failed, so every update of a llama.cpp lane (flash-unsloth, and the transcribe lane to come) waited as
