@@ -240,7 +240,11 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   fi
   KOL_FROM="$KOLIBRI_UNIT"; KOL_FROM_CUR="$KOL_CUR"; KOL_FROM_GMU="$KOL_CUR_GMU"
   if [ -n "$KOL_POSE" ]; then KOL_FROM="$KOL_POSE"; KOL_FROM_CUR="$KOL_POSE_CUR"; KOL_FROM_GMU="$KOL_POSE_GMU"; fi
-  if [ -n "$KOL_POSE" ] || { [ -z "$KOL_STAYS" ] && { [ "$KOL_CUR" != "$KOL_WANT" ] || [ "$KOL_CUR_GMU" != "$KOL_WANT_GMU" ]; }; }; then
+  # KOL_STAYS (the wait serves the asked target but still lacks something, its image): the unit in place
+  # is rewritten to the asked target anyway, whose checkpoint was just fetched, and the wait is kept, not
+  # cleared: the output's "Switch queued" is then true (seventh pass of the v1.52.0 reviews, 2026-11-19:
+  # with the stays-branch the unit in place kept the other target while the output named the asked one).
+  if [ -n "$KOL_POSE" ] || { [ "$KOL_CUR" != "$KOL_WANT" ] || [ "$KOL_CUR_GMU" != "$KOL_WANT_GMU" ]; }; then
     # the waiting unit posed whole when there is one, then rewritten to the asked target, which is the one
     # served, never the reverse
     if [ -n "$KOL_FROM_CUR" ]; then
@@ -256,12 +260,12 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
     if ! cmp -s "$KOL_STAGE" "$KOLIBRI_UNIT"; then
       diff "$KOL_STAGE" "$KOLIBRI_UNIT" || true   # show exactly what changes
       sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
-      unit_pending_clear "$KOLIBRI_UNIT"
+      [ -n "$KOL_POSE" ] && unit_pending_clear "$KOLIBRI_UNIT"
       rm -f "$KOL_STAGE"
       sudo systemctl daemon-reload
       [ -n "$KOL_POSE" ] && echo "the update that waited for this Load is in place: $KOLIBRI_UNIT_NAME"
     else
-      unit_pending_clear "$KOLIBRI_UNIT"   # an unchanged waiting unit is cleared without install
+      [ -n "$KOL_POSE" ] && unit_pending_clear "$KOLIBRI_UNIT"   # an unchanged waiting unit is cleared without install
     fi
     KOL_REWRITTEN=1
   fi
@@ -1147,7 +1151,12 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   fi
   IMG_FROM="$IMAGE_UNIT"; IMG_FROM_CUR="$IMG_CUR"
   if [ -n "$IMG_POSE" ]; then IMG_FROM="$IMG_POSE"; IMG_FROM_CUR="$IMG_POSE_CUR"; fi
-  if [ -n "$IMG_POSE" ] || { [ -z "$IMG_STAYS" ] && [ "$IMG_CUR" != "$IMG_MODEL" ]; }; then
+  # IMG_STAYS (the wait serves the asked checkpoint but still lacks something, its runtime): the unit in
+  # place is rewritten to the asked checkpoint anyway, whose checkpoint was just fetched, and the wait is
+  # kept, not cleared: the output's "Switch queued" is then true (seventh pass of the v1.52.0 reviews,
+  # 2026-11-19: with the stays-branch the unit in place kept the other checkpoint while the output named
+  # the asked one).
+  if [ -n "$IMG_POSE" ] || [ "$IMG_CUR" != "$IMG_MODEL" ]; then
     # the waiting unit posed whole when there is one, then rewritten to the asked checkpoint, which is the
     # one served, never the reverse
     if [ -n "$IMG_FROM_CUR" ]; then
@@ -1162,12 +1171,12 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
     if ! cmp -s "$IMG_STAGE" "$IMAGE_UNIT"; then
       diff "$IMG_STAGE" "$IMAGE_UNIT" || true   # show exactly what changes
       sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
-      unit_pending_clear "$IMAGE_UNIT"
+      [ -n "$IMG_POSE" ] && unit_pending_clear "$IMAGE_UNIT"
       rm -f "$IMG_STAGE"
       sudo systemctl daemon-reload
       [ -n "$IMG_POSE" ] && echo "the update that waited for this Load is in place: $IMAGE_UNIT_NAME"
     else
-      unit_pending_clear "$IMAGE_UNIT"   # an unchanged waiting unit is cleared without install
+      [ -n "$IMG_POSE" ] && unit_pending_clear "$IMAGE_UNIT"   # an unchanged waiting unit is cleared without install
     fi
     IMG_REWRITTEN=1
     if [ "$IMG_MODEL" = "$IMAGE_TURBO_PIN" ] && [ "$IMG_CUR" != "$IMAGE_MODEL_PIN" ]; then

@@ -1216,15 +1216,22 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertFalse(pend.exists())
 
     def test_kolibri_a_wait_for_the_asked_target_still_waits_for_what_it_lacks(self):
-        # same target as the asked one: unchanged behaviour, it waits for what it lacks
+        # same target as the asked one, but it still lacks something (its checkpoint): the wait stays
+        # waiting, and the unit in place is rewritten to the asked target anyway, whose checkpoint this
+        # switch just fetched: the output's "Switch queued" is true (seventh pass of the v1.52.0 reviews,
+        # 2026-11-19: before, the unit in place kept the other target while the output named the asked one)
         pend_text = f"image qwen38-kolibri:newtag \\\n  {self.NVFP4_WANT} \\\n  --gpu-memory-utilization 0.95 \\\n"
-        r, unit, pend, cfg, log = self.run_kolibri(pend_text, want=self.NVFP4_WANT,
+        unit_text = f"image qwen38-kolibri:oldtag \\\n  {self.FP8_CUR} \\\n  --gpu-memory-utilization 0.9 \\\n"
+        r, unit, pend, cfg, log = self.run_kolibri(pend_text, unit_text=unit_text, want=self.NVFP4_WANT,
                                                   needs=f"checkpoint r/nvfp4@{self.NVFP4_REV}")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("still lacks", r.stdout)
-        self.assertEqual(unit.read_text(), "old unit\n")
-        self.assertNotIn("sudo install", log.read_text())
-        self.assertTrue(pend.exists())
+        unit_line = unit.read_text()
+        self.assertIn(self.NVFP4_WANT, unit_line, "the unit in place serves the asked target")
+        self.assertIn("--gpu-memory-utilization 0.95", unit_line)
+        self.assertIn(f"sudo install -m 644 {cfg}/qwen38-kolibri.service.switch-stage {unit}", log.read_text())
+        self.assertTrue(pend.exists(), "the wait is kept, not cleared: it still lacks what it reads")
+        self.assertNotIn(f"clear {unit}", log.read_text())
 
     def test_image_a_wait_for_the_base_is_posed_then_rewritten_to_the_turbo(self):
         # the box serves the base, an update waits (the pin moved to pin-b), the operator asks for the
@@ -1248,6 +1255,19 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertIn("dropped", r.stdout)
         self.assertIn("UNIT=--model-path pin-t ", r.stdout)
         self.assertFalse(pend.exists())
+
+    def test_image_a_wait_for_the_asked_one_that_still_lacks_keeps_waiting_and_the_unit_serves_it(self):
+        # the wait serves the asked Turbo but still lacks something (its runtime): the wait stays, and the
+        # unit in place is rewritten to the asked checkpoint anyway, whose checkpoint this switch just
+        # fetched: the output's "Switch queued" is true (seventh pass of the v1.52.0 reviews, 2026-11-19)
+        pend_text = "--model-path pin-t \nExecStart=venv/bin/python serve.py\n"
+        r, unit, pend, cfg, log = self.run_image(pend_text, model="pin-t", cur="pin-a", needs="path /venv/bin/python")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("still lacks path /venv/bin/python", r.stdout)
+        self.assertIn("--model-path pin-t ", unit.read_text(), "the unit in place serves the asked checkpoint")
+        self.assertIn(f"sudo install -m 644 {cfg}/qwen38-image.service.switch-stage {unit}", log.read_text())
+        self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+        self.assertNotIn(f"clear {unit}", log.read_text())
 
     def test_the_fetch_above_reads_the_asked_target_not_the_waits(self):
         # the checkpoint the switch fetches is the asked one's in both lanes, so nothing is downloaded for
