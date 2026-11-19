@@ -376,6 +376,49 @@ unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for
   rm -f "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1")" "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").needs" \
         "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").base"
 }
+
+# The switch's steps 2, 2a and 2b after its fetch, as one function the switch and a Load's prepare
+# both call, so a checkpoint the Load fetched is patched the same way whichever of the two runs
+# them: switch-model.sh calls it with the unit in place, prepare-lane.sh with the unit that waits
+# (the one the Load will put in place), each with the cache that unit mounts. The patches are
+# idempotent (patch-yarn.py, patch-kv.py and patch-template.py all say so), so a run of both on
+# the same checkpoint, as a Load toward another target than the one that served does, changes
+# nothing twice.
+#   $1 the lane (27b|flash), $2 the switch target (arete says so), $3 the unit or launcher that
+#      will serve the checkpoint (read for the 1M window flag), $4 the cache it mounts,
+#      $5 the checkpoint's repo, $6 its revision.
+patch_served_checkpoint(){  # 27b|flash, target, unit, hf cache, repo, revision
+  local lane="$1" choice="$2" unit="$3" hf="$4" repo="$5" rev="$6" out
+  # 2) 1M YaRN patch on the target's cached config.json (27B pair only, and only
+  #    if its unit uses it; flash serves its native window)
+  if [ "$lane" = "27b" ] && grep -q -- '--context-length 1010000' "$unit"; then
+    python3 "$(_lanes_dir)/patch-yarn.py" "$hf" "$repo" "$rev" || die "YaRN patch failed"
+  elif [ "$lane" = "27b" ]; then
+    # A native unit crashes at load on a YaRN-patched config, and a target this box served
+    # while it was in 1m keeps its patch in the cache after the box went back to native
+    # (install.sh restores the target it installs, not the others). So the target's config
+    # is restored here, idempotently; the restore refuses, before the unit is touched, when
+    # a patched config lost its backup (found in review, 2026-09-24).
+    echo "unit does not use the 1M context flag: restoring the target's native config if it carries YaRN"
+    python3 "$(_lanes_dir)/patch-yarn.py" --restore "$hf" "$repo" "$rev" \
+      || die "the target's config carries the 1M YaRN patch and could not be restored (the unit was NOT rewritten yet)"
+  fi
+  # 2a) Arete's checkpoint declares no KV cache, and served so it gets a bf16 one and about half
+  #     the pool: the lane's fp8 declaration goes into its config, as install.sh writes it, and its
+  #     unit stays stock's, with no --kv-cache-dtype (patch-kv.py says why). After the window's
+  #     configs: a YaRN restore puts back a config saved before the declaration.
+  if [ "$choice" = arete ]; then
+    python3 "$(_lanes_dir)/patch-kv.py" "$hf" "$repo" "$rev" \
+      || die "the fp8 KV cache declaration failed for $repo (the unit was NOT rewritten yet)"
+  fi
+  # 2b) regenerate the patched chat template FROM the target's own snapshot.
+  # One template file per engine; the served template always follows the served
+  # model. Read at service startup only, so writing it now is safe.
+  out="${CONFIG_DIR:-$HOME/.config/qwen38}/chat-template-sglang.jinja"
+  [ "$lane" = "flash" ] && out="${CONFIG_DIR:-$HOME/.config/qwen38}/chat-template-flashnext.jinja"
+  python3 "$(_lanes_dir)/patch-template.py" "$hf" "$out" "$rev" "$repo" \
+    || die "template patch failed for $repo (the unit was NOT rewritten yet)"
+}
 lane_serves_older(){  # $1 unit, $2... its files: true when it serves and one of them is newer than its start
   local unit="$1" started f; shift
   [ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" = active ] || return 1

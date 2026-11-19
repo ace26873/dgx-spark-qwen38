@@ -120,12 +120,14 @@ def lane_specs(repo_dir=REPO):
     targets = re.findall(r'^\s+([a-z0-9-]+)\)\s+MODEL_REPO="\$([A-Z0-9_]+)_REPO"', install, re.M)
     if not targets:
         raise SystemExit("install.sh no longer maps its targets the way this check reads them")
-    # the five fixes there: install.sh and switch-model.sh run patch-template.py with no --patches and no
-    # environment of their own, or this check would render a template they do not write (code review)
-    for script in ("install.sh", "switch-model.sh"):
+    # the five fixes there: install.sh, and lanes.sh where the switch's and the Load's patcher call now
+    # lives (patch_served_checkpoint), run patch-template.py with no --patches and no environment of
+    # their own, or this check would render a template they do not write (code review)
+    for script, call in (("install.sh", 'python3 "$REPO_DIR/patch-template.py"'),
+                         ("lanes.sh", 'python3 "$(_lanes_dir)/patch-template.py"')):
         calls = [ln.strip() for ln in re.sub(r"\\\n", " ", (repo_dir / script).read_text()).splitlines()
                  if "patch-template.py" in re.sub(r"(^|\s)#.*$", "", ln)]
-        if not calls or any("--patches" in c or not c.startswith('python3 "$REPO_DIR/patch-template.py"') for c in calls):
+        if not calls or any("--patches" in c or not c.startswith(call) for c in calls):
             raise SystemExit(f"{script} runs patch-template.py otherwise than with its five fixes: {calls}")
     specs = [(t, *pin(install, p), {}) for t, p in targets]
     installers = sorted(f.name for f in repo_dir.glob("install-*.sh") if "vlane_put_unit" in f.read_text())

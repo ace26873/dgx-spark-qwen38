@@ -47,7 +47,7 @@ class TheLanesItKnows(unittest.TestCase):
     def copy(self):
         d = pathlib.Path(tempfile.mkdtemp(prefix="ltc-"))
         self.addCleanup(shutil.rmtree, d, True)
-        for f in [REPO / "install.sh", REPO / "switch-model.sh", *REPO.glob("install-*.sh")]:
+        for f in [REPO / "install.sh", REPO / "switch-model.sh", REPO / "lanes.sh", *REPO.glob("install-*.sh")]:
             shutil.copy(f, d / f.name)
         return d
 
@@ -118,14 +118,14 @@ class TheLanesItKnows(unittest.TestCase):
     def test_the_27b_and_flash_patcher_calls_are_read_too(self):
         # the check gives their targets the five fixes: a call of install.sh or switch-model.sh with fixes
         # of its own would pass it unseen, as the first push of this release did (code review, 2026-10-24)
-        for script in ("install.sh", "switch-model.sh"):
+        for script, call in (("install.sh", 'python3 "$REPO_DIR/patch-template.py"'),
+                             ("lanes.sh", 'python3 "$(_lanes_dir)/patch-template.py"')):
             with self.subTest(script=script):
                 d = self.copy()
                 f = d / script
                 text = f.read_text()
-                self.assertIn('python3 "$REPO_DIR/patch-template.py"', text)
-                f.write_text(text.replace('python3 "$REPO_DIR/patch-template.py"',
-                                          'python3 "$REPO_DIR/patch-template.py" --patches=system-reminder', 1))
+                self.assertIn(call, text)
+                f.write_text(text.replace(call, call + " --patches=system-reminder", 1))
                 with self.assertRaisesRegex(SystemExit, f"{script} runs patch-template.py otherwise"):
                     ltc.lane_specs(d)
 

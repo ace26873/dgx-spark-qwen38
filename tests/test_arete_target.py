@@ -20,9 +20,13 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 SWITCH = (REPO / "switch-model.sh").read_text()
 INSTALL = (REPO / "install.sh").read_text()
 RUN = (REPO / "run.sh").read_text()
+LANES = (REPO / "lanes.sh").read_text()
 PINS = dict(re.findall(r'^([A-Z0-9_]+_(?:REPO|REV))="([^"$]+)"', INSTALL, re.M))
 ARETE = (PINS["ARETE_REPO"], PINS["ARETE_REV"])
 TARGETS_27B = {"stock": "STOCK", "uncensored": "UNC", "fp8": "FP8", "uncensored-fp8": "UNCFP8", "arete": "ARETE"}
+# the switch's steps 2, 2a and 2b after the fetch, as one function lanes.sh holds and the switch
+# calls with the unit in place (prepare-lane.sh calls it with the unit that waits)
+FN = LANES[LANES.index("patch_served_checkpoint(){"):LANES.index("\n}\n", LANES.index("patch_served_checkpoint(){")) + 3]
 
 
 def block(text, start, end_after):
@@ -32,8 +36,8 @@ def block(text, start, end_after):
 
 
 def stubs(d, kv_rc=0):
-    """patch-yarn.py and patch-kv.py in d, each line of the shared log: the script, then its arguments."""
-    for name, rc in (("patch-yarn.py", 0), ("patch-kv.py", kv_rc)):
+    """patch-yarn.py, patch-kv.py and patch-template.py in d, each line of the shared log: the script, then its arguments."""
+    for name, rc in (("patch-yarn.py", 0), ("patch-kv.py", kv_rc), ("patch-template.py", 0)):
         (d / name).write_text(
             "import os, sys\n"
             "open(os.path.join(os.path.dirname(sys.argv[0]), 'calls'), 'a').write("
@@ -49,18 +53,15 @@ def bash(script, d):
 
 
 class TheSwitch(unittest.TestCase):
-    # step 2, the window's configs, and step 2a, the declaration, as switch-model.sh runs them
-    LINES = block(SWITCH, """if [ "$TARGET_LANE" = "27b" ] && grep -q -- '--context-length 1010000' "$TARGET_UNIT"; then""",
-                  'if [ "$CHOICE" = arete ]; then')
-
+    # steps 2, 2a and 2b after the fetch, as lanes.sh's patch_served_checkpoint runs them for the switch
     def switch(self, choice, window, kv_rc=0):
         d = pathlib.Path(tempfile.mkdtemp(prefix="arete-switch-"))
         self.addCleanup(shutil.rmtree, d, True)
         stubs(d, kv_rc)
         (d / "unit").write_text(f"ExecStart=... --context-length {window} ...\n")
         repo, rev = PINS[TARGETS_27B[choice] + "_REPO"], PINS[TARGETS_27B[choice] + "_REV"]
-        script = (f'REPO_DIR="{d}"; HF_CACHE=/hf; CHOICE={choice}; TARGET_LANE=27b; TARGET_REPO={repo}; '
-                  f'TARGET_REV={rev}; TARGET_UNIT="{d}/unit"\n' + self.LINES + "echo REACHED\n")
+        script = (f'_lanes_dir(){{ echo "{d}"; }}\nCONFIG_DIR="{d}"\n' + FN +
+                  f'patch_served_checkpoint 27b {choice} "{d}/unit" /hf {repo} {rev}\necho REACHED\n')
         return bash(script, d)
 
     def test_arete_gets_the_declaration_after_the_window_in_both_modes(self):
@@ -68,7 +69,8 @@ class TheSwitch(unittest.TestCase):
         for window, yarn in ((1010000, f"patch-yarn.py /hf {repo} {rev}"), (262144, f"patch-yarn.py --restore /hf {repo} {rev}")):
             with self.subTest(window=window):
                 out, calls = self.switch("arete", window)
-                self.assertEqual(calls, [yarn, f"patch-kv.py /hf {repo} {rev}"], out)
+                self.assertEqual(calls[:2], [yarn, f"patch-kv.py /hf {repo} {rev}"], out)
+                self.assertIn("patch-template.py /hf", calls[2], out)
                 self.assertIn("REACHED", out)
 
     def test_no_other_target_has_its_config_declared(self):
@@ -77,7 +79,7 @@ class TheSwitch(unittest.TestCase):
                 with self.subTest(choice=choice, window=window):
                     out, calls = self.switch(choice, window)
                     self.assertEqual([c for c in calls if c.startswith("patch-kv.py")], [], out)
-                    self.assertEqual(len(calls), 1, out)
+                    self.assertEqual(len(calls), 2, out)   # the window's config, then the template
                     self.assertIn("REACHED", out)
 
     def test_a_declaration_that_fails_stops_the_switch_before_the_unit(self):

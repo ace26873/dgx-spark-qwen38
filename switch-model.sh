@@ -1665,36 +1665,13 @@ docker run --rm --init --network host --user "$(id -u):$(id -g)" \
   || die "download failed ($(dl_free_gb) GiB left under $HF_CACHE; if that is near 0 the disk filled up, otherwise re-run to resume: HuggingFace throttles unauthenticated downloads, set HF_TOKEN=<your token> if it stalls)"
 fetched "$TARGET_REPO @ ${TARGET_REV:0:12}"
 
-# 2) 1M YaRN patch on the target's cached config.json (27B pair only, and only
-#    if its unit uses it; flash serves its native window)
-if [ "$TARGET_LANE" = "27b" ] && grep -q -- '--context-length 1010000' "$TARGET_UNIT"; then
-  python3 "$REPO_DIR/patch-yarn.py" "$HF_CACHE" "$TARGET_REPO" "$TARGET_REV" || die "YaRN patch failed"
-elif [ "$TARGET_LANE" = "27b" ]; then
-  # A native unit crashes at load on a YaRN-patched config, and a target this box served
-  # while it was in 1m keeps its patch in the cache after the box went back to native
-  # (install.sh restores the target it installs, not the others). So the target's config
-  # is restored here, idempotently; the restore refuses, before the unit is touched, when
-  # a patched config lost its backup (found in review, 2026-09-24).
-  echo "unit does not use the 1M context flag: restoring the target's native config if it carries YaRN"
-  python3 "$REPO_DIR/patch-yarn.py" --restore "$HF_CACHE" "$TARGET_REPO" "$TARGET_REV" \
-    || die "the target's config carries the 1M YaRN patch and could not be restored (the switch was NOT applied to the unit yet)"
-fi
-# 2a) Arete's checkpoint declares no KV cache, and served so it gets a bf16 one and about half
-#     the pool: the lane's fp8 declaration goes into its config, as install.sh writes it, and its
-#     unit stays stock's, with no --kv-cache-dtype (patch-kv.py says why). After the window's
-#     configs: a YaRN restore puts back a config saved before the declaration.
-if [ "$CHOICE" = arete ]; then
-  python3 "$REPO_DIR/patch-kv.py" "$HF_CACHE" "$TARGET_REPO" "$TARGET_REV" \
-    || die "the fp8 KV cache declaration failed for $TARGET_REPO (the switch was NOT applied to the unit yet)"
-fi
-
-# 2b) regenerate the patched chat template FROM the target's own snapshot.
-# One template file per engine; the served template always follows the served
-# model. Read at service startup only, so writing it now is safe.
-TEMPLATE_OUT="$CONFIG_DIR/chat-template-sglang.jinja"
-[ "$TARGET_LANE" = "flash" ] && TEMPLATE_OUT="$CONFIG_DIR/chat-template-flashnext.jinja"
-python3 "$REPO_DIR/patch-template.py" "$HF_CACHE" "$TEMPLATE_OUT" "$TARGET_REV" "$TARGET_REPO" \
-  || die "template patch failed for $TARGET_REPO (the switch was NOT applied to the unit yet)"
+# 2, 2a, 2b) the fetched checkpoint's own files, patched for what will serve them: one function
+# lanes.sh holds, which a Load's prepare (prepare-lane.sh) calls too when an update waits for
+# it, against the unit that waits, with the cache that unit mounts (sixth review of v1.52.0,
+# 2026-11-19, GLM 5.3: the Load's --fetch stopped right after the download, and a lane serving
+# its target with an update waiting restarted on a config the switch's steps never patched,
+# which does not load in 1M).
+patch_served_checkpoint "$TARGET_LANE" "$CHOICE" "$TARGET_UNIT" "$HF_CACHE" "$TARGET_REPO" "$TARGET_REV"
 
 # 3) point the target unit at the exact checkpoint. For the 27B pair, rewrite
 #    ONLY --model-path/--revision (the draft's own revision flag has a
