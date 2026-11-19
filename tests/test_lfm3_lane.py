@@ -334,7 +334,7 @@ class ItsClients(unittest.TestCase):
         snap = pathlib.Path(os.environ.get("HF_HOME", pathlib.Path.home() / ".cache/huggingface")) / "hub" / \
             f"models--{PINS['LFM3_REPO'].replace('/', '--')}" / "snapshots" / PINS["LFM3_REV"] / "chat_template.jinja"
         if not snap.is_file():
-            self.skipTest("the checkpoint is not in this machine's cache")
+            self.skipTest("needs the pinned bytes cached (the LFM3 checkpoint's chat template at its pinned revision)")
         tpl = snap.read_text()
         self.assertIn("{%- set enable_thinking = enable_thinking | default(true) -%}", tpl)
         self.assertNotIn("reasoning_effort", tpl)
