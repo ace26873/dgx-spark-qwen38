@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.51.0 (2026-11-19): Library deletes what takes room, and says each disk
+
+**Library says each disk.** The view opens on each disk the stack uses: what is free, and what the models, Docker's
+images (every project's, as `docker system df` counts them) and the lanes' runtimes and caches hold there. The models
+are counted on the disk each file really is, a blob two repositories share once: a repository folder can be a link to
+another disk (the reference box keeps MiniMax-H3 on its own disk, linked from the cache on the SSD), and counted under
+the cache's disk it read 62 GiB too many there. Read on the reference box: the SSD's models 303.0 GiB, its own disk's
+62.1, as `du` says of each.
+
+**Delete, for everything that takes room (decisions 1402 and 1404).** Each after a sheet that shows the server's plan,
+planned again when it is confirmed:
+- **A repository** of a cache the lanes read: a lane's checkpoint, a drafter, another model. The sheet says what it
+  frees on which disk and, for each cached revision, whether the Hub still serves every file as it is here, read
+  against the revision's file list (blob ids, LFS sha256): the configs the installers rewrite read as rewritten here,
+  and the original YaRN keeps beside its `config.json` is what is compared. When the Hub would not give it back, the
+  sheet names what would be lost and its button reads "Delete it anyway". A blob of the cache's shared store
+  (`hub/blobs/<xx>/<sha256>`) goes only when every repository its `.refs` names goes. The part a lane loads alone stays
+  (MiniMax-H3's `text_encoder/`, while MiniMax-H3-Image's checkpoint is whole), and the lanes whose next Load downloads
+  it again are named.
+- **An engine image**, with every name it has here (FP4-Local and Ornith run one image), by one `docker rmi`, never
+  `-f`. It frees the layers no other image has (docker's own count): the disk cleanup of 2026-11-16 announced 194 GB by
+  adding sizes shared and freed 153.5. The sheet says whether its registry still serves its digest, or its lane builds
+  it here.
+- **A lane's runtime** (the image, MiniMax-H3-Image and video lanes' venvs, 8 to 17 GiB; their `outputs/` stay) and
+  **the diffusion runtime's caches** of its first start (30 GB on the reference box): the lane's next Load builds it
+  again, the next start writes them again.
+
+A Delete is refused while anything reads what it would remove: a lane that serves or starts with it, a running
+container, another project's too (on the reference box another project's `gta-vlm` served the 27B's checkpoint from
+the same cache, with the 27B's image), a process whose command line names it or that holds or maps one of its files,
+and for an image a container that starts from it, a stopped one too. It is refused too, before anything goes, when a folder it
+would touch is one this user may not change (an engine that runs as root can leave root's folders in a cache). Its
+job says the disk's free space after.
+
+**What another project of the box keeps (decision 1414).** `~/.config/qwen38/library-keep` names, one per line, a
+repository or an image (a name, a digest reference by 12 characters of its digest or more, an id), then `# who uses
+it`: Library shows it kept, with no Delete, and the server refuses its Delete. On the reference box another project's
+live streams ran RadixArk's 27B, its draft and the 27B lane's image in a container of their own.
+
+**What the code review found before this release.** A runtime's Delete took the whole lane folder but `outputs/`,
+which can be shared with other work: it removes only what the installer put there, as `uninstall.sh` does. A process
+that maps a checkpoint (mmap keeps no file open) reads it. Only the configs the installers write read as rewritten
+here. An image's names go one `docker rmi` each. The registry's scan no longer walks the venvs for a Delete's plan.
+
+**What this release does not do yet.** An update still fetches the new weights and images of a lane already on the
+box: decisions 1408 to 1410 (an update writes code, units and configs, and everything large waits for a Load or a
+Download, the lane that serves included) are v1.52.0's.
+
 ## v1.50.0 (2026-11-19): MiniMax-H3-Image, a second image lane
 
 **MiniMax-H3-Image, a second image lane (`image-h3`).** MiniMax's `MiniMaxAI/MiniMax-H3-Image` (@ `5f90473`), text to
