@@ -473,6 +473,32 @@ class TheGpuProcsTableStacksOnAPhone(unittest.TestCase):
 
 
 
+class TheFitButtonRefusesBeforeTheClick(unittest.TestCase):
+    """Settings' "Fit the limits to this engine" stayed active on the lanes whose opencode limits
+    are their own (LFM3, Kolibri, the vLLM and llama.cpp lanes) and learned the reason only from a
+    toast after the click, where the actions menu pre-disables the same action (review of v1.53.0,
+    2026-11-19)."""
+
+    OC = r"""
+    const oc = {enabled: true, real: {present: true, default: %s, limits: {}},
+                launcher: {present: true, ours: true, cap: 200000}, follows: true, why: '', fit: null};
+    feed({config: CONFIG, units: UNITS, opencode: oc,
+          lifecycle: life(%s)});
+    const b = $('oc-fitbtn');
+    report({disabled: b.disabled, title: b.title});
+    """
+
+    def test_on_lfm3_the_button_is_disabled_with_the_reason(self):
+        r = run(self, self.OC % ("'lfm3/lfm3-1.7b'", "{'qwen38-lfm3.service': eng('ready', {target: 'lfm3'})}"))
+        self.assertTrue(r["disabled"], r)
+        self.assertIn("The Liquid AI LFM3 lane's opencode limits are its own", r["title"])
+
+    def test_on_a_qwen_lane_it_stays_active(self):
+        r = run(self, self.OC % ("'qwen38/qwen3.8-27b'", "{'qwen38-sglang.service': eng('ready', {target: 'stock'})}"))
+        self.assertFalse(r["disabled"], r)
+
+
+
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and
     the page kept its last success on screen as "ok, 0.4 s (skipped this round: busy)"."""

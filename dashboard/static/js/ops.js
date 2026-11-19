@@ -733,6 +733,18 @@ on('opencode', d => {
   setText('oc-note', 'One command: the launcher lifts the output cap and auto-approves permissions. The default model follows every switch; running sessions keep the model they started with.');
   badge('settings', ok === false ? '!' : '', 'warn');
 });
+// The fit button refuses before the click, with its reason under it, as the actions menu does
+// (base.js openMenu): on a lane whose limits are its own (LFM3, Kolibri, the other vLLM and
+// llama.cpp lanes) it learned the reason only from a toast after clicking (review of v1.53.0, 2026-11-19)
+const OC_FIT = {blocked: null};
+afterApply(() => {
+  const b = $('oc-fitbtn'); if (!b) return;
+  const own = cannotWhy('fit_opencode');
+  if (OC_FIT.blocked === own) return;
+  OC_FIT.blocked = own;
+  if (own) b.dataset.blocked = own; else delete b.dataset.blocked;
+  applyBusy();
+});
 on('repo', d => {
   setText('rp-tag', d.tag || 'n/a'); setText('rp-branch', d.branch || 'n/a');
   setText('rp-head', (d.head || '').split(' ')[0] || 'n/a'); setTitle('rp-head', d.head || '');
