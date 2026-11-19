@@ -113,6 +113,11 @@ PORT="${TRANSCRIBE_PORT:-$(installed_flag --port)}"; PORT="${PORT:-30036}"
 case "$PORT" in ''|*[!0-9]*) die "TRANSCRIBE_PORT takes a number, got: $PORT" ;; esac
 ENGINE_BIND="${TRANSCRIBE_BIND:-$(installed_flag --host)}"; ENGINE_BIND="${ENGINE_BIND:-127.0.0.1}"
 case "$ENGINE_BIND" in *[!0-9.]*|""|*..*) [ "$ENGINE_BIND" = localhost ] || die "TRANSCRIBE_BIND takes an IPv4 address, got: $ENGINE_BIND" ;; esac
+# The address the proof asks: the one the unit listens on, which 0.0.0.0 is every interface of,
+# reached on the box itself by 127.0.0.1. A proof hardcoded on 127.0.0.1 asked a port nothing
+# answered on a box bound to a LAN address, and a lane that came up was said failed (found in
+# review, 2026-11-19).
+PROOF_BIND="$ENGINE_BIND"; [ "$PROOF_BIND" = 0.0.0.0 ] && PROOF_BIND=127.0.0.1
 # The Hugging Face cache the unit mounts, read the way the other lanes beside it read theirs
 # (vllm-lane.sh's vlane_text_cache): this lane's own unit first, then the text lanes', so a box
 # whose cache lives on another disk (docs/external-disk.md, HF_CACHE=...) keeps its 36.5 GB there
@@ -272,7 +277,7 @@ SINCE="$(date '+%Y-%m-%d %H:%M:%S')"
 r0="$(systemctl show -p NRestarts --value "$UNIT" 2>/dev/null | tr -dc '0-9')"
 ready=0
 for i in $(seq 1 30); do
-  curl -fsS -m 3 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && { ready=1; break; }
+  curl -fsS -m 3 "http://$PROOF_BIND:$PORT/health" >/dev/null 2>&1 && { ready=1; break; }
   if [ "$(systemctl is-active "$UNIT" || true)" = failed ] \
      || [ "$(systemctl show -p NRestarts --value "$UNIT" 2>/dev/null | tr -dc '0-9')" -gt "${r0:-0}" ]; then
     { sudo journalctl -u "$UNIT" --since "$SINCE" --no-pager || true; } | tail -40
@@ -284,7 +289,7 @@ done
 [ "$ready" -eq 1 ] || { { sudo journalctl -u "$UNIT" --since "$SINCE" --no-pager || true; } | tail -40; die "the lane did not answer /health within 4 min. The journal above says why."; }
 echo "up after ~$(( (i - 1) * 8 )) s"
 KEY="$(head -1 "$CONFIG_DIR/api-key")"
-code="$(curl -sS -o "$SMOKE_DIR/heard.json" -w '%{http_code}' -m 300 "http://127.0.0.1:$PORT/v1/audio/transcriptions" \
+code="$(curl -sS -o "$SMOKE_DIR/heard.json" -w '%{http_code}' -m 300 "http://$PROOF_BIND:$PORT/v1/audio/transcriptions" \
   -H @<(printf 'Authorization: Bearer %s\n' "$KEY") \
   -F "file=@$HERE/tests/fixtures/transcribe-smoke.wav" -F language=fr || true)"
 [ "$code" = 200 ] || { head -c 300 "$SMOKE_DIR/heard.json" 2>/dev/null; echo; { sudo journalctl -u "$UNIT" --since "$SINCE" --no-pager || true; } | tail -20; die "the recognizer did not answer /v1/audio/transcriptions (HTTP ${code:-000})."; }

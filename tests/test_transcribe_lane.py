@@ -125,5 +125,34 @@ class TheProofRestartsALaneThatServesOlderFiles(unittest.TestCase):
         self.assertNotIn("restart", r.stdout)
 
 
+class TheProofAsksTheAddressTheUnitListensOn(unittest.TestCase):
+    """TRANSCRIBE_BIND moves the engine to any IPv4 address (docs/transcribe-lane.md), and a proof
+    hardcoded on 127.0.0.1 asked a port nothing answered on such a box: the health loop ran out,
+    an install that came up was said failed and its trap took the lane back down (found in review,
+    2026-11-19). 0.0.0.0 is every interface, which the box itself reaches on 127.0.0.1."""
+
+    def proof_bind(self, bind):
+        t = INSTALLER.read_text()
+        block = t[t.index('PROOF_BIND="$ENGINE_BIND"'):t.index("\n", t.index('PROOF_BIND="')) + 1]
+        r = subprocess.run(["bash", "-c", f'set -euo pipefail\nENGINE_BIND={bind!r}\n' + block
+                            + 'echo "PROOF=$PROOF_BIND"'],
+                           capture_output=True, text=True, timeout=30, env={"PATH": "/usr/bin:/bin"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.strip()
+
+    def test_the_proof_asks_the_bind_the_unit_listens_on(self):
+        t = INSTALLER.read_text()
+        self.assertIn('curl -fsS -m 3 "http://$PROOF_BIND:$PORT/health"', t)
+        self.assertIn('"http://$PROOF_BIND:$PORT/v1/audio/transcriptions"', t)
+        self.assertNotIn("http://127.0.0.1:$PORT", t)
+
+    def test_every_interface_is_asked_on_the_box_itself(self):
+        self.assertEqual(self.proof_bind("0.0.0.0"), "PROOF=127.0.0.1")
+
+    def test_a_named_address_is_asked_as_it_is(self):
+        for bind in ("127.0.0.1", "192.168.1.20", "localhost"):
+            self.assertEqual(self.proof_bind(bind), f"PROOF={bind}", bind)
+
+
 if __name__ == "__main__":
     unittest.main()
