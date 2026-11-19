@@ -75,5 +75,55 @@ class TheStagedUnit(unittest.TestCase):
         self.assertEqual(self.mounted_cache(), "/mnt/asked/huggingface")
 
 
+class TheProofRestartsALaneThatServesOlderFiles(unittest.TestCase):
+    """A lane already serving when its installer runs holds its engine in memory: a start on an
+    active unit is a no-op systemd answers with success, and the proof then asked the old engine,
+    the one this run replaced on disk (vlane_prove's own defect, found in review, 2026-10-14;
+    this hand-written proof had it too, found in review, 2026-11-19)."""
+
+    def block(self):
+        t = INSTALLER.read_text()
+        start = t.index("TRANSCRIBE_PROVE_FILES=(")
+        return t[start:t.index("fi\n", start) + len("fi\n")]
+
+    def run_block(self, was_self, older):
+        cfg = pathlib.Path(tempfile.mkdtemp(prefix="transcribe-prove-"))
+        self.addCleanup(shutil.rmtree, cfg, ignore_errors=True)
+        code = ("set -euo pipefail\n"
+                "UNIT=qwen38-transcribe.service; INSTALLED=/etc/systemd/system/$UNIT\n"
+                f"CONFIG_DIR={cfg}; WAS_SELF={was_self}\n"
+                'TRANSCRIBE_FILE="a.gguf=sha:1"; TRANSCRIBE_MMPROJ="b.gguf=sha:2"\n'
+                'model_host(){ echo "/gguf/$1"; }\n'
+                f'lane_serves_older(){{ echo "OLDER $*"; return {older}; }}\n'
+                'sudo(){ echo "SUDO $*"; }\n'
+                + self.block())
+        return subprocess.run(["bash", "-c", code], capture_output=True, text=True, timeout=30,
+                              env={"PATH": "/usr/bin:/bin"})
+
+    def test_a_serving_lane_with_older_files_restarts_for_the_proof(self):
+        r = self.run_block(1, 0)          # lane_serves_older true: it serves older files
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("SUDO systemctl restart qwen38-transcribe.service", r.stdout)
+        self.assertNotIn("systemctl start", r.stdout)
+
+    def test_the_restart_decision_reads_the_files_this_run_touched(self):
+        r = self.run_block(1, 0)
+        asked = next(ln for ln in r.stdout.splitlines() if ln.startswith("OLDER "))
+        for f in ("/etc/systemd/system/qwen38-transcribe.service", "llamacpp-files.sh",
+                  "engine-preflight.sh", "/gguf/a.gguf=sha:1", "/gguf/b.gguf=sha:2"):
+            self.assertIn(f, asked)
+
+    def test_a_serving_lane_current_on_its_files_is_not_touched(self):
+        r = self.run_block(1, 1)          # lane_serves_older false: it serves these files
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("SUDO", r.stdout)
+
+    def test_a_lane_that_was_down_starts(self):
+        r = self.run_block(0, 0)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("SUDO systemctl start qwen38-transcribe.service", r.stdout)
+        self.assertNotIn("restart", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

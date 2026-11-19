@@ -255,7 +255,19 @@ transcribe_restore(){
 }
 trap transcribe_restore EXIT
 SMOKE_DIR="$(mktemp -d)"
-sudo systemctl start "$UNIT"
+# A lane that serves older files than the ones this run put in place restarts for the proof: the
+# engine that runs proved nothing about what this run installed, and a start on an active unit is
+# a no-op systemd answers with success (vlane_prove's own reason, found in review, 2026-10-14;
+# this proof was written without it, found in review, 2026-11-19). Its files: the unit, the start
+# scripts its ExecStart reads, and the two GGUF this run fetched.
+TRANSCRIBE_PROVE_FILES=("$INSTALLED" "$CONFIG_DIR/llamacpp-files.sh" "$CONFIG_DIR/engine-preflight.sh"
+                        "$(model_host "$TRANSCRIBE_FILE")" "$(model_host "$TRANSCRIBE_MMPROJ")")
+if [ "$WAS_SELF" -eq 1 ] && lane_serves_older "$UNIT" "${TRANSCRIBE_PROVE_FILES[@]}"; then
+  echo "the lane runs older files than the ones installed now (its unit, its start scripts or its GGUF): it restarts to prove these"
+  sudo systemctl restart "$UNIT"
+elif [ "$WAS_SELF" -eq 0 ]; then
+  sudo systemctl start "$UNIT"
+fi
 SINCE="$(date '+%Y-%m-%d %H:%M:%S')"
 r0="$(systemctl show -p NRestarts --value "$UNIT" 2>/dev/null | tr -dc '0-9')"
 ready=0

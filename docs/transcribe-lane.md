@@ -35,7 +35,9 @@ A 64 GB DGX Spark refuses it: 37 GB of weights before the engine's own memory do
 ./install-transcribe.sh --uninstall # its unit and its container; the GGUF files and the image stay, said
 ```
 
-The installer ends with a proof: it starts the lane, sends it a spoken French sentence this repository
+The installer ends with a proof: it starts the lane (a lane already serving older files than the
+ones this run put in place restarts, as every engine lane's proof does), sends it a spoken French
+sentence this repository
 carries (`tests/fixtures/transcribe-smoke.wav`), and checks the words come back, then checks the box's
 key is in none of the lane's journal lines and gives the box back to the lane it was serving.
 
