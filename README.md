@@ -709,19 +709,22 @@ an annual revenue of 10 million US dollars or more:
 Both serve on the text port behind the same proxy and key, OpenAI or Anthropic dialect alike, text only. On the
 cockpit's Lanes view, pick **Liquid AI LFM2.5 24B-A2B** or **Liquid AI LFM3** and press **Load**. From a terminal,
 `./prepare-lane.sh lfm25` (or `lfm3`) the first time, then `./switch-model.sh lfm25` (or `lfm3`). Measured on the
-reference box, the GPU clock capped at 2,000 MHz, each in a test container of its own:
+reference box, the GPU clock capped at 2,000 MHz, the LFM3 column in a test container of its own and the LFM2.5
+column the lane as it ships, through the proxy:
 
-| | LFM3 1.7B NVFP4, 2026-11-16, no memory share set | LFM2.5 24B-A2B FP8 + DSpark, 2026-11-14, one trial with no parser |
+| | LFM3 1.7B NVFP4, 2026-11-16, no memory share set | LFM2.5 24B-A2B FP8 + DSpark, 2026-11-19, the lane as it ships |
 |---|---|---|
-| one request alone | 87.7 tok/s (1,024 tokens in, 512 out) | MESURE-A-VENIR(lfm25-base) |
-| many at once, in all | 3,911.8 tok/s at 128 requests | 362 tok/s at the median with 8, the draft accepting 5.28 tokens |
-| GSM8K (250) | 0.896 | 0.912 |
-| a long prompt | 131,072 tokens, 10.2 s to its first token | MESURE-A-VENIR(lfm25-base) |
-| an agent's next turn | 99 to 100 % from the prefix cache | MESURE-A-VENIR(lfm25-base) |
-| ready | 160 s at its first boot | 286 s |
+| one request alone | 87.7 tok/s (1,024 tokens in, 512 out) | 102.2 tok/s (1,024 tokens in, 512 out) |
+| many at once, in all | 3,911.8 tok/s at 128 requests | 389.2 tok/s at 8 requests, 73.4 per stream |
+| GSM8K (250) | 0.896 | 0.912 (the 2026-11-14 trial, no parser) |
+| a long prompt | 131,072 tokens, 10.2 s to its first token | not measured yet |
+| an agent's next turn | 99 to 100 % from the prefix cache | 94 % from the prefix cache, from its second turn |
+| ready | 160 s at its first boot | 292 s |
 
 The LFM3 lane sets a memory share of 0.75, as vLLM's nightly grows its KV cache into all the memory left (with none
-set, the box kept 1,087 MiB available at its lowest): its figures at that share are MESURE-A-VENIR(lfm3-prod).
+set, the box kept 1,087 MiB available at its lowest): measured at that share, the lane as it ships on 2026-11-19,
+through the proxy, it was ready in 133 s with 20 GiB available at its lowest, one stream at 90.7 tok/s and 8 at once
+732.2 tok/s in all (1,024 tokens in, 512 out), and an agent's next turn 99 to 100 % from the prefix cache.
 Every number, what is not measured yet and why: **[docs/lfm3-lane.md](docs/lfm3-lane.md)** and
 **[docs/lfm25-lane.md](docs/lfm25-lane.md)**.
 

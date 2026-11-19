@@ -12,8 +12,9 @@ The numbers on this page were measured on the reference box (an ASUS Ascent GX10
 campaign called "base": the image and the checkpoint the lane pins, in a test container of its own on loopback,
 without the key and without the proxy, **with no memory share set** (vLLM's `--gpu-memory-utilization` left unset),
 the GPU clock capped at 2,000 MHz and the chip under 70 °C before each step, every other lane stopped. The lane
-itself sets a memory share of 0.75 (below), and the campaign that measures it at that share is still to run: each
-place a measurement still to run will fill says `MESURE-A-VENIR`.
+itself sets a memory share of 0.75 (below), and the proof campaign of v1.53.0 measured the lane as it ships at that
+share on 2026-11-19, through the proxy, the GPU clock capped at 2,000 MHz: what it measured is below, and what no
+campaign has measured yet is said so where it stands.
 
 ## Why vLLM's nightly, and which build
 
@@ -33,7 +34,8 @@ same model does (1,846,238,496 bytes).
 The same model in that Q8_0 GGUF on llama.cpp (b12316), in a short trial on 2026-11-14 at the same GPU clock cap,
 scored 0.844 on the same 250 GSM8K questions, where this build scores 0.896 (below), and gave 103.6 tokens/s on one
 answer, read in llama.cpp's own timings: not the method this page's speeds come from, so the two are not compared
-here. MESURE-A-VENIR(lfm3-vitesse): one stream of this lane against that figure, measured the same way.
+here. The lane as it ships gave 90.7 tokens/s on one stream on 2026-11-19 (below), but through the proxy and not by
+llama.cpp's own timings, so the two are still not compared.
 
 ## The serving command
 
@@ -52,8 +54,9 @@ vllm serve LiquidAI/LFM3-1.7B-NVFP4 --revision <pinned sha> --served-model-name 
   on a unified-memory device). With none set, the cache grew to 5,239,455 tokens (100.85 GiB), twenty times the
   window, and the box kept 1,087 MiB available at its lowest during the campaign, close to the edge where a GB10
   freezes ([docs/gb10-memory.md](gb10-memory.md)). A share of 0.75 of the 121.63 GiB the engine sees on the
-  reference box is about 91 GiB for the engine, by the arithmetic. What it leaves the cache and the box is
-  MESURE-A-VENIR(lfm3-prod).
+  reference box is about 91 GiB for the engine, by the arithmetic. Measured at that share on 2026-11-19, the lane as
+  it ships: the box kept 20 GiB available at its lowest, and the engine was ready in 133 s. The cache's size at that
+  share is not in the campaign's log.
 - **Sampling**: the checkpoint's `generation_config.json` asks temperature 0.1, top_k 50 and repetition_penalty
   1.1, and vLLM applies it to every request that sets none of its own, as it says at boot.
 - **Reasoning** is on by default (the template's `enable_thinking`, true unless a request says false). A request
@@ -78,12 +81,20 @@ vllm serve LiquidAI/LFM3-1.7B-NVFP4 --revision <pinned sha> --served-model-name 
 
 All in the "base" campaign of 2026-11-16, under the conditions above.
 
-| | with no memory share | at the lane's share, 0.75 |
+| | with no memory share | at the lane's share, 0.75, 2026-11-19 |
 |---|---|---|
-| boot, to `/health` | 160 s at its first boot: 127.5 s of engine init (11.1 s of compile), FlashInfer's NVFP4 tuning 29 s of it | MESURE-A-VENIR(lfm3-prod) |
-| KV cache | 5,239,455 tokens, 19.99 requests at the full window as vLLM counts it | MESURE-A-VENIR(lfm3-prod) |
-| MemAvailable, lowest seen | 1,087 MiB | MESURE-A-VENIR(lfm3-prod) |
-| GSM8K, 250 questions | 0.896 | MESURE-A-VENIR(lfm3-prod) |
+| boot, to `/health` | 160 s at its first boot: 127.5 s of engine init (11.1 s of compile), FlashInfer's NVFP4 tuning 29 s of it | 133 s, the lane as it ships |
+| KV cache | 5,239,455 tokens, 19.99 requests at the full window as vLLM counts it | not measured yet |
+| MemAvailable, lowest seen | 1,087 MiB | 20 GiB |
+| GSM8K, 250 questions | 0.896 | not measured yet |
+
+**At the lane's share, 0.75, the lane as it ships** (2026-11-19, through the proxy, the GPU clock capped at 2,000
+MHz): ready in 133 s after the start, 20 GiB available at its lowest, one stream 90.7 tokens/s (first token in
+0.02 s), 8 at once 732.2 tokens/s in all, 101.1 per stream at the median (first token in 0.04 s), a tool call right
+(`get_weather` with `{"city": "Berlin", "unit": "celsius"}`), and the prefix cache under an agent's turns
+(`prefix_probe.py`, six turns, prompts of 34,941 to 35,627 tokens): nothing on the first turn, 99 % on the second,
+100 % on each after it, its first token 1.77 s on the first turn then 0.12 to 0.13 s. The box's key was in none of
+the 231 lines of its journal since the start.
 
 **Speeds**, with `vllm bench serve` on the same image: random prompts of 1,024 tokens, 512 tokens out (the end of
 text ignored), 4 requests one at a time, and from 8 at once up, twice as many requests as run at once:
@@ -108,7 +119,7 @@ tokens, found nothing in the cache and its first token came after 1.73 s. Each o
 to 100 % of its 35,083 to 35,643 tokens there and computed 150 to 203, its first token after 0.11 to 0.14 s.
 
 **Speculative decoding** is still to be tried: the model has no MTP head, and the image carries vLLM's n-gram
-lookup, on the CPU and on the GPU. MESURE-A-VENIR(lfm3-vitesse): one stream on three real jobs (code, prose, a
+lookup, on the CPU and on the GPU. Still to be measured: one stream on three real jobs (code, prose, a
 summary) with and without each, their acceptance, and what each costs at 8 and 64 requests at once.
 
 ## Claude Code and the prefix cache
@@ -119,12 +130,11 @@ At its start, vLLM warns about this checkpoint's template:
 > Claude Code's per-turn reminders) are merged into the leading system prompt. Each new one changes the prompt
 > prefix, so the rest of the conversation misses the prefix cache.
 
-This is vLLM's warning, not a measurement: no Claude Code session has run on this lane yet. `prefix_probe.py`
-above sends `/v1/chat/completions` with its one system prompt at the head, as opencode does, and does not meet the
-case. It will be measured with Claude Code itself through `claude-local`, the engine's prefix cache counters read
-on its `/metrics` between its turns, as on the Ornith lane ([docs/ornith-lane.md](ornith-lane.md)), and with
-`prefix_probe.py`'s conversation sent to `/v1/messages` with a system message at each turn:
-MESURE-A-VENIR(lfm3-claude-code). opencode is not concerned: it sends `/v1/chat/completions`.
+This is vLLM's warning, not a measurement. Claude Code itself ran on the lane through the proxy on 2026-11-19 and
+answered OK. The prefix cache under its per-turn reminders, read on the engine's `/metrics` between its turns as on
+the Ornith lane ([docs/ornith-lane.md](ornith-lane.md)), and `prefix_probe.py`'s conversation sent to `/v1/messages`
+with a system message at each turn, are still to be measured. opencode is not concerned: it sends
+`/v1/chat/completions`.
 
 ## Clients
 
@@ -141,8 +151,8 @@ Through the proxy on `:30001`, with the box's key, as model `lfm3-1.7b`:
   are measured on the Qwen tokenizer. The proxy says so (400), and the cockpit's Decide view offers a lane that
   serves it.
 
-None of these clients has run on the lane through the proxy yet. The installer's proof does it with a reply and
-a tool call, and the clients themselves are still to be run: MESURE-A-VENIR(lfm3-clients).
+The matrix of 2026-11-19 ran the clients through the proxy, all eight OK: Claude Code, opencode, Hermes, pi, the
+OpenAI and Anthropic SDKs, fetch under Node and Bun, and LiteLLM.
 
 ## Its licence
 
