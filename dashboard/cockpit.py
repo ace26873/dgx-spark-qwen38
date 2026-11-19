@@ -3469,8 +3469,10 @@ def job_apply_pending(job: Job):
     audit({"kind": "pending_applied", "unit": unit})
     out = run(["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"], timeout=60, merge_err=True)
     if not answered(out):
-        return False, lines + [f"{unit}: the unit is in place, systemd did not reload it: its restart, or "
-                               f"sudo systemctl daemon-reload, applies it ({str(out).strip()[:200]})"], {"ok": False}
+        # a restart alone keeps systemd's old reading of the unit (it only warns that the file changed on disk):
+        # the reload comes first
+        return False, lines + [f"{unit}: the unit is in place, systemd did not reload it: sudo systemctl "
+                               f"daemon-reload, then its restart, applies it ({str(out).strip()[:200]})"], {"ok": False}
     return True, lines + [f"{unit}: the update that waited for its Load is in place; its restart applies it"], {"ok": True}
 
 

@@ -106,7 +106,7 @@ earlier run's wait in `pending/`, so the Load prepared for a launcher never pose
 wait as stale (the branch clears it now, as the unchanged branch and `unit_put` do); `apply_pending` ran install then
 daemon-reload in one loop and left the wait when the reload failed, though the unit was already in place, so the retry
 read it as stale (a switch) and dropped it with a false message (the unit in place now clears the wait, and a failed
-reload says so: its restart, or `sudo systemctl daemon-reload`, applies it); the image, video and MiniMax-H3-Image
+reload says so: `sudo systemctl daemon-reload`, then its restart, applies it); the image, video and MiniMax-H3-Image
 switches read the cache (`HF_HOME`) from the unit in place while fetching what the waiting unit reads, so a cache moved
 by a re-run of install looped the wait forever (the cache is read from the same unit as the model); `unit_needs`' path
 loops ran `for` over `$(grep ...)`, cutting a path with a space in two, and the snapshot, mount-cache (`unit_hf_cache`)
