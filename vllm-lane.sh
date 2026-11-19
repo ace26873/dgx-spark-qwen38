@@ -309,15 +309,16 @@ vlane_room(){  # $1 the base image, $2... the checkpoints' repos
 # file only with its tree cache). The token by name: docker takes the value from its own
 # environment, so it is in no argv. The byte count when the script is there: a mount of a missing
 # file makes a root-owned directory.
-vlane_fetch(){  # $1 the repo, $2 the revision
-  local token_args=() progress_args=()
+vlane_fetch(){  # $1 the repo, $2 the revision, $3 optional: pin or fill, passed to ckpt-fetch.py's --refs-main
+  local token_args=() progress_args=() refs_args=()
+  [ -n "${3:-}" ] && refs_args=(--refs-main "$3")
   mkdir -p "$HF_CACHE"
   [ -f "$HERE/hf-progress.py" ] && progress_args=(-v "$HERE/hf-progress.py:/opt/qwen38/hf-progress.py:ro")
   if [ -n "${HF_TOKEN:-}" ]; then export HF_TOKEN; token_args=(-e HF_TOKEN); fi
   docker run --rm --network host --user "$(id -u):$(id -g)" --entrypoint python3 \
     -e HF_HOME=/hf -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_DISABLE_XET=1 "${token_args[@]}" \
     -v "$HERE/ckpt-fetch.py:/opt/qwen38/ckpt-fetch.py:ro" "${progress_args[@]}" \
-    -v "$HF_CACHE":/hf "$LOCAL_IMAGE" /opt/qwen38/ckpt-fetch.py "$1" "$2" --offline-first \
+    -v "$HF_CACHE":/hf "$LOCAL_IMAGE" /opt/qwen38/ckpt-fetch.py "$1" "$2" --offline-first "${refs_args[@]}" \
     || die "download of $1 failed. Causes: no internet, HuggingFace throttling an unauthenticated download (set HF_TOKEN=<your token>), a pinned revision removed upstream, or a permission error in $HF_CACHE. Re-running resumes."
 }
 

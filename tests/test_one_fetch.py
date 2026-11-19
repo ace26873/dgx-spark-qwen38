@@ -54,7 +54,7 @@ CALLS = {
         ("switch-model.sh", '"$H3_PY" "$REPO_DIR/ckpt-fetch.py" "$IMAGE_H3_ENCODER_PIN" "$IMAGE_H3_ENCODER_PIN_REV" '
                             '--allow "text_encoder/*" --offline-first'),
     "vllm-lane.sh, the checkpoints of the five vLLM lanes' installers":
-        ("vllm-lane.sh", '"$LOCAL_IMAGE" /opt/qwen38/ckpt-fetch.py "$1" "$2" --offline-first'),
+        ("vllm-lane.sh", '"$LOCAL_IMAGE" /opt/qwen38/ckpt-fetch.py "$1" "$2" --offline-first "${refs_args[@]}"'),
     "switch-model.sh, the Kolibri lane":
         ("switch-model.sh", '"$KOL_IMAGE" /opt/qwen38/ckpt-fetch.py "$KOL_MODEL" "$KOL_REV" --offline-first \\\n'
                             '    --need-gb "$KOL_NEED_GB" --free-gb "$(dl_free_gb "$KOL_HF")"'),
@@ -132,6 +132,12 @@ class EveryLaneFetchesThroughIt(unittest.TestCase):
         # and its token is never on a command line: read from the environment by the script
         self.assertNotIn("HF_TOKEN", call)
         self.assertIn('os.environ.get("HF_TOKEN"', text("gguf-fetch.py"))
+
+    def test_vlane_fetch_passes_a_refs_main_mode_on_to_ckpt_fetch(self):
+        # a lane whose engine reads a repo by name offline (SGLang's speculative hook reads the
+        # draft's config through refs/main) needs the ref a download by commit never writes
+        t = text("vllm-lane.sh")
+        self.assertIn('[ -n "${3:-}" ] && refs_args=(--refs-main "$3")', t)
 
     def test_each_vllm_installer_names_the_script_in_its_preflight_before_it_fetches(self):
         # the three vLLM installers check ckpt-fetch.py in their preflight (vllm-lane.sh's
