@@ -135,7 +135,13 @@ prepare_flash(){
                 "$hf|$(ckpt_room_gb flash "$hf" "$model" "$rev")|its checkpoint and its caches" \
                 "${ple:-$hf}|$table_need|its PLE table, 47.7 GiB written at every boot"
   pull_image "$img" flash 49     # its peak, as install.sh counts it (DOCKER_NEED_GB)
-  bash "$HERE/switch-model.sh" "$target" --fetch
+  # The fetch goes into the cache the unit that waits mounts ($hf, read above from it when an
+  # update waits): the switch reads the one the invocation in place mounts when no HF_CACHE is
+  # passed, and a cache moved by a re-run of install with HF_CACHE= would then get the download
+  # while the waiting unit kept reading the other one, and the Load would loop (sixth review of
+  # v1.52.0, 2026-11-19, GLM 5.3: the image, video and image-h3 switches already read the waiting
+  # unit's cache, the two text lanes did not).
+  HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
   # The PLE table its launcher writes at every boot, 47.7 GiB in PLE_DIR, needs its room there,
   # counted after the checkpoint when the two share a disk (install.sh asks for both at once).
   if [ -n "$ple" ] && ! ls "$ple"/ple_table_*.bin >/dev/null 2>&1; then
@@ -228,7 +234,13 @@ prepare_27b(){
       python3 "$HERE/patch-yarn.py" --restore "$hf" "$draft" "${drev:-main}" || die "YaRN restore failed on the DFlash2 draft"
     fi
   fi
-  bash "$HERE/switch-model.sh" "$target" --fetch
+  # The fetch goes into the cache the unit that waits mounts ($hf, read above from it when an
+  # update waits): the switch reads the one the invocation in place mounts when no HF_CACHE is
+  # passed, and a cache moved by a re-run of install with HF_CACHE= would then get the download
+  # while the waiting unit kept reading the other one, and the Load would loop (sixth review of
+  # v1.52.0, 2026-11-19, GLM 5.3: the image, video and image-h3 switches already read the waiting
+  # unit's cache, the two text lanes did not).
+  HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
   printf '\n\033[1;32m── Done: the 27B lane is prepared; its Load switches to it and starts it\033[0m\n'
 }
 
