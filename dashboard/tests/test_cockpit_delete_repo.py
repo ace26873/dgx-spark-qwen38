@@ -177,6 +177,25 @@ class DeleteRepo(unittest.TestCase):
         self.assertEqual(self.cp.repo_keep(enc, reg)[0], [])
         self.assertEqual(self.cp.repo_keep(DSPARK, {"targets": [{"target": "image-h3", "state": "complete"}]})[0], [])
 
+    def test_a_reader_that_appears_during_the_hubs_verdicts_keeps_it(self):
+        # the plan reads the readers before asking the Hub (up to 20 s a batch of four): a lane started in between
+        # is read again just before anything goes (revue of v1.51.0, 2026-11-19)
+        (self.tmp / "units" / "qwen38-sglang.service").write_text(f"ExecStart=... --model-path {DSPARK}\n")
+        real_hub = self.cp._get_json
+
+        def hub_then_lane(url, timeout=5.0):
+            out = real_hub(url, timeout)
+            self.active.add("qwen38-sglang.service")     # the autoheal starts the lane while the Hub is asked
+            return out
+
+        self.cp._get_json = hub_then_lane
+        self.addCleanup(setattr, self.cp, "_get_json", real_hub)
+        code, body = self.act(self.params())
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(self.repo.exists())
+        self.assertTrue(any("read now by" in ln and "qwen38-sglang.service" in ln for ln in body["lines"]),
+                        body["lines"])
+
     def test_a_partial_scan_refuses_the_delete_of_a_repository(self):
         # a checkout in progress: the scan missed a pin, so the image-h3 lane reads "unknown" and the part it loads
         # alone (MiniMax-H3's text_encoder/) would read as deletable. The Delete is refused, like job_delete_strays

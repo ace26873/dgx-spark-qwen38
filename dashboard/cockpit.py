@@ -6220,6 +6220,11 @@ def job_delete_repo(job: Job):
             for r in plan["revisions"] if not r.get("identical")) or "no revision to compare"
         return False, [f"kept {p['repo']}: the Hub does not serve it as it is here ({why}); its Delete says so and "
                        "asks again"], {"ok": False}
+    # the readers were read before the Hub's verdicts (up to 20 s a batch of four): read again just before anything
+    # goes, a lane started in between must not lose what it loads (revue of v1.51.0, 2026-11-19)
+    readers = repo_readers(p["repo"], os.path.realpath(_repo_dir(p["cache"], p["repo"])), plan["plan"]["shared"])
+    if readers:
+        return False, [f"kept {p['repo']}: read now by " + "; ".join(readers)], {"ok": False}
     # each disk it touches: the repository's folder can be on one, the cache's shared store on another (code review
     # of v1.51.0)
     mounts = list(dict.fromkeys([plan["mount"]] + [rg.mount_of(os.path.dirname(s)) for s in plan["plan"]["shared"]]))
