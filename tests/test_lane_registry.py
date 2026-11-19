@@ -1173,8 +1173,12 @@ class TheOtherScriptsSayTheSame(unittest.TestCase):
         p.same(f"{rel}:{line} the case that prepares each lane", patterns(arms), SIDE + INSTALL_SH)
         for lane in INSTALL_SH:
             line, body = sh_function(sh, f"prepare_{lane}", rel)
-            arms, at = sh_case_with(body, '"${TARGET:-$model}"', r"target=", rel, line - 1)
+            arms, at = sh_case_with(body, '"$want"', r"target=", rel, line - 1)
             p.same(f"{rel}:{at} prepare_{lane}()'s targets", patterns(arms), targets_of([lane]))
+            # the target a Load prepares is the waiting unit's or launcher's own, not the card's (a wait
+            # reads what its file names): computed once, from the pending file when one waits
+            self.assertIn('want="$model"', body, f"{rel}:{line} prepare_{lane}() does not read the file in place's model as the wait's")
+            self.assertIn('[ -z "$pend" ] && want="${TARGET:-$model}"', body, f"{rel}:{line} prepare_{lane}() does not fall back to TARGET")
         rel = "uninstall.sh"
         sh = text_of(rel)
         m, where = one(rel, sh, r"^for u in (qwen38-[^;]*); do$")

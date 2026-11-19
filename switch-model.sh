@@ -196,7 +196,28 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   [ -n "$KOL_CUR" ] && [ -n "$KOL_CUR_GMU" ] || die "the Kolibri-1 unit names no checkpoint or memory share where this expects it (hand-edited unit?): re-run ./install-kolibri.sh --no-smoke"
   KOL_WANT="$KOL_MODEL --revision $KOL_REV"; KOL_WANT_GMU="--gpu-memory-utilization $KOL_GMU"
   KOL_REWRITTEN=""
-  if [ "$KOL_CUR" != "$KOL_WANT" ] || [ "$KOL_CUR_GMU" != "$KOL_WANT_GMU" ]; then
+  # The update that waited for this Load (if any) goes in place whole: this lane's local image is tagged from
+  # the pins its installer pins, so a waiting unit's image line can differ from the one in place, and the
+  # rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3). Same block as the other lanes beside.
+  if [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" ]; then
+    if [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base" ] && [ -f "$KOLIBRI_UNIT" ] \
+       && [ "$(cat "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base")" != "$(sha256sum "$KOLIBRI_UNIT" | cut -d' ' -f1)" ]; then
+      unit_pending_clear "$KOLIBRI_UNIT"
+      echo "the update that waited for this Load was dropped: $KOLIBRI_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
+    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME")" ]; then
+      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-kolibri applies it"
+    else
+      if ! cmp -s "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" "$KOLIBRI_UNIT"; then
+        cp "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" "$KOL_STAGE"
+        sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
+        rm -f "$KOL_STAGE"
+        sudo systemctl daemon-reload
+        echo "the update that waited for this Load is in place: $KOLIBRI_UNIT_NAME"
+      fi
+      unit_pending_clear "$KOLIBRI_UNIT"
+      KOL_REWRITTEN=1
+    fi
+  elif [ "$KOL_CUR" != "$KOL_WANT" ] || [ "$KOL_CUR_GMU" != "$KOL_WANT_GMU" ]; then
     KOL_TEXT="$(cat "$KOLIBRI_UNIT")"
     KOL_TEXT="${KOL_TEXT//"$KOL_CUR"/"$KOL_WANT"}"
     printf '%s\n' "${KOL_TEXT//"$KOL_CUR_GMU"/"$KOL_WANT_GMU"}" > "$KOL_STAGE"
@@ -391,7 +412,33 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
   NEM_WANT_D="--speculative-config.model $NEM_DRAFT"; NEM_WANT_DREV="--speculative-config.revision $NEM_DREV"
   NEM_WANT_SNAP="models--${NEM_MODEL//\//--}/snapshots/$NEM_REV/"
   NEM_REWRITTEN=""
-  if [ "$NEM_CUR|$NEM_CUR_GMU|$NEM_CUR_D|$NEM_CUR_DREV|$NEM_CUR_SEQS" != "$NEM_WANT|$NEM_WANT_GMU|$NEM_WANT_D|$NEM_WANT_DREV|$NEM_WANT_SEQS" ]; then
+  # The update that waited for this Load (if any) goes in place whole: this lane's local image is tagged from
+  # the pins its installer pins, so a waiting unit's image line can differ from the one in place, and the
+  # rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3). Same block as the other lanes beside.
+  if [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME" ]; then
+    if [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base" ] && [ -f "$NEM_UNIT" ] \
+       && [ "$(cat "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base")" != "$(sha256sum "$NEM_UNIT" | cut -d' ' -f1)" ]; then
+      unit_pending_clear "$NEM_UNIT"
+      echo "the update that waited for this Load was dropped: $NEM_UNIT_NAME changed since it was rendered; ./install.sh writes it again"
+    elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$NEM_UNIT_NAME")" ]; then
+      echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$NEM_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-$CHOICE applies it"
+    else
+      if ! cmp -s "$CONFIG_DIR/pending/$NEM_UNIT_NAME" "$NEM_UNIT"; then
+        cp "$CONFIG_DIR/pending/$NEM_UNIT_NAME" "$NEM_LANE_STAGE"
+        # one exact command per lane, as the cockpit's sudoers allowlist names it
+        if [ "$CHOICE" = "nemotron" ]; then
+          sudo install -m 644 "$NEM_STAGE" "$NEMOTRON_UNIT"
+        else
+          sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
+        fi
+        rm -f "$NEM_LANE_STAGE"
+        sudo systemctl daemon-reload
+        echo "the update that waited for this Load is in place: $NEM_UNIT_NAME"
+      fi
+      unit_pending_clear "$NEM_UNIT"
+      NEM_REWRITTEN=1
+    fi
+  elif [ "$NEM_CUR|$NEM_CUR_GMU|$NEM_CUR_D|$NEM_CUR_DREV|$NEM_CUR_SEQS" != "$NEM_WANT|$NEM_WANT_GMU|$NEM_WANT_D|$NEM_WANT_DREV|$NEM_WANT_SEQS" ]; then
     NEM_TEXT="$(cat "$NEM_UNIT")"
     NEM_TEXT="${NEM_TEXT//"$NEM_CUR"/"$NEM_WANT"}"
     NEM_TEXT="${NEM_TEXT//"$NEM_CUR_SNAP"/"$NEM_WANT_SNAP"}"

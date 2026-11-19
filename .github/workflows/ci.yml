@@ -1031,6 +1031,8 @@ jobs:
               "IMAGE_H3_UNIT_NAME": {"qwen38-image-h3.service"},
               "TARGET_UNIT": {re.search(r'^SGL_UNIT="([^"]+)"', script, re.M).group(1)},
               "IMAGE_UNIT": {re.search(r'^IMAGE_UNIT="([^"]+)"', script, re.M).group(1)},
+              "VIDEO_UNIT": {re.search(r'^VIDEO_UNIT="([^"]+)"', script, re.M).group(1)},
+              "IMAGE_H3_UNIT": {re.search(r'^IMAGE_H3_UNIT="([^"]+)"', script, re.M).group(1)},
               "KOLIBRI_UNIT": {re.search(r'^KOLIBRI_UNIT="([^"]+)"', script, re.M).group(1)},
               "NEMOTRON_UNIT": {re.search(r'^NEMOTRON_UNIT="([^"]+)"', script, re.M).group(1)},
               "NEMOTRON_SUPER_UNIT": {re.search(r'^NEMOTRON_SUPER_UNIT="([^"]+)"', script, re.M).group(1)},

@@ -55,7 +55,8 @@ def units(d):
     d = pathlib.Path(d)
     for u in ("qwen38-nemotron.service", "qwen38-nemotron-super.service"):
         (d / u).touch()
-    return (f'NEMOTRON_UNIT="{d}/qwen38-nemotron.service"; NEMOTRON_UNIT_NAME=qwen38-nemotron.service\n'
+    return (f'CONFIG_DIR="{d}"\n'
+            f'NEMOTRON_UNIT="{d}/qwen38-nemotron.service"; NEMOTRON_UNIT_NAME=qwen38-nemotron.service\n'
             f'NEMOTRON_SUPER_UNIT="{d}/qwen38-nemotron-super.service"; NEMOTRON_SUPER_UNIT_NAME=qwen38-nemotron-super.service\n'
             f'NEM_STAGE="{d}/qwen38-nemotron.service.switch-stage"; NSV_STAGE="{d}/qwen38-nemotron-super.service.switch-stage"\n')
 

@@ -729,5 +729,97 @@ image_as_the_switch_reads(){{ :; }}
         self.assertIn(f"TREV={'c' * 40}", r.stdout)
 
 
+class TheKolibriAndNemotronSwitchAppliesTheWaitingUnit(unittest.TestCase):
+    """The Kolibri and Nemotron lanes' local image is tagged from the pins its installer pins (vLLM, the plugin,
+    the base image's digest), so a release that moves any of them renders a waiting unit whose image line
+    differs from the one in place. Their switch rewrote only the checkpoint, drafter and memory lines and
+    cleared the wait there: the image line of the waiting unit was lost, and when only it moved the wait was
+    never cleared at all (review of v1.52.0, 2026-11-19, GLM 5.3, "à vérifier": the tags do move, c7f20e95 made
+    the tag follow the plugin's pin for exactly that). The block runs here against a pending folder of the
+    test's own."""
+
+    def block(self, marker):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index(marker)
+        end = text.index("  # Which lane this box served at boot", start)
+        return text[start:end]
+
+    def run_block(self, marker, unit_name, stage_var, unit_var, pending_text="new unit\n", base=None, needs="", same=False):
+        d = pathlib.Path(tempfile.mkdtemp(prefix=f"switch-{unit_name}-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / unit_name
+        unit.write_text("old unit\n" if not same else pending_text)
+        pend = cfg / "pending" / unit_name
+        pend.write_text(pending_text)
+        (cfg / "pending" / (unit_name + ".needs")).write_text("image qwen38-x:newtag\n")
+        if base is None:
+            import hashlib
+            base = hashlib.sha256(unit.read_bytes()).hexdigest()
+        (cfg / "pending" / (unit_name + ".base")).write_text(base + "\n")
+        log = d / "log"
+        log.write_text("")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+CHOICE="nemotron"
+{unit_var}="{unit}"; {unit_var}_NAME="{unit_name}"
+NEMOTRON_UNIT="{unit}"; NEMOTRON_SUPER_UNIT="{unit}"
+{stage_var}="$CONFIG_DIR/{unit_name}.switch-stage"
+KOL_CUR=""; KOL_WANT=""; KOL_CUR_GMU=""; KOL_WANT_GMU=""
+NEM_CUR=""; NEM_WANT=""; NEM_CUR_GMU=""; NEM_WANT_GMU=""; NEM_CUR_D=""; NEM_WANT_D=""
+NEM_CUR_DREV=""; NEM_WANT_DREV=""; NEM_CUR_SEQS=""; NEM_WANT_SEQS=""
+NEM_LANE_STAGE="${stage_var}"
+NEEDS='{needs}'
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then echo "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + self.block(marker) + f'\necho "UNIT=$(cat "{unit}")"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, unit, pend, cfg, log
+
+    def test_kolibri_the_waiting_unit_goes_in_place_and_the_wait_is_cleared(self):
+        r, unit, pend, cfg, log = self.run_block('  KOL_REWRITTEN=""', "qwen38-kolibri.service",
+                                                 "KOL_STAGE", "KOLIBRI_UNIT",
+                                                 pending_text="image qwen38-kolibri:vllm0.30.0-aai1.0.1-new\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("is in place", r.stdout)
+        self.assertEqual(unit.read_text(), "image qwen38-kolibri:vllm0.30.0-aai1.0.1-new\n")
+        self.assertIn(f'sudo install -m 644 {cfg}/qwen38-kolibri.service.switch-stage {unit}', log.read_text())
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+        self.assertFalse((cfg / "qwen38-kolibri.service.switch-stage").exists(), "the stage is left behind")
+
+    def test_kolibri_a_wait_rendered_before_a_switch_is_dropped_not_put(self):
+        r, unit, pend, cfg, log = self.run_block('  KOL_REWRITTEN=""', "qwen38-kolibri.service",
+                                                 "KOL_STAGE", "KOLIBRI_UNIT", base="0" * 64)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("was dropped", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_nemotron_the_waiting_unit_goes_in_place_and_the_wait_is_cleared(self):
+        r, unit, pend, cfg, log = self.run_block('  NEM_REWRITTEN=""', "qwen38-nemotron.service",
+                                                 "NEM_STAGE", "NEM_UNIT",
+                                                 pending_text="image qwen38-nemotron:vllm-nightly-99999-b12x1.6.0-new\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("is in place", r.stdout)
+        self.assertEqual(unit.read_text(), "image qwen38-nemotron:vllm-nightly-99999-b12x1.6.0-new\n")
+        self.assertIn(f'sudo install -m 644 {cfg}/qwen38-nemotron.service.switch-stage {unit}', log.read_text())
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_nemotron_a_wait_that_still_lacks_stays_waiting(self):
+        r, unit, pend, cfg, log = self.run_block('  NEM_REWRITTEN=""', "qwen38-nemotron-super.service",
+                                                 "NSV_STAGE", "NEM_UNIT", needs="image qwen38-nemotron:newtag")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("still lacks image qwen38-nemotron:newtag", r.stdout)
+        self.assertEqual(unit.read_text(), "old unit\n")
+        self.assertNotIn("sudo install", log.read_text())
+        self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+
+
 if __name__ == "__main__":
     unittest.main()
