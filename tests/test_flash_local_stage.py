@@ -816,7 +816,7 @@ class TheInstallSetsTheClientsForTheWindow(unittest.TestCase):
     def test_flash_local_context_is_not_read_by_the_install(self):
         start = self.TEXT.index('if [ -n "${FLASH_LOCAL_CONTEXT+set}" ]; then')
         block = self.TEXT[start:self.TEXT.index("\nfi\n", start) + 4]
-        self.assertLess(start, self.TEXT.index("install-flash-local.sh\" \"$(side_mode"))
+        self.assertLess(start, self.TEXT.index('side_install flash-local "$(side_mode'))
         r = subprocess.run(["bash", "-c", block + 'echo "after=${FLASH_LOCAL_CONTEXT-unset}"'], capture_output=True,
                            text=True, timeout=30, env={"PATH": "/usr/bin:/bin", "FLASH_LOCAL_CONTEXT": "1m"})
         self.assertIn("FLASH_LOCAL_CONTEXT=1m ./install-flash-local.sh --units-only", r.stdout)
@@ -827,7 +827,7 @@ class TheInstallSetsTheClientsForTheWindow(unittest.TestCase):
         # runs, so a level given to install.sh would have reached the template a run before the clients' list
         start = self.TEXT.index('if [ -n "${FLASH_LOCAL_EFFORT+set}" ]; then')
         block = self.TEXT[start:self.TEXT.index("\nfi\n", start) + 4]
-        self.assertLess(start, self.TEXT.index("install-flash-local.sh\" \"$(side_mode"))
+        self.assertLess(start, self.TEXT.index('side_install flash-local "$(side_mode'))
         r = subprocess.run(["bash", "-c", block + 'echo "after=${FLASH_LOCAL_EFFORT-unset}"'], capture_output=True,
                            text=True, timeout=30, env={"PATH": "/usr/bin:/bin", "FLASH_LOCAL_EFFORT": "xhigh"})
         self.assertIn("FLASH_LOCAL_EFFORT=xhigh ./install-flash-local.sh --units-only", r.stdout)
