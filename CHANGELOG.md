@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.52.0 (2026-11-19): an update downloads nothing large
+
+**An update downloads nothing large (decisions 1404 and 1408 to 1410).** Until this release a run of `./install.sh`
+(the one-liner, or the cockpit's terminal command) updated a lane already on the box whole: a new image pin pulled up to
+35 GB, a new checkpoint revision fetched up to 136 GB, a new SGLang wheel for an image lane rebuilt its venv. Now an
+update writes the code, the units and the configs, and everything large waits for the lane's Load:
+- every installer puts a lane's unit through `lanes.sh`'s `unit_put`, which, on an update, leaves a lane that can serve
+  as it is when its new unit reads what the box lacks (`unit_needs`: an image by its digest or its local build's tag, a
+  checkpoint whole at its revision in the cache the unit mounts, the 27B's DFlash2 draft and the Nemotron lanes' vLLM
+  drafter, a model named by its path; a unit it cannot read is not taken for whole):
+  the new unit waits in `~/.config/qwen38/pending/`, what it lacks beside it, and the unit in place serves the release
+  it served, at the lane's next boot too (a unit rewritten onto an image not pulled had docker pull it at boot, and onto
+  a checkpoint not fetched, the lane did not start);
+- the text lane, the lanes beside it (a lane begun on the box gets its units first, then the rest of its update only
+  when nothing waits), the flash lane's launch script, and an image lane's venv whose SGLang wheel or source moved;
+- the cockpit says it: the lane's card reads "An update waits for its Load, which downloads ...", and the Lanes view's
+  badge is orange. Its Load downloads what the waiting unit lacks, then puts the new unit in place and restarts the
+  lane: the 27B's by `apply_pending` (`prepare-lane.sh` prepares what the waiting unit reads, then the unit goes in
+  through the fixed staging path its exact sudoers line allows, and its switch fetches the target the Load asks for),
+  the flash lane's launch script the same way with no sudo, and a lane beside them by its own switch, which renders
+  its new unit, fetches its checkpoint and clears the wait. A waiting unit records the unit in place it was rendered
+  against: a switch since makes it stale, and it is dropped rather than put over that switch;
+- a box that boots a side lane is covered too, a lane whose unit lacks what it
+  reads (a checkpoint deleted from Library) gets its units only, and the Kolibri and Nemotron units, which name their
+  model first on its line, and the image and video lanes, which name their cache in their environment, are read whole; a boot lane
+  whose new unit mounts a file not written yet keeps its unit, and its new unit waits with that file named; an image
+  lane's waiting unit says its runtime too;
+- `--with-<lane>` and `--all-weights` download now, as asked; a new box downloads its default lane (the 27B), so that it
+  serves at the end of its install.
+
+**What Mistral Vibe's blind review found, fixed with tests.** A blind review of this branch by Mistral Vibe (Large 4
+and GLM 5.3, without the fixes of the first review) found four defects that review had missed, each read in the code
+again before fixing: `unit_needs` reads the Nemotron lanes' vLLM drafter (`--speculative-config.model` and
+`.revision`), so a new drafter pin no longer goes in place unseen (the lane would have found it nowhere at its next
+start); a unit this user cannot read (root's 0600) is no longer taken for whole, its new unit goes in place as before;
+`side_runtime_waits` makes the runtime lines of a unit already waiting current, so the lane's card says what its Load
+does; and `vlane_put_unit`, on an update, records the new unit as waiting for a boot lane that keeps its unit (its new
+one mounts a file not written yet), with the files it mounts named. Each new test fails on the code before.
+
+**A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
+paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:
+the test always failed, so every update of a llama.cpp lane (flash-unsloth, and the transcribe lane to come) waited as
+if its files were missing. The path is now translated to the cache the unit mounts there before the test; a path
+already on the host stays as it is.
+
+**The tests read the installers as install.sh calls them.** This release turned every side lane's installer call into
+`side_install`, and four test files still looked for the direct calls: the image and video lanes' tests, the Unsloth
+GGUF lane's and its target move's. They had been red on this branch since the 17th (found while rebasing v1.53.0,
+green up to v1.51.0, checked commit by commit) and read the `side_install` calls now.
+
 ## v1.51.0 (2026-11-19): Library deletes what takes room, and says each disk
 
 **Library says each disk.** The view opens on each disk the stack uses: what is free, and what the models, Docker's
