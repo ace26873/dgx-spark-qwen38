@@ -327,7 +327,7 @@ class PrepareReadsTheWaitingUnit(unittest.TestCase):
                     (d / "pending" / "qwen38-sglang.service").write_text("new")
                     (d / "pending" / "qwen38-sglang.service.needs").write_text("image x\n")
                 r = subprocess.run(["bash", "-c", f'set -euo pipefail\nCONFIG_DIR="{d}"; . "{REPO}/lanes.sh"\n'
-                                    f'unit=/etc/systemd/system/qwen38-sglang.service\n{block}\necho "UNIT=$unit"'],
+                                    f'unit=/etc/systemd/system/qwen38-sglang.service\nTARGET=""\n{block}\necho "UNIT=$unit"'],
                                    capture_output=True, text=True, timeout=30)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertIn(f"UNIT={d}/pending/qwen38-sglang.service" if waiting
@@ -685,9 +685,16 @@ target_fits(){{ return 0; }}
         return r
 
     def test_flash_a_waiting_launcher_serves_another_target(self):
-        # the launcher in place serves flash, the waiting one flash-nvda, the card proposes flash: the Load
-        # prepares flash-nvda, what the wait reads, never the 136 GB of a target it does not read
+        # the launcher in place serves flash, the waiting one flash-nvda, the card proposes flash: this Load
+        # serves the asked flash, the switch clears the wait, so what is prepared is flash, never the 136 GB
+        # of the target the wait reads and no unit will serve (third review of v1.52.0, 2026-11-19, GLM 5.3)
         r = self.run_block("flash", "r/flash", "r/nvda", target="flash")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"TARGET=flash MODEL=r/flash REV={'f' * 40}", r.stdout)
+
+    def test_flash_a_wait_for_the_asked_target_is_prepared(self):
+        # the card proposes flash-nvda, the waiting launcher serves it too: what the wait reads is prepared
+        r = self.run_block("flash", "r/flash", "r/nvda", target="flash-nvda")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(f"TARGET=flash-nvda MODEL=r/nvda REV={'n' * 40}", r.stdout)
 
@@ -721,9 +728,18 @@ image_as_the_switch_reads(){{ :; }}
         self.assertIn(f"TARGET=flash-nvda MODEL=r/nvda REV={'n' * 40}", r.stdout)
 
     def test_27b_a_waiting_unit_serves_another_target(self):
-        # the unit in place serves stock, the waiting one uncensored, the card proposes stock: the Load
-        # prepares uncensored, what the wait reads
+        # the unit in place serves stock, the waiting one uncensored, the card proposes stock: this Load serves
+        # the asked stock, the switch clears the wait, so what is prepared is stock, never the 45 GB of the
+        # target the wait reads and no unit will serve (third review of v1.52.0, 2026-11-19, GLM 5.3)
         r = self.run_block("27b", "r/stock", "r/unc27", target="stock")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("TARGET=stock", r.stdout)
+        self.assertIn("TREPO=r/stock", r.stdout)
+        self.assertIn(f"TREV={'s' * 40}", r.stdout)
+
+    def test_27b_a_wait_for_the_asked_target_is_prepared(self):
+        # the card proposes uncensored, the waiting unit serves it too: what the wait reads is prepared
+        r = self.run_block("27b", "r/stock", "r/unc27", target="uncensored")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("TARGET=uncensored", r.stdout)
         self.assertIn("TREPO=r/unc27", r.stdout)

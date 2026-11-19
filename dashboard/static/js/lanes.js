@@ -128,13 +128,17 @@ function renderLanes(){
         : pend ? ` An update waits for its Load, which downloads ${pend.length ? pend.join('; ') : 'what it lacks'}; until then it serves the release it served.` : ''));
     const on = !!e && (!UNIT_DOWN.has(st) || !!e.restarting);
     const sameTarget = !laneTarget(unit) || laneTarget(unit) === target;
+    // a wait serving another target than the picked one is not this Load's: the switch renders the unit in
+    // place for the asked target and clears it (third review of v1.52.0, 2026-11-19, GLM 5.3)
+    const pendTarget = (F.pendingTargets || {})[unit] || null;
+    const pendAsked = !pend || !pendTarget || pendTarget === target;
     // the verbs that make sense now
     // the lane that serves what it is set to has nothing to load, unless an update is owed to it
     // the same test as the journey's (base.js, laneJourneySteps): the card names the restart
     // only when its Load is that restart
-    const owedUpdate = seated && laneTarget(unit) === target && (!!updateOwed(unit) || !!pend);
+    const owedUpdate = seated && laneTarget(unit) === target && (!!updateOwed(unit) || (!!pend && pendAsked));
     c.load.hidden = !has || (seated && sameTarget && !owedUpdate);
-    setText(c.load, pend && owedUpdate ? `Load the update of ${LANE_NAME[unit]}`
+    setText(c.load, pend && pendAsked && owedUpdate ? `Load the update of ${LANE_NAME[unit]}`
       : owedUpdate ? `Restart ${LANE_NAME[unit]} to apply the update`
       : seated || LANE_TARGETS[unit].length > 1 ? `Load ${TARGET_NAME[target]}` : `Load ${LANE_NAME[unit]}`);
     // installed on demand and not prepared yet, or prepared and not switched to yet (its

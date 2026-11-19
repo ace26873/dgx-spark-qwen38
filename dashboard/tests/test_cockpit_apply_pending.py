@@ -99,6 +99,25 @@ class ApplyPending(unittest.TestCase):
     def test_what_waits_is_read_with_what_it_lacks(self):
         self.assertEqual(self.cp.pending_units(), {UNIT: ["image lmsysorg/sglang@sha256:" + "b" * 64]})
 
+    def test_the_waits_target_is_read_from_the_pending_unit(self):
+        # the Load toward another target than the wait's neither prepares nor poses it (third review of
+        # v1.52.0, 2026-11-19, GLM 5.3): the page reads which target each waiting unit serves
+        (self.pdir / UNIT).write_text("[Service]\nExecStart=x --model-path RadixArk/Qwen3.8-27B-NVFP4 --revision "
+                                      + "1" * 40 + "\n")
+        self.assertEqual(self.cp.collect_pending_targets(), {UNIT: "stock"})
+        (self.pdir / UNIT).write_text("[Service]\nExecStart=x --model-path Qwen/Qwen3.8-27B-FP8 --revision "
+                                      + "2" * 40 + "\n")
+        self.assertEqual(self.cp.collect_pending_targets(), {UNIT: "fp8"})
+        (self.pdir / UNIT).write_text("[Service]\nExecStart=x --model-path some/other --revision " + "3" * 40 + "\n")
+        self.assertEqual(self.cp.collect_pending_targets(), {UNIT: None})
+
+    def test_the_flash_waits_target_is_read_from_its_pending_launcher(self):
+        flash = "qwen38-flash.service"
+        (self.pdir / flash).write_text("[Service]\nExecStart=launch\n")
+        (self.pdir / "launch-flash.sh").write_text("#!/bin/bash\n--model-path nvidia/Qwen3.8-Flash-Next-NVFP4 --revision "
+                                                   + "4" * 40 + "\n")
+        self.assertEqual(self.cp.collect_pending_targets()[flash], "flash-nvda")
+
     def test_a_wait_whose_unit_in_place_changed_since_is_marked_stale_before_the_load(self):
         # said by pending_units, so the card says it and proposes no Load that would download then drop it
         # (review of v1.52.0, 2026-11-19)

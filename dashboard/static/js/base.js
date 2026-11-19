@@ -877,11 +877,17 @@ function laneJourneySteps(target){
   const pend = stale ? null : pendAll;
   // the 27B's and the flash lane's waiting unit or launcher goes in place by apply_pending (their switch rewrites only
   // the target); a lane beside them takes its new unit from its switch, which renders it and fetches its checkpoint
-  const applies = !!pend && (unit === U27 || unit === UFLASH);
-  if (lane && ((F.lanesReady || {})[lane] === false || pend))
+  // A wait serving ANOTHER target than the one asked is neither prepared nor posed: the switch renders the unit
+  // in place for the asked target and clears the wait (c59e015), and downloads nothing for the wait's target
+  // (third review of v1.52.0, 2026-11-19, GLM 5.3: the journey prepared the wait's checkpoint, 45 GB, then the
+  // switch overwrote it)
+  const pendTarget = (F.pendingTargets || {})[unit] || null;
+  const pendAsked = !pend || !pendTarget || pendTarget === target;
+  const applies = !!pend && pendAsked && (unit === U27 || unit === UFLASH);
+  if (lane && ((F.lanesReady || {})[lane] === false || (pend && pendAsked)))
     steps.push({name: 'prepare', params: {target},
-      title: pend ? `Download what the update of ${LANE_NAME[unit]} needs` : `Build the runtime of ${LANE_NAME[unit]}`,
-      desc: pend ? `What its new unit reads and this box lacks${pend.length ? ': ' + pend.join('; ') : ''}, with no sudo. It serves meanwhile.`
+      title: pend && pendAsked ? `Download what the update of ${LANE_NAME[unit]} needs` : `Build the runtime of ${LANE_NAME[unit]}`,
+      desc: pend && pendAsked ? `What its new unit reads and this box lacks${pend.length ? ': ' + pend.join('; ') : ''}, with no sudo. It serves meanwhile.`
         : `Its first Load: ${LANE_RUNTIME[lane]}, with no sudo.` + (lane === 'flash' || lane === '27b' ? '' : ' The next step fetches its checkpoint.')});
   if (applies)
     steps.push({name: 'apply_pending', params: {unit}, title: `Put in place the update ${LANE_NAME[unit]} waited for`,
@@ -905,12 +911,12 @@ function laneJourneySteps(target){
   const whole = !lane || (F.lanesStartable || {})[lane] !== false;
   const switchAt = steps.length;
   if (enabled !== unit || (curTarget && curTarget !== target) || (!curTarget && LANE_TARGETS[unit].length > 1 && target !== LANE_TARGETS[unit][0])
-      || !whole || (pend && !applies))
+      || !whole || (pend && pendAsked && !applies))
     // for a boot lane that lacks a file, the step fetches or copies it: up to 102 GB, not a check
     steps.push({name: 'switch', params: {target},
-      title: pend && !applies ? `Put the update of ${LANE_NAME[unit]} in place`
+      title: pend && pendAsked && !applies ? `Put the update of ${LANE_NAME[unit]} in place`
         : whole || enabled !== unit ? `Point the boot at ${TARGET_NAME[target]}` : `Bring back what ${LANE_NAME[unit]} lacks`,
-      desc: pend && !applies ? 'Fetches the checkpoint its new unit reads, puts that unit in place and makes this lane the one enabled at boot. Nothing restarts.'
+      desc: pend && pendAsked && !applies ? 'Fetches the checkpoint its new unit reads, puts that unit in place and makes this lane the one enabled at boot. Nothing restarts.'
         : whole ? 'Verifies the checkpoint and makes this lane the one enabled at boot. Nothing restarts.'
         : 'Fetches what its checkpoint lacks' + (unit === FLASH_LOCAL_UNIT ? ' and copies its n-gram table again (up to 102 GB to fetch, 32 GB to copy)' : '')
           + ', and makes this lane the one enabled at boot. Nothing restarts.'});
@@ -1395,6 +1401,9 @@ on('lanes_ready', d => { F.lanesReady = d || {}; });
 on('lanes_startable', d => { F.lanesStartable = d || {}; });
 // an update that waits for a lane's Load (decision 1408): {unit: [what its new unit lacks]} (cockpit.py, pending_units)
 on('pending', d => { F.pending = d || {}; });
+// the target each waiting unit serves (cockpit.py, pending_target): a Load toward another target neither
+// prepares nor poses the wait, the switch renders the unit in place for the asked target and clears it
+on('pending_targets', d => { F.pendingTargets = d || {}; });
 on('agent', d => { F.agent = d; });
 on('containers', d => { F.containers = d.containers || {}; });
 on('job', renderJob);

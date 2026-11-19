@@ -3375,6 +3375,35 @@ def collect_pending():
     return pending_units()
 
 
+def pending_target(unit: str) -> str | None:
+    """The switch target the waiting unit (or launcher) serves, read from the pending file the way unit_target
+    reads the one in place. A Load toward ANOTHER target neither prepares nor poses the wait: the switch
+    renders the unit in place for the asked target and clears the wait (switch-model.sh, c59e015), so nothing
+    is downloaded for the wait's target (third review of v1.52.0, 2026-11-19, GLM 5.3)."""
+    launch = PENDING_DIR / "launch-flash.sh" if unit == "qwen38-flash.service" else None
+    src = launch if launch is not None and launch.is_file() else PENDING_DIR / unit
+    if not src.is_file():
+        return None
+    try:
+        text = src.read_text(errors="replace")
+    except OSError:
+        return None
+    m = re.search(r"--model-path\s+(\S+)", text)
+    model = m.group(1) if m else None
+    if not model:
+        return None
+    for var, repo in rg.PIN_MODELS.items():
+        if repo == model and var in VAR2TARGET:
+            return VAR2TARGET[var]
+    return None
+
+
+@guard
+def collect_pending_targets():
+    return {unit: pending_target(unit) for unit in sorted(SERVING_UNITS) if (PENDING_DIR / unit).is_file()
+            or (unit == "qwen38-flash.service" and (PENDING_DIR / "launch-flash.sh").is_file())}
+
+
 def job_apply_pending(job: Job):
     """Put a lane's waiting unit in place, once the box has all it reads (lanes.sh's unit_needs, asked again now):
     through the fixed staging path its exact sudoers line allows, then a daemon-reload. The lane's restart is the
@@ -3683,6 +3712,7 @@ TIERS = [
             "repo": collect_repo,
             "kernel": collect_kernel,
             "lanes_ready": collect_lanes_ready, "lanes_startable": collect_lanes_startable, "pending": collect_pending,
+            "pending_targets": collect_pending_targets,
             "opencode": collect_opencode, "reqguard": collect_guard,
             "update": collect_update}),
 ]
@@ -4253,7 +4283,7 @@ def run_job(job: Job):
             with STORAGE_LOCK:
                 STORAGE_CACHE["ts"] = 0.0
             for name, fn in (("lanes_ready", collect_lanes_ready), ("lanes_startable", collect_lanes_startable),
-                             ("pending", collect_pending)):
+                             ("pending", collect_pending), ("pending_targets", collect_pending_targets)):
                 snap = fn()
                 with STATE_LOCK:
                     STATE[name] = {"data": snap, "ts": time.time()}

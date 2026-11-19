@@ -82,11 +82,25 @@ prepare_flash(){
   local launch="$CONFIG_DIR/launch-flash.sh" img model hf ple map target rev why pend="" want
   [ -f "$launch" ] || die "the flash lane is not installed on this box (no $launch): ./install.sh installs it"
   # an update left its new launch script waiting for this Load (install.sh, decision 1408): what it reads is what this
-  # prepares; the cockpit puts it in place next (apply_pending)
+  # prepares; the cockpit puts it in place next (apply_pending). Toward another target than the waiting one's, this
+  # Load prepares the asked target instead, and the switch clears the wait (c59e015): the launcher in place is the
+  # one read, never a checkpoint the wait reads and no unit will serve (third review of v1.52.0, 2026-11-19, GLM 5.3)
   if [ -f "$CONFIG_DIR/pending/launch-flash.sh" ]; then
-    launch="$CONFIG_DIR/pending/launch-flash.sh"
     pend=1
-    echo "the flash lane's update waits for this Load: preparing what its new launch script reads ($(unit_pending_says qwen38-flash.service))"
+    if [ -n "$TARGET" ]; then
+      case "$TARGET" in
+        flash|"$FLASH_REPO") _w="$FLASH_REPO" ;;
+        flash-nvda|"$FLASH_NVDA_REPO") _w="$FLASH_NVDA_REPO" ;;
+        flash-uncensored|"$FLASH_UNC_REPO") _w="$FLASH_UNC_REPO" ;;
+        *) die "$TARGET is not a flash lane target (flash, flash-nvda or flash-uncensored)" ;;
+      esac
+      [ "$_w" = "$(arg_of "$CONFIG_DIR/pending/launch-flash.sh" --model-path)" ] || pend=""
+      unset _w
+    fi
+    if [ -n "$pend" ]; then
+      launch="$CONFIG_DIR/pending/launch-flash.sh"
+      echo "the flash lane's update waits for this Load: preparing what its new launch script reads ($(unit_pending_says qwen38-flash.service))"
+    fi
   fi
   # its image and its checkpoint (223 GB in all) for a lane that cannot start on a GB10 outside
   # its ATS addressing mode (issue #54): said before the first byte
@@ -141,11 +155,28 @@ prepare_27b(){
   local unit=/etc/systemd/system/qwen38-sglang.service img model draft drev hf target trepo trev tok=() pend="" want
   [ -f "$unit" ] || die "the 27B lane is not installed on this box (no $unit): ./install.sh installs it"
   # an update left its new unit waiting for this Load (lanes.sh's unit_put, decision 1408): what that unit reads (its
-  # image, its draft) is what this prepares; the cockpit puts it in place next (apply_pending)
+  # image, its draft) is what this prepares; the cockpit puts it in place next (apply_pending). Toward another target
+  # than the waiting one's, this Load prepares the asked target instead, and the switch clears the wait (c59e015):
+  # the unit in place is the one read, never a checkpoint the wait reads and no unit will serve (third review of
+  # v1.52.0, 2026-11-19, GLM 5.3)
   if [ -f "$CONFIG_DIR/pending/qwen38-sglang.service" ]; then
-    unit="$CONFIG_DIR/pending/qwen38-sglang.service"
     pend=1
-    echo "the 27B lane's update waits for this Load: preparing what its new unit reads ($(unit_pending_says /etc/systemd/system/qwen38-sglang.service))"
+    if [ -n "$TARGET" ]; then
+      case "$TARGET" in
+        stock|"$STOCK_REPO") _w="$STOCK_REPO" ;;
+        uncensored|"$UNC_REPO") _w="$UNC_REPO" ;;
+        fp8|"$FP8_REPO") _w="$FP8_REPO" ;;
+        uncensored-fp8|"$UNCFP8_REPO") _w="$UNCFP8_REPO" ;;
+        arete|"$ARETE_REPO") _w="$ARETE_REPO" ;;
+        *) die "$TARGET is not a 27B lane target (stock, uncensored, fp8, uncensored-fp8 or arete)" ;;
+      esac
+      [ "$_w" = "$(arg_of "$CONFIG_DIR/pending/qwen38-sglang.service" --model-path)" ] || pend=""
+      unset _w
+    fi
+    if [ -n "$pend" ]; then
+      unit="$CONFIG_DIR/pending/qwen38-sglang.service"
+      echo "the 27B lane's update waits for this Load: preparing what its new unit reads ($(unit_pending_says /etc/systemd/system/qwen38-sglang.service))"
+    fi
   fi
   img="$(engine_image "$unit")"; model="$(arg_of "$unit" --model-path)"; hf="$(mount_of "$unit" /root/.cache/huggingface)"
   draft="$(arg_of "$unit" --speculative-draft-model-path)"; drev="$(arg_of "$unit" --speculative-draft-model-revision)"

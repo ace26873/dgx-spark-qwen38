@@ -93,6 +93,57 @@ class ALaneBesideWaitsForItsLoad(unittest.TestCase):
         self.assertFalse(any("apply" in s.lower() and "waited for" in s for s in steps), steps)
         self.assertIn("systemctl restart qwen38-flash-local.service", steps[-1])
 
+class ALoadTowardAnotherTargetThanTheWaits(unittest.TestCase):
+    """A Load of the 27B toward another target than the waiting unit serves neither prepares nor poses the wait:
+    the switch renders the unit in place for the asked target and clears the wait (c59e015), and downloads
+    nothing for the wait's target (third review of v1.52.0, 2026-11-19, GLM 5.3: the journey prepared the
+    wait's checkpoint, 45 GB, posed it, then the switch overwrote it)."""
+
+    def test_the_journey_switches_only(self):
+        import json
+        r = run(self, r"""
+        const units = JSON.parse(JSON.stringify(UNITS));
+        units.units['qwen38-sglang.service'] = {active: 'active', enabled: 'enabled'};
+        const now = Date.now() / 1000;
+        apply({config: {data: CONFIG, ts: now}, units: {data: units, ts: now},
+               update: {data: {installed: 'v1.51.0'}, ts: now},
+               lanes_ready: {data: {'27b': true}, ts: now},
+               pending: {data: {'qwen38-sglang.service': %s}, ts: now},
+               pending_targets: {data: {'qwen38-sglang.service': 'uncensored'}, ts: now},
+               lifecycle: {data: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}), ts: now}});
+        showView('lanes');
+        askJourney('fp8');
+        report({open: !$('scrim').hidden, steps: [...$('sh-journey').children].map(li => li.textContent)});
+        """ % json.dumps(LACKS))
+        steps = r["steps"]
+        self.assertTrue(r["open"], r)
+        self.assertFalse(any("prepare-lane.sh" in s for s in steps), steps)
+        self.assertFalse(any("waited for" in s for s in steps), steps)
+        self.assertTrue(any("switch-model.sh fp8" in s for s in steps), steps)
+        self.assertTrue(any("systemctl restart qwen38-sglang.service" in s for s in steps), steps)
+
+    def test_a_load_of_the_waits_target_still_prepares_and_poses_it(self):
+        import json
+        r = run(self, r"""
+        const units = JSON.parse(JSON.stringify(UNITS));
+        units.units['qwen38-sglang.service'] = {active: 'active', enabled: 'enabled'};
+        const now = Date.now() / 1000;
+        apply({config: {data: CONFIG, ts: now}, units: {data: units, ts: now},
+               update: {data: {installed: 'v1.51.0'}, ts: now},
+               lanes_ready: {data: {'27b': true}, ts: now},
+               pending: {data: {'qwen38-sglang.service': %s}, ts: now},
+               pending_targets: {data: {'qwen38-sglang.service': 'stock'}, ts: now},
+               lifecycle: {data: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}), ts: now}});
+        showView('lanes');
+        askJourney('stock');
+        report({open: !$('scrim').hidden, steps: [...$('sh-journey').children].map(li => li.textContent)});
+        """ % json.dumps(LACKS))
+        steps = r["steps"]
+        self.assertTrue(r["open"], r)
+        self.assertTrue(any("prepare-lane.sh 27b" in s for s in steps), steps)
+        self.assertTrue(any("waited for" in s for s in steps), steps)
+
+
 class AStaleWaitIsSaidBeforeTheLoad(unittest.TestCase):
     """A wait whose unit in place changed since (a switch) is marked stale by the cockpit's pending_units: the
     card says it is dropped, and proposes no Load that would download what it lacks then drop it (review of
