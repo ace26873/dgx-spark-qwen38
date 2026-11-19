@@ -157,6 +157,18 @@ already on the host stays as it is.
 GGUF lane's and its target move's. They had been red on this branch since the 17th (found while rebasing v1.53.0,
 green up to v1.51.0, checked commit by commit) and read the `side_install` calls now.
 
+**Proved on the reference box.** Before the push, a box on v1.51.0 whose Flash, video, Kolibri and Unsloth lanes had
+been emptied updated, with no `--no-<lane>` flag, from a copy of the repository whose main is this release with two
+pins moved to newer revisions (the 27B's DFlash2 draft and its NVFP4 checkpoint): the run received 16.7 MB from the
+network and added nothing to the Hugging Face cache nor to Docker's images, the 27B's unit and engine stayed as they
+were, and its new unit waited, as the cockpit said. A simulated reboot served the old revisions still. The cockpit's
+Load (prepare, apply the waiting unit, restart) then added 171 KB to the cache and served both new revisions, the
+checkpoint's `config.json` patched for the 1M window, and the README's one-liner brought the box back to the
+published main. The release, installed from its branch, then served the eight clients (Claude Code, opencode,
+Hermes, pi, the OpenAI and Anthropic SDKs, fetch under Node and Bun, LiteLLM) OK on the 27B, with no banner on any
+view of the cockpit. After the push, the box updated by the README's one-liner in 1 min 23, the eight clients OK
+again, and the cockpit with no banner on any view.
+
 ## v1.51.0 (2026-11-19): Library deletes what takes room, and says each disk
 
 **Library says each disk.** The view opens on each disk the stack uses: what is free, and what the models, Docker's
