@@ -138,6 +138,7 @@ const feedTime = ts => {
 on('feed', d => {
   const tb = $('feed').tBodies[0]; clear(tb);
   const rows = (d.rows || []).slice().reverse();
+  F.feedRows = rows;
   rows.forEach(r => {
     const tr = tb.insertRow();
     tr.insertCell().textContent = feedTime(r.ts);
@@ -157,10 +158,38 @@ on('feed', d => {
     if (r.outcome === 'in flight' && F.prompt && rows.filter(x => x.outcome === 'in flight').length === 1)
       c4.append(el('div', 'help', promptWords(F.prompt)));
   });
-  const inflight = rows.filter(r => r.outcome === 'in flight').length;
-  badge('traffic', inflight ? String(inflight) : '', inflight ? 'live' : '');
-  if (!rows.length){ const tr = tb.insertRow(); tr.className = 'empty'; const c = tr.insertCell(); c.colSpan = 6; c.textContent = 'No request has gone through the proxy yet. Agent clients use :30001.'; }
+  renderTraffic();
 });
+afterApply(() => renderTraffic());   // an engine read between two feed reads moves the count
+// What is in flight, and where the count was read: the table is the proxy's journal alone, so a
+// client that talks to the engine on :30000 directly (a bench, a script) is counted by the engine
+// and never appears in the table. The badge follows the engine's count and its title says where it
+// was read; an engine that has not answered counts nothing (review, 2026-11-19).
+function renderTraffic(){
+  const rows = F.feedRows || [];
+  const inflight = rows.filter(r => r.outcome === 'in flight').length;
+  const eng = !F.noEngine && F.load && F.load.num_reqs != null ? runningReqs(F.load) + waitingReqs(F.load) : null;
+  const shown = eng == null ? inflight : Math.max(eng, inflight);
+  badge('traffic', shown ? String(shown) : '', shown ? 'live' : '');
+  const b = $('bdg-traffic');
+  if (b) b.title = !shown ? '' : eng != null && eng >= inflight
+    ? `${eng} in flight, counted by the engine on :30000 (the proxy relayed ${inflight})`
+    : `${shown} in flight, relayed by the proxy on :30001`;
+  const direct = eng == null ? 0 : Math.max(0, eng - inflight);
+  let c = $('feed-empty');
+  if (!rows.length && !c){
+    const er = $('feed').tBodies[0].insertRow(); er.className = 'empty';
+    c = er.insertCell(); c.colSpan = 6; c.setAttribute('id', 'feed-empty');
+  }
+  if (c) c.textContent = direct > 0
+    ? `${eng} request${eng > 1 ? 's are' : ' is'} running on the engine, sent to :30000 directly, not through the proxy: their details are not in this table.`
+    : 'No request has gone through the proxy yet. Agent clients use :30001.';
+  const note = $('feed-note');
+  setText(note, rows.length && direct > 0
+    ? `${direct} of the ${eng} in flight on the engine were sent to :30000 directly, not through the proxy: their details are not in this table.`
+    : '');
+  show(note, !!(rows.length && direct > 0));
+}
 on('reqguard', d => {
   const g = d.guard || {}, z = d.zombies || {};
   F.toolTargets = d.tool_targets || null;     // the banner of renderBanners (proxy v6.48)

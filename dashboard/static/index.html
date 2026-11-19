@@ -240,7 +240,7 @@
     <!-- ══ TRAFFIC ══════════════════════════════════════════════════════════ -->
     <section class="view" id="view-traffic" aria-labelledby="h-traffic">
       <div class="vhead">
-        <div class="vhead-title"><h1 id="h-traffic">Traffic</h1><p>What goes through the proxy on :30001, and what the text engine is doing with it.</p></div>
+        <div class="vhead-title"><h1 id="h-traffic">Traffic</h1><p>What goes through the proxy on :30001, and what the engine on :30000 is doing with everything it was sent.</p></div>
         <div class="side"><span class="cap" id="tr-cap">…</span></div>
       </div>
       <section class="panel" data-src="engine_fast,decode">
@@ -256,6 +256,7 @@
       <div class="grid g-7-5" style="margin-top:var(--s-5)">
         <section class="panel" data-src="feed">
           <header><h2>Requests</h2><span class="aside age"></span></header>
+          <p class="help" id="feed-note" hidden></p>
           <div class="scroll-x">
             <table class="tbl dense feed" id="feed">
               <thead><tr><th>Time</th><th>Client</th><th>Route</th><th class="r">Size</th><th class="r">Took</th><th>Outcome</th></tr></thead>

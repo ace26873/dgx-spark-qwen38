@@ -267,7 +267,7 @@ const boxName = (box = (F.machine || {}).box || {}) => box.cls ? `${box.name || 
 // ── the facts every view shares (each guarded against missing data) ──────────
 const F = {life: null, units: {}, config: {}, job: null, load: {}, pool: null, window: 262144, ceiling: 0, usable: 0.92,
            maxRun: null, target: null, containers: {}, proxy: null, agent: null, update: null, memFloor: null, toolTargets: null, resent: null, machine: null,
-           gpu: null, ocfit: null};
+           gpu: null, ocfit: null, transcribe: null, feedRows: null};
 const engines = () => (F.life && F.life.engines) || {};
 function servingEngine(){ return Object.entries(engines()).find(([, e]) => !UNIT_DOWN.has(e.state) || e.restarting) || null; }
 // The lane enabled at boot, or null when none is (or systemctl did not say). enabledUnit()
