@@ -499,6 +499,37 @@ class TheFitButtonRefusesBeforeTheClick(unittest.TestCase):
 
 
 
+class TheLogsListRefusesTheSourcesTheBoxDoesNotHave(unittest.TestCase):
+    """The Logs selector offered every lane's container and journal, and choosing one the box does
+    not have failed on read (review of v1.53.0, 2026-11-19). The page already knows what is
+    installed (installed(), the Lanes cards use it); the absent sources are now disabled, with the
+    reason as the title."""
+
+    def test_absent_lanes_are_disabled_installed_ones_are_not(self):
+        r = run(self, r"""
+        const u = JSON.parse(JSON.stringify(UNITS));
+        for (const n of ['qwen38-kolibri.service', 'qwen38-ornith-122b.service', 'qwen38-transcribe.service', 'qwen38-lfm3.service'])
+          u.units[n] = {active: 'inactive', enabled: ''};
+        feed({config: CONFIG, units: u, lifecycle: life({})});
+        report([...$('log-src').options]
+          .filter(o => /kolibri|transcribe|sglang/.test(o.value))
+          .map(o => [o.value, o.disabled, o.title || null]));
+        """)
+        self.assertIn(['qwen38-kolibri', True, 'Kolibri-1 is not installed on this box'], r)
+        self.assertIn(['qwen38-kolibri.service', True, 'Kolibri-1 is not installed on this box'], r)
+        self.assertIn(['qwen38-transcribe', True, 'NVIDIA Nemotron Transcribe is not installed on this box'], r)
+        self.assertIn(['qwen38-sglang', False, None], r)
+        self.assertIn(['qwen38-sglang.service', False, None], r)
+
+    def test_every_source_stays_offered_on_a_box_that_has_them(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({})});
+        report([...$('log-src').options].filter(o => o.disabled).length);
+        """)
+        self.assertEqual(r, 0)
+
+
+
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and
     the page kept its last success on screen as "ok, 0.4 s (skipped this round: busy)"."""

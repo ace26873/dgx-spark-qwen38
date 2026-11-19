@@ -651,7 +651,22 @@ async function tailLog(){
     setText('log-note', n ? `Times shown in this box's local time${d.tz ? ' (' + d.tz + ')' : ''}: the engine writes them in UTC.` : '');
   }catch(e){ logLines = []; show('log-note', false); setText('log-view', `Could not read ${src}: ${e.message}`); }
 }
+// The Logs sources this box does not have are refused in the list itself, not offered to fail on
+// read (review of v1.53.0, 2026-11-19): each option's unit is its own name with .service, and an
+// absent lane's container and journal both go disabled, with the reason as the title. The agent's
+// journal follows the agent collector, as before.
+function refreshLogSources(){
+  const sel = $('log-src'); if (!sel) return;
+  [...sel.options].forEach(o => {
+    if (o.id === 'log-opt-agent') return;
+    const unit = o.value.endsWith('.service') ? o.value : o.value + '.service';
+    if (installed(unit)){ o.disabled = false; o.removeAttribute('title'); }
+    else { o.disabled = true; o.title = `${LANE_NAME[unit] || unit} is not installed on this box`; }
+  });
+}
+on('units', refreshLogSources);
 function wireLogs(){
+  refreshLogSources();
   $('log-btn').addEventListener('click', () => { setText('log-view', 'Reading…'); tailLog(); });
   $('log-src').addEventListener('change', () => { logTouched = true; tailLog(); });
   $('log-filter').addEventListener('input', drawLog);
