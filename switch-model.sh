@@ -1583,7 +1583,9 @@ if [ "$CHOICE" = "lfm25" ]; then
   fi
   # In the lane's own image, as the vLLM lanes fetch theirs; --init so that a cockpit job stopped past its timeout
   # stops this too. ckpt-fetch.py is the one fetch of every lane's checkpoint (it says why). The room is asked for
-  # the two at the first fetch; the draft's own, 0.66 GB, rounded to 1.
+  # the two at the first fetch; the draft's own, 0.66 GB, rounded to 1. Both pinned as refs/main: the unit runs with
+  # HF_HUB_OFFLINE=1 and SGLang's speculative hook reads the draft's config by its name, through refs/main, which a
+  # download by commit never writes.
   for LFM25_PAIR in "$LFM25_REPO $LFM25_REV $LFM25_GB" "$LFM25_DRAFT_REPO $LFM25_DRAFT_REV 1"; do
     read -r LFM25_R LFM25_V LFM25_N <<< "$LFM25_PAIR"
     docker run --rm --init --network host --user "$(id -u):$(id -g)" --entrypoint python3 \
@@ -1591,7 +1593,7 @@ if [ "$CHOICE" = "lfm25" ]; then
       -e HF_HUB_DISABLE_PROGRESS_BARS="$DL_NO_BARS" \
       "${LFM25_TOKEN_ARGS[@]}" "${LFM25_PROGRESS_ARGS[@]}" \
       -v "$REPO_DIR/ckpt-fetch.py:/opt/qwen38/ckpt-fetch.py:ro" \
-      -v "$LFM25_HF":/hf "$LFM25_IMAGE" /opt/qwen38/ckpt-fetch.py "$LFM25_R" "$LFM25_V" --offline-first \
+      -v "$LFM25_HF":/hf "$LFM25_IMAGE" /opt/qwen38/ckpt-fetch.py "$LFM25_R" "$LFM25_V" --offline-first --refs-main pin \
       --need-gb "$LFM25_N" --free-gb "$(dl_free_gb "$LFM25_HF")" \
       || die "$LFM25_R could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
   done
@@ -1713,13 +1715,15 @@ if [ "$CHOICE" = "lfm3" ]; then
     LFM3_PROGRESS_ARGS=(-v "$REPO_DIR/hf-progress.py:/opt/qwen38/hf-progress.py:ro")
   fi
   # In the lane's own image, as the other vLLM lanes fetch theirs; --init so that a cockpit job stopped past its
-  # timeout stops this too. ckpt-fetch.py is the one fetch of every lane's checkpoint (it says why).
+  # timeout stops this too. ckpt-fetch.py is the one fetch of every lane's checkpoint (it says why). Pinned as
+  # refs/main: the unit runs with HF_HUB_OFFLINE=1 and vLLM can read the tokenizer without its revision, by name,
+  # through refs/main, which a download by commit never writes.
   docker run --rm --init --network host --user "$(id -u):$(id -g)" --entrypoint python3 \
     -e HF_HOME=/hf -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_DISABLE_XET=1 \
     -e HF_HUB_DISABLE_PROGRESS_BARS="$DL_NO_BARS" \
     "${LFM3_TOKEN_ARGS[@]}" "${LFM3_PROGRESS_ARGS[@]}" \
     -v "$REPO_DIR/ckpt-fetch.py:/opt/qwen38/ckpt-fetch.py:ro" \
-    -v "$LFM3_HF":/hf "$LFM3_IMAGE" /opt/qwen38/ckpt-fetch.py "$LFM3_REPO" "$LFM3_REV" --offline-first \
+    -v "$LFM3_HF":/hf "$LFM3_IMAGE" /opt/qwen38/ckpt-fetch.py "$LFM3_REPO" "$LFM3_REV" --offline-first --refs-main pin \
     --need-gb "$LFM3_GB" --free-gb "$(dl_free_gb "$LFM3_HF")" \
     || die "the Liquid AI LFM3 checkpoint could not be verified or fetched (re-run to resume; set HF_TOKEN if it stalls)"
   fetched "$LFM3_REPO @ ${LFM3_REV:0:12}"

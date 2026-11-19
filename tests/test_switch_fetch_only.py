@@ -325,6 +325,9 @@ class FetchOnly(unittest.TestCase):
         self.assertEqual(len(runs), 2, runs)
         self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['LFM25_REPO']} {pins['LFM25_REV']} ", runs[0])
         self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['LFM25_DRAFT_REPO']} {pins['LFM25_DRAFT_REV']} ", runs[1])
+        # the unit reads the draft by name offline (SGLang's speculative hook): the fetch pins refs/main
+        for run in runs:
+            self.assertIn(" --offline-first --refs-main pin ", run)
         self.assertIn(f"--need-gb {pins['LFM25_GB']} ", runs[0])
         self.assertIn("--need-gb 1 ", runs[1])
         image = re.search(r'^IMAGE="\$\{IMAGE:-([^}]+)\}"', (REPO / "install.sh").read_text(), re.M).group(1)
@@ -343,6 +346,8 @@ class FetchOnly(unittest.TestCase):
         pins = box.lfm3_pins
         self.assertEqual(len(runs), 1, runs)
         self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['LFM3_REPO']} {pins['LFM3_REV']} ", runs[0])
+        # vLLM can read the tokenizer without its revision, by name: the fetch pins refs/main
+        self.assertIn(" --offline-first --refs-main pin ", runs[0])
         self.assertIn(f"--need-gb {pins['LFM3_GB']} ", runs[0])
         self.assertIn(f" {pins['LFM3_IMAGE']} ", runs[0], "in vLLM's nightly image, by digest")
         self.assertEqual(box.lfm3_unit.read_bytes(), unit_before)
