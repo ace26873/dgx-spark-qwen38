@@ -1,5 +1,72 @@
 # Changelog
 
+## v1.54.0 (date à venir): the cockpit's Transcription tab, the UX review of v1.53.0, and the two latent defects of the v1.53.1 review
+
+The cockpit gets a **Transcription** view (in the Create group, after Video) that drives the
+NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video views drive theirs.
+
+- **The relay, server-side.** `POST /api/transcribe` takes the audio file as a base64 data URL with
+  the file name and the language, and relays it to the lane's `/v1/audio/transcriptions` on its own
+  port (30036, read from its unit) with the box's key read from `~/.config/qwen38/api-key`: the key
+  never reaches the page and is asserted in neither the forwarded body nor any answer. Same
+  session cookie and same CSRF token as every mutating POST. The body is capped at 90 MB and the
+  decoded audio at 64 MB, both checked before anything is read (about 33 minutes at the 16 kHz mono
+  the page records, and the cockpit process shares the box's unified memory with the lane), and one
+  transcription runs at a time under a lock taken before anything is decoded, so a second request is
+  refused at once and never holds the decoded audio in memory, as the lane serves one request at a
+  time (its unit passes no `-np`). `GET /api/transcribe` reports the lane for the view's card. The language is a
+  two or three letter code or empty to detect it, since the lane's server puts it in its prompt.
+  The data URL's MIME is checked against the list the lane reads (wav, mp3, flac, the same list the
+  page has) before anything is forwarded, so a CRLF in it cannot inject headers into the multipart
+  sent to the lane, and the file name is reduced to plain characters for the same reason. A 401 from
+  the lane (its key file changed while it runs) is answered as a 502 that says the key, not passed
+  through: the page reads any 401 as an expired session and would sign the user out. `GET
+  /api/transcribe` also reports the lock (`busy`), and the view sets its state from it (and from a
+  409), so while another transcription runs the Transcribe button is disabled and says someone
+  else's file is being transcribed, until the next poll says the lane is free.
+- **What the lane accepts and answers, read out of its server at its pinned revision (llama.cpp
+  b12316, commit 5d4c8eeb24db), not assumed.** It reads **wav, mp3 and flac** (`tools/mtmd/mtmd-helper.cpp`
+  sniffs RIFF/WAVE, ID3 or a MPEG sync word, fLaC, and decodes with miniaudio); anything else is
+  refused by the lane, so the page refuses it first with the ffmpeg line that converts it, and no
+  conversion was added server-side. Its answer is `{"type": "transcript.text.done", "text": ...,
+  "usage": ...}` (`server-task.cpp to_json_oaicompat_asr`): no segments, no timestamps, no detected
+  language, and any `response_format` but `json` is refused (`server-chat.cpp`), so the view offers
+  a `.txt` download and **no `.srt`**.
+- **The view.** Drop or pick an audio file, or record from the microphone: the record button is
+  disabled with the reason on a plain-HTTP page, because `getUserMedia` exists only in a secure
+  context (HTTPS or localhost), and the recording is decoded and encoded as WAV (16 kHz mono
+  PCM16) in the browser, since MediaRecorder gives webm or ogg, which the lane refuses. The
+  language is detected by default or chosen in a short list (French, English, and the other
+  languages NVIDIA's model card puts at its "Leading" level). The transcript shows in a live
+  region (`role="status"`, `aria-live="polite"`, since a transcription can take minutes), with the
+  same Copy button as the other fields, a `.txt` download, and the same call as a curl with the key
+  read on the box, never printed. Each recording's decode `AudioContext` is closed once the decode
+  is done (Chrome caps the open ones), on success as on failure. The lane loads on demand like the others: the card in the view says
+  whether it serves and offers the same Load journey as the Lanes view when it does not, and the
+  lane's bay in Now opens the tab once it serves.
+- **Tests.** The relay's guards over HTTP in `dashboard/tests/test_cockpit_http.py` (auth, CSRF,
+  the caps before any read, the key in the header only, the refusals, the lock, the status route),
+  red before and green after; the page in `dashboard/tests/test_page_behaviour.py` (the tab in the
+  rail, the section and the router together, the lane card and its Load, the file sent and the
+  transcript shown with copy and `.txt`, the format and cap refusals, the microphone disabled
+  outside a secure context, the WAV encoding, the whole record flow), red before and green after.
+  `docs/cockpit.md` and `docs/transcribe-lane.md` document the view, the formats, the answer and the
+  cap.
+
+- Cockpit, UX review of v1.53.0 (2026-11-19): the Now view's memory legend says "GPU allocations" when no lane serves, instead of naming an empty "lane" segment.
+- Cockpit, UX review of v1.53.0: "Copy a test" in Connect a client is offered only when a text lane serves a known model; with none, no curl with a placeholder model is copied.
+- Cockpit, UX review of v1.53.0: the Image view's refusal of a too large MiniMax-H3-Image call says one unit (86.0 GiB, the 92.3 GB the study measured) instead of mixing Go and GiB in one sentence.
+- Cockpit, UX review of v1.53.0: the Library Recipes panel says its perimeter (the built-in recipes are the 27B and flash lanes'), so an empty list no longer reads as a defect of the box.
+- Cockpit, UX review of v1.53.0: the Machine view's GPU processes table carries the stack class and its cells their column names, so on a phone it becomes cards like the page's other tables. (The Traffic view's tables are another task's.)
+- Cockpit, UX review of v1.53.0: Settings' "Fit the limits to this engine" is disabled with its reason before the click on the lanes whose opencode limits are their own, as the actions menu already did.
+- Cockpit, UX review of v1.53.0: an update that waits for a lane's Load is an orange banner naming the lane, not only the Lanes tab's badge; a stale wait (dropped, not applied) gets none.
+- Cockpit, UX review of v1.53.0: the Logs source list disables the containers and journals of lanes this box does not have, with the reason as the title, instead of offering them to fail on read.
+- Cockpit, UX review of v1.53.0: Settings' opencode panel shows the default model's own limits as a first row when they are not the 27B's or flash's, instead of naming only those two lanes whatever serves.
+- Cockpit, UX review of v1.53.0: while the NVIDIA Nemotron Transcribe lane serves, the Now view's capsule and Activity panel say speech to text on its own port (read from its unit by the api collector) instead of "nothing running" and "KV pool held: waiting for the engine".
+- Cockpit, UX review of v1.53.0: while the transcribe lane serves, Connect a client offers its own address, its two routes, a line saying the proxy on :30001 does not relay it (503 with no text engine), and a copyable transcribe test that reads the box's key from its file, as docs/transcribe-lane.md's does.
+
+**The two latent defects of the v1.53.1 review (2026-11-19, GLM 5.3), fixed with tests.** `patch_waiting_checkpoint` treated every unit other than the 27B's as the flash lane; the `apply_pending` API accepts only `PENDING_UNITS`, so a unit outside them is nothing to patch and the guard now returns before any bash runs (`dashboard/cockpit.py`). And the transcribe, lfm25 and lfm3 switches had no else branch like Kolibri's and Nemotron's: when the unit the switch renders equals the one in place (a pin moved back between two versions before the Load), a wait for the lane was not cleared and its card kept saying an update waited for its Load until the next `./install.sh`; each of the three now clears the wait in that case (`switch-model.sh`). Each fix's new test fails on the code before (`dashboard/tests/test_cockpit_apply_pending.py`, `tests/test_switch_unchanged_unit.py`).
+
 ## v1.53.1 (2026-11-19): what the blind reviews of v1.52.0 left, rare in normal use
 
 Written on v1.52.0 as v1.52.1, recalibrated on v1.53.0 and shipped as v1.53.1.
@@ -75,70 +142,6 @@ let `TimeoutExpired` escape with the proxy (port 0) still running: 37 orphans of
 found on the box on 2026-11-19. The test now kills that process by its own pid on `TimeoutExpired` and
 fails with a clear message. Proven by mutation (a proxy that does not refuse the certificate: before, a
 process outlives the test; after, none).
-## Unreleased: the Transcription tab
-
-The cockpit gets a **Transcription** view (in the Create group, after Video) that drives the
-NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video views drive theirs.
-
-- **The relay, server-side.** `POST /api/transcribe` takes the audio file as a base64 data URL with
-  the file name and the language, and relays it to the lane's `/v1/audio/transcriptions` on its own
-  port (30036, read from its unit) with the box's key read from `~/.config/qwen38/api-key`: the key
-  never reaches the page and is asserted in neither the forwarded body nor any answer. Same
-  session cookie and same CSRF token as every mutating POST. The body is capped at 90 MB and the
-  decoded audio at 64 MB, both checked before anything is read (about 33 minutes at the 16 kHz mono
-  the page records, and the cockpit process shares the box's unified memory with the lane), and one
-  transcription runs at a time under a lock taken before anything is decoded, so a second request is
-  refused at once and never holds the decoded audio in memory, as the lane serves one request at a
-  time (its unit passes no `-np`). `GET /api/transcribe` reports the lane for the view's card. The language is a
-  two or three letter code or empty to detect it, since the lane's server puts it in its prompt.
-  The data URL's MIME is checked against the list the lane reads (wav, mp3, flac, the same list the
-  page has) before anything is forwarded, so a CRLF in it cannot inject headers into the multipart
-  sent to the lane, and the file name is reduced to plain characters for the same reason. A 401 from
-  the lane (its key file changed while it runs) is answered as a 502 that says the key, not passed
-  through: the page reads any 401 as an expired session and would sign the user out. `GET
-  /api/transcribe` also reports the lock (`busy`), and the view sets its state from it (and from a
-  409), so while another transcription runs the Transcribe button is disabled and says someone
-  else's file is being transcribed, until the next poll says the lane is free.
-- **What the lane accepts and answers, read out of its server at its pinned revision (llama.cpp
-  b12316, commit 5d4c8eeb24db), not assumed.** It reads **wav, mp3 and flac** (`tools/mtmd/mtmd-helper.cpp`
-  sniffs RIFF/WAVE, ID3 or a MPEG sync word, fLaC, and decodes with miniaudio); anything else is
-  refused by the lane, so the page refuses it first with the ffmpeg line that converts it, and no
-  conversion was added server-side. Its answer is `{"type": "transcript.text.done", "text": ...,
-  "usage": ...}` (`server-task.cpp to_json_oaicompat_asr`): no segments, no timestamps, no detected
-  language, and any `response_format` but `json` is refused (`server-chat.cpp`), so the view offers
-  a `.txt` download and **no `.srt`**.
-- **The view.** Drop or pick an audio file, or record from the microphone: the record button is
-  disabled with the reason on a plain-HTTP page, because `getUserMedia` exists only in a secure
-  context (HTTPS or localhost), and the recording is decoded and encoded as WAV (16 kHz mono
-  PCM16) in the browser, since MediaRecorder gives webm or ogg, which the lane refuses. The
-  language is detected by default or chosen in a short list (French, English, and the other
-  languages NVIDIA's model card puts at its "Leading" level). The transcript shows in a live
-  region (`role="status"`, `aria-live="polite"`, since a transcription can take minutes), with the
-  same Copy button as the other fields, a `.txt` download, and the same call as a curl with the key
-  read on the box, never printed. Each recording's decode `AudioContext` is closed once the decode
-  is done (Chrome caps the open ones), on success as on failure. The lane loads on demand like the others: the card in the view says
-  whether it serves and offers the same Load journey as the Lanes view when it does not, and the
-  lane's bay in Now opens the tab once it serves.
-- **Tests.** The relay's guards over HTTP in `dashboard/tests/test_cockpit_http.py` (auth, CSRF,
-  the caps before any read, the key in the header only, the refusals, the lock, the status route),
-  red before and green after; the page in `dashboard/tests/test_page_behaviour.py` (the tab in the
-  rail, the section and the router together, the lane card and its Load, the file sent and the
-  transcript shown with copy and `.txt`, the format and cap refusals, the microphone disabled
-  outside a secure context, the WAV encoding, the whole record flow), red before and green after.
-  `docs/cockpit.md` and `docs/transcribe-lane.md` document the view, the formats, the answer and the
-  cap.
-
-- Cockpit, UX review of v1.53.0 (2026-11-19): the Now view's memory legend says "GPU allocations" when no lane serves, instead of naming an empty "lane" segment.
-- Cockpit, UX review of v1.53.0: "Copy a test" in Connect a client is offered only when a text lane serves a known model; with none, no curl with a placeholder model is copied.
-- Cockpit, UX review of v1.53.0: the Image view's refusal of a too large MiniMax-H3-Image call says one unit (86.0 GiB, the 92.3 GB the study measured) instead of mixing Go and GiB in one sentence.
-- Cockpit, UX review of v1.53.0: the Library Recipes panel says its perimeter (the built-in recipes are the 27B and flash lanes'), so an empty list no longer reads as a defect of the box.
-- Cockpit, UX review of v1.53.0: the Machine view's GPU processes table carries the stack class and its cells their column names, so on a phone it becomes cards like the page's other tables. (The Traffic view's tables are another task's.)
-- Cockpit, UX review of v1.53.0: Settings' "Fit the limits to this engine" is disabled with its reason before the click on the lanes whose opencode limits are their own, as the actions menu already did.
-- Cockpit, UX review of v1.53.0: an update that waits for a lane's Load is an orange banner naming the lane, not only the Lanes tab's badge; a stale wait (dropped, not applied) gets none.
-- Cockpit, UX review of v1.53.0: the Logs source list disables the containers and journals of lanes this box does not have, with the reason as the title, instead of offering them to fail on read.
-- Cockpit, UX review of v1.53.0: Settings' opencode panel shows the default model's own limits as a first row when they are not the 27B's or flash's, instead of naming only those two lanes whatever serves.
-- Cockpit, UX review of v1.53.0: while the NVIDIA Nemotron Transcribe lane serves, the Now view's capsule and Activity panel say speech to text on its own port (read from its unit by the api collector) instead of "nothing running" and "KV pool held: waiting for the engine".
-- Cockpit, UX review of v1.53.0: while the transcribe lane serves, Connect a client offers its own address, its two routes, a line saying the proxy on :30001 does not relay it (503 with no text engine), and a copyable transcribe test that reads the box's key from its file, as docs/transcribe-lane.md's does.
 
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 
