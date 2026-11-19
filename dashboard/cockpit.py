@@ -2151,6 +2151,32 @@ def collect_feed():
     return {"node_id": "local", "rows": lc.mark_probes(rows, "/v1/systemone", len(SYSTEMONE_PROBE_BODY))}
 
 
+@guard
+def collect_transcribe():
+    """5 s tier: the NVIDIA Nemotron Transcribe lane's requests in flight, read off its own port's
+    /metrics with the box's key in the header, which is read here and never sent to the page: only
+    the counts and the port go out. The proxy relays the text port alone, so the Traffic view's
+    table cannot show these; the page says them beside the table while the lane serves. A read that
+    failed is said as one, and no count is invented for it."""
+    if not transcribe_serving():
+        return {"node_id": "local", "serving": False}
+    port = transcribe_port()
+    try:
+        req = urllib.request.Request(transcribe_base() + "/metrics",
+                                     headers={"Authorization": f"Bearer {api_key()}"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            f = llamacpp_metrics_facts(r.read(2_000_000).decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        # the status only, under "why": an "error" key would make the page treat the whole source
+        # as failed and skip its handler; and an exception's text never goes out anyway, the key
+        # is in the header this sent, which no error names
+        return {"node_id": "local", "serving": True, "port": port, "read": False, "why": f"HTTP {e.code}"}
+    except Exception as e:  # noqa: BLE001 (no answer is the answer)
+        return {"node_id": "local", "serving": True, "port": port, "read": False, "why": type(e).__name__}
+    return {"node_id": "local", "serving": True, "port": port, "read": True,
+            "running": f["running"], "waiting": f["waiting"]}
+
+
 ZOMBIE_WINDOW = "10m"          # one window per sample: no overlap, no double count
 
 
@@ -4129,7 +4155,7 @@ TIERS = [
            "feed": collect_feed, "agent": collect_agent}),
     # its own thread: a /metrics read can wait its whole 4 s on an engine slow to answer,
     # and the units, the feed and the agent must not wait with it
-    (5.0, {"metrics": collect_engine_metrics}),
+    (5.0, {"metrics": collect_engine_metrics, "transcribe": collect_transcribe}),
     # the other box of a pair (decision 975), its own thread too: a box that went holds its read 8 s
     (5.0, {"pair": collect_pair}),
     (30.0, {"engine_info": collect_engine_info, "engine_table": collect_engine_table, "api": collect_api,

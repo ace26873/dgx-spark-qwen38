@@ -161,20 +161,26 @@ on('feed', d => {
   renderTraffic();
 });
 afterApply(() => renderTraffic());   // an engine read between two feed reads moves the count
+on('transcribe', d => { F.transcribe = d; renderTraffic(); });
 // What is in flight, and where the count was read: the table is the proxy's journal alone, so a
 // client that talks to the engine on :30000 directly (a bench, a script) is counted by the engine
-// and never appears in the table. The badge follows the engine's count and its title says where it
-// was read; an engine that has not answered counts nothing (review, 2026-11-19).
+// and never appears in the table, and the Transcribe lane's requests are read on its own port
+// (collect_transcribe: counts and port only, the key stays server-side). The badge follows the
+// engine's count and its title says where each part was read; an engine that has not answered
+// counts nothing (review, 2026-11-19).
 function renderTraffic(){
   const rows = F.feedRows || [];
   const inflight = rows.filter(r => r.outcome === 'in flight').length;
   const eng = !F.noEngine && F.load && F.load.num_reqs != null ? runningReqs(F.load) + waitingReqs(F.load) : null;
-  const shown = eng == null ? inflight : Math.max(eng, inflight);
+  const tr = F.transcribe || {};
+  const trN = tr.serving && tr.read === true ? (tr.running || 0) + (tr.waiting || 0) : 0;
+  const shown = (eng == null ? inflight : Math.max(eng, inflight)) + trN;
   badge('traffic', shown ? String(shown) : '', shown ? 'live' : '');
   const b = $('bdg-traffic');
-  if (b) b.title = !shown ? '' : eng != null && eng >= inflight
-    ? `${eng} in flight, counted by the engine on :30000 (the proxy relayed ${inflight})`
-    : `${shown} in flight, relayed by the proxy on :30001`;
+  if (b) b.title = !shown ? '' : [eng != null ? `${eng} in flight, counted by the engine on :30000` : null,
+                                  inflight ? `${inflight} relayed by the proxy on :30001` : null,
+                                  trN ? `${trN} on the NVIDIA Nemotron Transcribe lane, on :${tr.port}` : null]
+                                 .filter(Boolean).join('; ');
   const direct = eng == null ? 0 : Math.max(0, eng - inflight);
   let c = $('feed-empty');
   if (!rows.length && !c){
@@ -184,11 +190,15 @@ function renderTraffic(){
   if (c) c.textContent = direct > 0
     ? `${eng} request${eng > 1 ? 's are' : ' is'} running on the engine, sent to :30000 directly, not through the proxy: their details are not in this table.`
     : 'No request has gone through the proxy yet. Agent clients use :30001.';
-  const note = $('feed-note');
-  setText(note, rows.length && direct > 0
-    ? `${direct} of the ${eng} in flight on the engine were sent to :30000 directly, not through the proxy: their details are not in this table.`
-    : '');
-  show(note, !!(rows.length && direct > 0));
+  const note = $('feed-note'), parts = [];
+  if (rows.length && direct > 0)
+    parts.push(`${direct} of the ${eng} in flight on the engine were sent to :30000 directly, not through the proxy: their details are not in this table`);
+  if (trN > 0)
+    parts.push(`${[tr.running ? `${tr.running} running` : '', tr.waiting ? `${tr.waiting} waiting` : ''].filter(Boolean).join(', ')} on the NVIDIA Nemotron Transcribe lane, which answers on its own port :${tr.port}, not through the proxy`);
+  else if (tr.serving && tr.read === false)
+    parts.push(`the NVIDIA Nemotron Transcribe lane serves on :${tr.port}, but its counters did not answer${tr.why ? ` (${tr.why})` : ''}`);
+  setText(note, parts.join('. ') + (parts.length ? '.' : ''));
+  show(note, parts.length > 0);
 }
 on('reqguard', d => {
   const g = d.guard || {}, z = d.zombies || {};
