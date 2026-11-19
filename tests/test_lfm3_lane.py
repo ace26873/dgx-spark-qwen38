@@ -282,6 +282,15 @@ class TheSwitch(unittest.TestCase):
         r = subprocess.run([str(self.script), "lfm3", *args], capture_output=True, text=True, env=e, timeout=120)
         return r.returncode, r.stdout + r.stderr, self.log.read_text() if self.log.exists() else ""
 
+    def test_its_install_message_asks_the_room_the_lane_itself_asks(self):
+        """The die's sizes are the lane's own, from its installer: LFM3_GB, and IMAGE_GB, its pull's peak."""
+        self.unit.unlink()
+        rc, out, _ = self.switch()
+        installer = (REPO / "install-lfm3.sh").read_text()
+        gb = re.search(r'^LFM3_GB="(\d+)"$', installer, re.M).group(1)
+        image = re.search(r"^IMAGE_GB=(\d+)$", installer, re.M).group(1)
+        self.assertIn(f"about {gb} GB, and vLLM's nightly image, {image} GB at its pull's peak", out)
+
     def test_it_puts_in_its_unit_moves_the_boot_and_points_opencode_at_it(self):
         rc, out, calls = self.switch()
         self.assertEqual(rc, 0, out)

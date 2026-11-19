@@ -1692,7 +1692,7 @@ fi
 # as the other lanes' units are.
 LFM3_STAGE="$CONFIG_DIR/qwen38-lfm3.service.switch-stage"
 if [ "$CHOICE" = "lfm3" ]; then
-  [ -f "$LFM3_UNIT" ] || die "the Liquid AI LFM3 lane is not installed on this box (no $LFM3_UNIT). Install it once: ./install.sh --with-lfm3 (about 2 GB, and vLLM's nightly image, 28 GB)"
+  [ -f "$LFM3_UNIT" ] || die "the Liquid AI LFM3 lane is not installed on this box (no $LFM3_UNIT). Install it once: ./install.sh --with-lfm3 (about 2 GB, and vLLM's nightly image, 39 GB at its pull's peak)"
   # The checkpoint, its pinned revision, its size and the image, from the lane's installer, the one place each is
   # declared.
   eval "$(grep -E '^LFM3_(IMAGE|REPO|REV|GB)=' "$REPO_DIR/install-lfm3.sh" || true)"
