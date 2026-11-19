@@ -77,6 +77,19 @@ class Box:
         self.meminfo(0)
         self.docker("exit 1")
 
+    def in_container(self, pid, container_id, comm="llama-server", cmd="/app/llama-server\0-m\0x.gguf"):
+        """One more process, running in the container whose id is container_id."""
+        (self.proc / pid).mkdir(parents=True)
+        (self.proc / pid / "comm").write_text(comm + "\n")
+        (self.proc / pid / "cmdline").write_text(cmd + "\0")
+        (self.proc / pid / "cgroup").write_text(f"0::/system.slice/docker-{container_id}.scope\n")
+
+    def docker_containers(self, ids):
+        """The docker the guard asks the llama.cpp lanes' container ids of, in one call: one
+        "{{.Name}} {{.Id}}" line per container it is given (ids: {container: id})."""
+        lines = " ".join(f'[ "$a" = {c} ] && echo "/{c} {i}";' for c, i in ids.items())
+        self.docker(f'for a in "$@"; do {lines} done')
+
     def meminfo(self, orphan_gib):
         """The fake meminfo, with orphan_gib more GiB that no kernel category accounts for."""
         free = 102000000 - int(orphan_gib * 1048576)
@@ -151,14 +164,14 @@ class WhatBlocksAStart(unittest.TestCase):
         """A llama-server is the llama.cpp lane's engine only in that lane's container: told by
         its name alone, the user's own llama-server on the GPU held every lane's start back
         (code review of v1.48.0, 2026-11-12)."""
-        self.box.docker(f'[ "$4" = qwen38-flash-unsloth ] && echo {LANE_ID}')
+        self.box.docker_containers({"qwen38-flash-unsloth": LANE_ID})
         self.box.smi('echo "107, llama-server, 30000"')
         rc, out, _ = self.box.run()
         self.assertEqual(rc, 0, out)
         self.assertIn("other programs hold GPU memory: 107 llama-server 30000 MiB", out)
 
     def test_what_is_left_of_the_llamacpp_lanes_engine_is_a_remnant(self):
-        self.box.docker(f'[ "$4" = qwen38-flash-unsloth ] && echo {LANE_ID}')
+        self.box.docker_containers({"qwen38-flash-unsloth": LANE_ID})
         self.box.smi('printf "108, llama-server, 30000\\n107, llama-server, 20000\\n"')
         rc, out, _ = self.box.run()
         self.assertEqual(rc, 1, out)
@@ -170,6 +183,51 @@ class WhatBlocksAStart(unittest.TestCase):
         self.box.smi('echo "108, llama-server, 30000"')
         rc, out, _ = self.box.run()
         self.assertEqual(rc, 0, out)
+
+    def test_what_is_left_of_the_transcribe_lanes_engine_is_a_remnant_too(self):
+        """Every llama.cpp lane's left-behind llama-server holds a start back, not only the Unsloth
+        GGUF lane's: the transcribe lane runs its own in qwen38-transcribe (qwen38-transcribe.service
+        names that container), and a stop that did not take the container leaves it holding the GPU,
+        which is the pile-on sglang#40948 froze a box on."""
+        tid = "cd" * 32
+        self.box.in_container("109", tid)
+        self.box.docker_containers({"qwen38-flash-unsloth": LANE_ID, "qwen38-transcribe": tid})
+        self.box.smi('echo "109, llama-server, 30000"')
+        rc, out, _ = self.box.run()
+        self.assertEqual(rc, 1, out)
+        reason = out.split("NOT starting", 1)[1]
+        self.assertIn("109 llama-server 30000 MiB", reason)
+        self.assertNotIn("other programs", reason)
+        # and a llama-server of another program still never blocks, beside ours
+        self.box.smi('printf "109, llama-server, 30000\\n107, llama-server, 20000\\n"')
+        rc, out, _ = self.box.run()
+        self.assertEqual(rc, 1, out)
+        reason = out.split("NOT starting", 1)[1]
+        self.assertIn("109 llama-server 30000 MiB", reason)
+        self.assertNotIn("107 llama-server", reason)
+
+    def test_the_installed_copy_reads_the_llamacpp_containers_from_the_units_dir(self):
+        """The copy the units run (~/.config/qwen38/engine-preflight.sh) has no lane_registry.py
+        beside it: it reads the units' directory, where each llama.cpp lane's unit runs the files'
+        check (llamacpp-files.sh, the marker the uninstall reads too) and names its container."""
+        tid = "cd" * 32
+        self.box.in_container("109", tid)
+        units = self.box.t / "units"
+        units.mkdir()
+        (units / "qwen38-sglang.service").write_text(
+            "ExecStart=/bin/bash -c 'exec docker run --rm --name qwen38-sglang x'\n")
+        (units / "qwen38-transcribe.service").write_text(
+            "ExecStart=/bin/bash -c 'bash $check qwen38-transcribe.service transcribe f || exit $?; \\\n"
+            "  exec docker run --rm --name qwen38-transcribe --gpus all x'\n".replace("$check", "llamacpp-files.sh"))
+        (units / "qwen38-flash-unsloth.service").write_text(
+            "ExecStart=/bin/bash -c 'bash llamacpp-files.sh qwen38-flash-unsloth.service flash-unsloth f || exit $?; \\\n"
+            "  exec docker run --rm --name qwen38-flash-unsloth --gpus all x'\n")
+        self.box.docker_containers({"qwen38-transcribe": tid})
+        self.box.smi('echo "109, llama-server, 30000"')
+        rc, out, _ = self.box.run(extra={"QWEN38_PREFLIGHT_REGISTRY": str(self.box.t / "no-registry.py"),
+                                         "QWEN38_PREFLIGHT_UNITS_DIR": str(units)})
+        self.assertEqual(rc, 1, out)
+        self.assertIn("109 llama-server 30000 MiB", out.split("NOT starting", 1)[1])
 
     def test_another_programs_gpu_memory_never_blocks_a_start(self):
         """Somebody's own GPU work is no remnant: the lane starts and the journal names it."""

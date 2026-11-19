@@ -8,9 +8,9 @@
 # logged NV_ERR_NO_MEMORY and its lock seized, and the whole machine froze until a power
 # cycle, 9.5 h later. Waiting longer does not help there; not starting does. So this waits,
 # bounded, and refuses a start only when that is what it finds:
-#   - GPU memory still held by what is left of an engine: an SGLang or a vLLM process, the llama.cpp
-#     lane's llama-server (in its own container), or a process the driver still lists and the system
-#     no longer has;
+#   - GPU memory still held by what is left of an engine: an SGLang or a vLLM process, a
+#     llama.cpp lane's llama-server (in its own container), or a process the driver still lists
+#     and the system no longer has;
 #   - memory the driver keeps that no process accounts for: on this unified-memory machine
 #     a GPU allocation is in none of the kernel's own categories, so MemTotal minus all of
 #     them is what the driver holds (1.1 GiB with no engine and a desktop session, the
@@ -36,34 +36,78 @@ SMI="${QWEN38_PREFLIGHT_SMI:-nvidia-smi}"
 PROC="${QWEN38_PREFLIGHT_PROC:-/proc}"
 STEP_S="${QWEN38_PREFLIGHT_STEP_S:-2}"
 SMI_TIMEOUT_S="${QWEN38_PREFLIGHT_SMI_TIMEOUT_S:-10}"
-# The llama.cpp lane's container, and the docker that says its id (2026-11-12)
-LLAMACPP_CONTAINER="${QWEN38_PREFLIGHT_LLAMACPP_CONTAINER:-qwen38-flash-unsloth}"
+# The llama.cpp lanes' containers, and the docker that says their ids (2026-11-12; every lane
+# of that engine since 2026-11-19, the transcribe lane's included): each lane the registry calls
+# llamacpp, its unit's name without ".service" (lane_registry.py, beside this script in the
+# repository, so a lane added there is covered here with no list to forget). The copy the units
+# run (~/.config/qwen38/engine-preflight.sh) has no registry beside it: it reads the units'
+# directory, where each llama.cpp lane's unit runs the files' check (llamacpp-files.sh, the
+# marker the uninstall reads too, llamacpp-lane.sh) and names its container (--name).
+# QWEN38_PREFLIGHT_LLAMACPP_CONTAINER overrides both with one container, for a test.
+llamacpp_containers(){
+  local dir reg u out
+  if [ -n "${QWEN38_PREFLIGHT_LLAMACPP_CONTAINER:-}" ]; then
+    printf '%s\n' "$QWEN38_PREFLIGHT_LLAMACPP_CONTAINER"; return 0
+  fi
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  reg="${QWEN38_PREFLIGHT_REGISTRY:-$dir/lane_registry.py}"
+  if [ -f "$reg" ] && command -v python3 >/dev/null 2>&1; then
+    out="$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1])
+import lane_registry as r
+print(" ".join(r.LANES[l]["unit"][:-len(".service")] for l in r.lanes(engine="llamacpp")))' \
+      "$(dirname "$reg")" 2>/dev/null)" && [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+  fi
+  for u in $(grep -lsF 'llamacpp-files.sh' "${QWEN38_PREFLIGHT_UNITS_DIR:-/etc/systemd/system}"/qwen38-*.service 2>/dev/null); do
+    grep -hoE -- '--name qwen38-[a-z0-9-]+' "$u" 2>/dev/null | awk '{print $2}'
+  done | sort -u
+}
+LLAMACPP_CONTAINERS="$(llamacpp_containers)"
 DOCKER="${QWEN38_PREFLIGHT_DOCKER:-docker}"
 DOCKER_TIMEOUT_S="${QWEN38_PREFLIGHT_DOCKER_TIMEOUT_S:-5}"
 
-# True when the process $1 runs in the llama.cpp lane's container, whose id its cgroup names. Told
-# by its name alone, a llama-server of another program on the GPU (one of the user's own) held every
-# lane's start back after 60 s (code review of v1.48.0, 2026-11-12). The id is asked once a pass,
-# and only when the driver lists a llama-server (gpu_holders keeps it in llamacpp_id); a docker that
-# does not answer says none is ours. No process of this lane outlives the container docker knows:
+# The id of each llama.cpp lane's container, one "{{.Name}} {{.Id}}" line each, in one docker
+# call; a container docker does not know says nothing. gpu_holders keeps them in llamacpp_ids.
+llamacpp_container_ids(){
+  local out line name id
+  # a container docker does not know answers on stderr and a non-zero status, with the others'
+  # lines still on stdout: what it said is kept, not wiped
+  out="$(timeout -k 2 "$DOCKER_TIMEOUT_S" "$DOCKER" inspect -f '{{.Name}} {{.Id}}' $LLAMACPP_CONTAINERS 2>/dev/null)" || true
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    name="${line%% *}"; name="${name#/}"
+    id="${line#* }"
+    case "$id" in ''|*[!0-9a-f]*) continue ;; esac
+    llamacpp_ids["$name"]="$id"
+  done <<< "$out"
+}
+
+# True when the process $1 runs in one of the llama.cpp lanes' containers, whose id its cgroup
+# names. Told by its name alone, a llama-server of another program on the GPU (one of the user's
+# own) held every lane's start back after 60 s (code review of v1.48.0, 2026-11-12). The ids are
+# asked once a pass, and only when the driver lists a llama-server; a docker that does not
+# answer says none is ours. No process of these lanes outlives its container docker knows:
 # docker drops a container (--rm, rm -f) only once its exit event says its main process, llama-server,
 # was reaped, and refuses to while that process still runs, and the kernel kills the other processes of
 # a PID namespace when its first one exits, reaping that one only after them (moby daemon/kill.go,
 # delete.go and monitor.go at docker 29.6.2, the box's, read 2026-11-12).
 ours_llamacpp() {
-  if [ "$llamacpp_id" = "?" ]; then
-    llamacpp_id="$(timeout -k 2 "$DOCKER_TIMEOUT_S" "$DOCKER" inspect -f '{{.Id}}' "$LLAMACPP_CONTAINER" 2>/dev/null)" \
-      || llamacpp_id=""
-    case "$llamacpp_id" in *[!0-9a-f]*) llamacpp_id="" ;; esac
+  local c
+  if [ "${llamacpp_asked:-}" != 1 ]; then
+    llamacpp_container_ids; llamacpp_asked=1
   fi
-  [ -n "$llamacpp_id" ] && grep -qF -- "$llamacpp_id" "$PROC/$1/cgroup" 2>/dev/null
+  for c in $LLAMACPP_CONTAINERS; do
+    [ -n "${llamacpp_ids[$c]:-}" ] && grep -qF -- "${llamacpp_ids[$c]}" "$PROC/$1/cgroup" 2>/dev/null && return 0
+  done
+  return 1
 }
 
 # One line, its fields split on the unit separator (read does not merge two of them when
 # one is empty, as it does tabs): MiB held by engine remnants, MiB held in all, the
 # remnants, the others. Returns 1 when the driver does not answer.
 gpu_holders() {
-  local out line pid name mib comm cmd eng=0 all=0 rem="" oth="" llamacpp_id="?"
+  local out line pid name mib comm cmd eng=0 all=0 rem="" oth=""
+  local -A llamacpp_ids=()
+  local llamacpp_asked=""
   out="$(timeout -k 2 "$SMI_TIMEOUT_S" "$SMI" --query-compute-apps=pid,process_name,used_memory \
            --format=csv,noheader,nounits 2>/dev/null)" || return 1
   while IFS= read -r line; do
@@ -77,9 +121,9 @@ gpu_holders() {
     comm="$(cat "$PROC/$pid/comm" 2>/dev/null)"
     cmd="$(tr '\0' ' ' < "$PROC/$pid/cmdline" 2>/dev/null)"
     # SGLang's lanes, and the Kolibri lane's vLLM: its engine core is VLLM::EngineCore (the
-    # kernel keeps 15 characters of it) and its API server a python3 running vllm serve. And the
-    # llama.cpp lane's llama-server, in that lane's container (the speech lane's is built for the CPU,
-    # and the driver lists no process of it).
+    # kernel keeps 15 characters of it) and its API server a python3 running vllm serve. And a
+    # llama.cpp lane's llama-server, in that lane's container (the speech lane's is built for
+    # the CPU, and the driver lists no process of it).
     if [ ! -d "$PROC/$pid" ] || [[ "$comm" == sglang* ]] || [[ "$cmd" == *sglang* ]] \
        || [[ "$comm" == VLLM::* ]] || [[ "$cmd" == *vllm\ serve* ]] \
        || { [[ "$comm" == llama-server ]] && ours_llamacpp "$pid"; }; then
