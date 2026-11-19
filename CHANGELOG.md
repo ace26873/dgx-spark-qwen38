@@ -1,6 +1,8 @@
 # Changelog
 
-## v1.52.1 (2026-11-19): what the blind reviews of v1.52.0 left, rare in normal use
+## v1.53.1 (2026-11-19): what the blind reviews of v1.52.0 left, rare in normal use
+
+Written on v1.52.0 as v1.52.1, recalibrated on v1.53.0 and shipped as v1.53.1.
 
 **What the seventh pass of the reviews found (decision 1505, 2026-11-19), fixed with tests.** The Load's prepare
 fetched and patched the pin's revision, not the one the waiting unit names in its `--revision`: with the pin moved
@@ -56,15 +58,15 @@ disk carries the new, unpatched one; and the job's message names the `<unit>.pre
 beside the pose, instead of saying the lane serves what it loaded. A retry reposes the same file and does not
 overwrite the `.prev` with it. Each new test fails on the code before.
 
-**Review leftovers cleaned (blind review of v1.52.1, 2026-11-19, GLM 5.3).** A debug leftover in
+**Review leftovers cleaned (blind review of v1.53.1, then named v1.52.1, 2026-11-19, GLM 5.3).** A debug leftover in
 `tests/test_update_waits_for_load.py` wrote a debug file in `/tmp` on every run, outside the test's own tmpdir;
 removed, with a test that fails if any test of `tests/` writes one there again. The comment above
-`patch_served_checkpoint` (lanes.sh, switch-model.sh) still said a Load's prepare calls it, which v1.52.1
-removed; it now names `apply_pending`, the caller since, once the waiting unit is in place. And
-`tests/test_nemotron_pins_one_place.py` cut the switch's block at the first `NEM_REWRITTEN=1`, which the pose
-branch ends with since ea39cb40, so the extracted block was the pose, not the rewrite, and the module was red
-(three failures, nothing rewritten): the extraction now runs to the end of the Nemotron block, and the module is
-green, on the code of before the pose as well (the code was true, the marker was not).
+`patch_served_checkpoint` (lanes.sh, switch-model.sh) still said a Load's prepare calls it, which v1.53.1 removes; it
+now names `apply_pending`, the caller since, once the waiting unit is in place. And
+`tests/test_nemotron_pins_one_place.py` cut the switch's block at the first `NEM_REWRITTEN=1`, which the pose branch
+ends with since ea39cb40, so the extracted block was the pose, not the rewrite, and the module was red (three
+failures, nothing rewritten): the extraction now runs to the end of the Nemotron block, and the module is green, on
+the code of before the pose as well (the code was true, the marker was not).
 
 **A TLS refusal that does not happen no longer leaks a process.** `tests/test_proxy_tls.py`'s
 `test_unusable_cert_refuses_to_start` waited `proc.wait(timeout=10)` and, when the proxy did not refuse,
@@ -401,22 +403,22 @@ re-renders a unit equal to the one in place leaves its wait for the lane's Load 
 on the code before.
 
 **What the sixth blind review found (GLM 5.3, 2026-11-19 11:51), fixed with tests.** Four defects (its 3 and 4 go to
-v1.52.1, its diff will have its own review), each read in the code again before fixing: the Load's prepare fetched the
-new revision with `switch-model.sh <target> --fetch`, which stops right after the download, so on the serving lane's
-short path (prepare, apply_pending, restart, no switch) the new checkpoint's `config.json` was never YaRN-patched for
-a 1M unit (which does not load on an unpatched config), never restored for a native one, Arete's fp8 KV cache was
-never declared and the chat template was never regenerated from the new revision (the switch's steps 2, 2a and 2b are
-now one function, `lanes.sh`'s `patch_served_checkpoint`, which the switch calls with the unit in place and the Load's
-`prepare-lane.sh` with the unit that waits and the cache it mounts, when an update waits for this Load and this Load
-loads its target, so the 27B and the flash serve their new revision with those steps done on the short path as on the
-other); the same fetch passed no `HF_CACHE`, so the switch downloaded into the cache of the unit in place while the
-prepare read the waiting unit's, and a cache moved by a re-run of install looped the Load forever (the fetch now
-passes the waiting unit's cache, as the image, video and image-h3 switches already read it); the `WAITS_LOAD` probe
-tested the pinned image instead of the one the rendered unit serves (`SERVE_IMAGE=` / `FLASH_SERVE_IMAGE=`, a
-documented option), so a box serving an override with the pin absent went units-only with a false message (the probe
-reads the serving image now); and `side_install` read an "unknown" line of `unit_needs` (docker not answering, the
-cache unreadable) as a lack, skipping the rest of a side lane's update with a false "its units only" (read as no lack
-now, as `unit_put_waits` does). Each new test fails on the code before.
+v1.52.1, shipped as v1.53.1, its diff will have its own review), each read in the code again before fixing: the Load's
+prepare fetched the new revision with `switch-model.sh <target> --fetch`, which stops right after the download, so on
+the serving lane's short path (prepare, apply_pending, restart, no switch) the new checkpoint's `config.json` was
+never YaRN-patched for a 1M unit (which does not load on an unpatched config), never restored for a native one,
+Arete's fp8 KV cache was never declared and the chat template was never regenerated from the new revision (the
+switch's steps 2, 2a and 2b are now one function, `lanes.sh`'s `patch_served_checkpoint`, which the switch calls with
+the unit in place and the Load's `prepare-lane.sh` with the unit that waits and the cache it mounts, when an update
+waits for this Load and this Load loads its target, so the 27B and the flash serve their new revision with those steps
+done on the short path as on the other); the same fetch passed no `HF_CACHE`, so the switch downloaded into the cache
+of the unit in place while the prepare read the waiting unit's, and a cache moved by a re-run of install looped the
+Load forever (the fetch now passes the waiting unit's cache, as the image, video and image-h3 switches already read
+it); the `WAITS_LOAD` probe tested the pinned image instead of the one the rendered unit serves (`SERVE_IMAGE=` /
+`FLASH_SERVE_IMAGE=`, a documented option), so a box serving an override with the pin absent went units-only with a
+false message (the probe reads the serving image now); and `side_install` read an "unknown" line of `unit_needs`
+(docker not answering, the cache unreadable) as a lack, skipping the rest of a side lane's update with a false "its
+units only" (read as no lack now, as `unit_put_waits` does). Each new test fails on the code before.
 
 **A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
 paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:

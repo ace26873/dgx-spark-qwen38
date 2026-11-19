@@ -439,7 +439,7 @@ class TheApplyPendingPatchesTheWaitingCheckpointAfterThePose(unittest.TestCase):
         self.cp.run = posing_run
 
     def test_a_patch_that_fails_at_the_pose_keeps_the_wait_and_still_reloads(self):
-        # 27B branch (blind review of v1.52.1, 2026-11-19, GLM 5.3): before, a failed patch cleared the
+        # 27B branch (blind review of v1.53.1, 2026-11-19, GLM 5.3): before, a failed patch cleared the
         # wait, skipped the daemon-reload and said "the lane serves what it loaded": systemd kept the
         # old unit while the disk carried the new unpatched one, and nothing ever retried the patch.
         # Now the unit is posed, systemd reloads it whatever the patch does, the wait is KEPT with its

@@ -418,9 +418,9 @@ echo "STATE WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ONLY WAITS_WHAT=$WAITS_WHAT
 
 
 class NoDebugLeftovers(unittest.TestCase):
-    """Blind review of v1.52.1 (2026-11-19, GLM 5.3): a debug leftover wrote a debug file in /tmp on
+    """Blind review of v1.53.1 (2026-11-19, GLM 5.3): a debug leftover wrote a debug file in /tmp on
     every run of ARuntimeThatMovesWaitsToo.run_fn, outside the test's own tmpdir, and the comment above
-    patch_served_checkpoint still said a Load's prepare calls it, which v1.52.1 removed (the cockpit's
+    patch_served_checkpoint still said a Load's prepare calls it, which v1.53.1 removed (the cockpit's
     apply_pending calls it, once the waiting unit is in place)."""
 
     def test_no_test_writes_a_debug_file_in_tmp(self):

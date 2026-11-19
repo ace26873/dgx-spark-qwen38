@@ -2069,7 +2069,7 @@ fetched "$TARGET_REPO @ ${TARGET_REV:0:12}"
 # lanes.sh holds, which the switch calls here with the unit in place, and the cockpit's
 # apply_pending (patch_waiting_checkpoint) with the unit that waited, once that unit is in place,
 # each with the cache that unit mounts. A Load's prepare (prepare-lane.sh) does not call it since
-# v1.52.1: in --fetch, fetched() ends the run before this line, and a Load poses a wait through
+# v1.53.1: in --fetch, fetched() ends the run before this line, and a Load poses a wait through
 # apply_pending, which patches after the pose (sixth review of v1.52.0, 2026-11-19, GLM 5.3: the
 # Load's --fetch stopped right after the download, and a lane serving its target with an update
 # waiting restarted on a config the switch's steps never patched, which does not load in 1M).

@@ -1298,7 +1298,7 @@ class TheStaysWaitSurvivesTheNextLoad(unittest.TestCase):
     switch that rewrites the unit in place to the asked target. That rewrite changes the unit in place,
     so the wait's .base (the sha of the unit it was rendered against, lanes.sh's unit_pending_put) must
     be rewritten with it: the next Load, which poses the wait once the box has what it lacked, must not
-    read it as changed since it was rendered and drop it (blind review of v1.52.1, 2026-11-19, GLM 5.3:
+    read it as changed since it was rendered and drop it (blind review of v1.53.1, 2026-11-19, GLM 5.3:
     the .base was left naming the unit from before the rewrite, and both the switch's own .base check
     and the cockpit's pending_stale dropped the wait at the next Load). The block runs twice here
     against the same pending folder: the switch, then the next Load's switch again, now that the box
@@ -1625,7 +1625,7 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
                          "the kept wait's .base names the unit in place after the rewrite")
 
     def test_a_malformed_waiting_unit_dies_before_the_wait_is_cleared(self):
-        # blind review of v1.52.1 (2026-11-19, GLM 5.3): the pose cleared the wait BEFORE the rewrite
+        # blind review of v1.53.1 (2026-11-19, GLM 5.3): the pose cleared the wait BEFORE the rewrite
         # to the asked revision, and the fields read back from the posed unit were not revalidated:
         # a malformed waiting unit (no memory share) died in the rewrite with the wait already gone,
         # and the lane served the wait's revision while the operator read the asked one queued
@@ -1639,7 +1639,7 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertNotIn("clear ", log.read_text(), "nothing was cleared")
 
     def test_a_pose_that_dies_keeps_a_wait_the_retry_does_not_drop(self):
-        # blind review of v1.52.1 (2026-11-19, GLM 5.3), second pass: the pose installed the
+        # blind review of v1.53.1 (2026-11-19, GLM 5.3), second pass: the pose installed the
         # waiting unit and the revalidation died with the wait kept, but pending/<unit>.base still
         # named the unit from before the pose, so the retry's own .base check dropped the wait as
         # "changed since it was rendered". The pose now rewrites the .base to the unit it put in
