@@ -9,7 +9,9 @@ update writes the code, the units and the configs, and everything large waits fo
 - every installer puts a lane's unit through `lanes.sh`'s `unit_put`, which, on an update, leaves a lane that can serve
   as it is when its new unit reads what the box lacks (`unit_needs`: an image by its digest or its local build's tag, a
   checkpoint whole at its revision in the cache the unit mounts, the 27B's DFlash2 draft and the Nemotron lanes' vLLM
-  drafter, a model named by its path; a unit it cannot read is not taken for whole):
+  drafter, a model or a folder named by its path in a hub snapshot, as the MiniMax-H3-Image lane's text encoder; a
+  unit it cannot read is not taken for whole, and neither is one whose reads cannot be concluded on, docker not
+  answering or the cache unreadable, an "unknown" line, which keeps the unit in place as well):
   the new unit waits in `~/.config/qwen38/pending/`, what it lacks beside it, and the unit in place serves the release
   it served, at the lane's next boot too (a unit rewritten onto an image not pulled had docker pull it at boot, and onto
   a checkpoint not fetched, the lane did not start);
@@ -20,8 +22,11 @@ update writes the code, the units and the configs, and everything large waits fo
   lane: the 27B's by `apply_pending` (`prepare-lane.sh` prepares what the waiting unit reads, then the unit goes in
   through the fixed staging path its exact sudoers line allows, and its switch fetches the target the Load asks for),
   the flash lane's launch script the same way with no sudo, and a lane beside them by its own switch, which renders
-  its new unit, fetches its checkpoint and clears the wait. A waiting unit records the unit in place it was rendered
-  against: a switch since makes it stale, and it is dropped rather than put over that switch;
+  its new unit (the video and MiniMax-H3-Image lanes: the one their update left waiting), fetches what it reads and
+  clears the wait. `apply_pending` puts a waiting unit in place only when the box has all it reads, its checkpoint
+  included. A waiting unit records the unit in place it was rendered against: a switch since makes it stale, said
+  before the Load (the lane's card marks it and proposes no Load that would download then drop it), cleared by the
+  switch that made it so, and dropped rather than put over that switch;
 - a box that boots a side lane is covered too, a lane whose unit lacks what it
   reads (a checkpoint deleted from Library) gets its units only, and the Kolibri and Nemotron units, which name their
   model first on its line, and the image and video lanes, which name their cache in their environment, are read whole; a boot lane
