@@ -135,7 +135,22 @@ const feedTime = ts => {
   const n = new Date(), today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
   return ts.slice(0, 10) === today ? ts.slice(11, 19) : `${ts.slice(8, 10)}/${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
 };
+// The engine is read every 1 s and the proxy's journal every 5 s, so a request relayed by the
+// proxy is counted by the engine up to 5 s before its line reaches the table: meanwhile the gap
+// between the two counts is NOT "direct" (review 2026-11-19, D1). The gap is remembered across
+// engine reads, and "direct" is said only once a journal read landed with the gap already there
+// and did not absorb it, over several engine reads, with the journal source fresh.
+let gapReads = 0, gapOutlivedFeed = false;
+const engineCount = () => !F.noEngine && F.load && F.load.num_reqs != null
+  ? runningReqs(F.load) + waitingReqs(F.load) : null;
+on('engine_fast', () => {
+  const eng = engineCount();
+  const inflight = (F.feedRows || []).filter(r => r.outcome === 'in flight').length;
+  if (eng != null && eng > inflight) gapReads += 1;
+  else { gapReads = 0; gapOutlivedFeed = false; }
+});
 on('feed', d => {
+  if (gapReads > 0) gapOutlivedFeed = true;   // the journal refreshed with the gap already there
   const tb = $('feed').tBodies[0]; clear(tb);
   const rows = (d.rows || []).slice().reverse();
   F.feedRows = rows;
@@ -171,7 +186,7 @@ on('transcribe', d => { F.transcribe = d; renderTraffic(); });
 function renderTraffic(){
   const rows = F.feedRows || [];
   const inflight = rows.filter(r => r.outcome === 'in flight').length;
-  const eng = !F.noEngine && F.load && F.load.num_reqs != null ? runningReqs(F.load) + waitingReqs(F.load) : null;
+  const eng = engineCount();
   const tr = F.transcribe || {};
   const trN = tr.serving && tr.read === true ? (tr.running || 0) + (tr.waiting || 0) : 0;
   const shown = (eng == null ? inflight : Math.max(eng, inflight)) + trN;
@@ -181,7 +196,12 @@ function renderTraffic(){
                                   inflight ? `${inflight} relayed by the proxy on :30001` : null,
                                   trN ? `${trN} on the NVIDIA Nemotron Transcribe lane, on :${tr.port}` : null]
                                  .filter(Boolean).join('; ');
-  const direct = eng == null ? 0 : Math.max(0, eng - inflight);
+  // "direct" only when the gap outlived a journal read (gapOutlivedFeed), over several engine
+  // reads, with the journal source fresh (its tier is 5 s): never while it may just not have
+  // been read yet
+  const feedAge = lastAges.feed;
+  const direct = eng == null ? 0
+    : (gapOutlivedFeed && gapReads >= 2 && feedAge != null && feedAge <= 6 ? Math.max(0, eng - inflight) : 0);
   let c = $('feed-empty');
   if (!rows.length && !c){
     const er = $('feed').tBodies[0].insertRow(); er.className = 'empty';

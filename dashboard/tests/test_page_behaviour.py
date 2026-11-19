@@ -1960,11 +1960,16 @@ class TheTrafficBadgeCountsEveryRequestInFlight(unittest.TestCase):
 class TheEngineCountsWhatTheProxyDidNotRelay(unittest.TestCase):
     """A client that talks to the engine on :30000 directly (a vllm bench serve) is counted by the
     engine's load (tr-run/tr-wait, read every second) and never appears in the Requests table,
-    whose only source is the proxy's journal: the table kept saying \"No request has gone through
-    the proxy yet\" and the badge stayed dark while requests ran (review 2026-11-19)."""
+    whose only source is the proxy's journal, read every 5 s: the table kept saying \"No request
+    has gone through the proxy yet\" and the badge stayed dark while requests ran (review
+    2026-11-19). The engine and the journal are read at different paces, so the gap between the
+    two counts is said \"direct\" only once it outlived a journal read: never while the journal
+    may simply not have been read yet (review 2026-11-19, D1)."""
 
     SERVES = r"""
     feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+    feed({feed: {rows: []}});
+    feed({engine_fast: {load: [{num_reqs: 12, num_waiting_reqs: 4, num_tokens: 1000, num_used_tokens: 10}]}});
     feed({engine_fast: {load: [{num_reqs: 12, num_waiting_reqs: 4, num_tokens: 1000, num_used_tokens: 10}]}});
     """
 
@@ -1989,6 +1994,43 @@ class TheEngineCountsWhatTheProxyDidNotRelay(unittest.TestCase):
         self.assertEqual(r["badge"], "12", r)
         self.assertTrue(r["shown"], r)
         self.assertIn("11 of the 12 in flight on the engine were sent to :30000 directly, not through the proxy", r["note"])
+
+    def test_a_proxy_request_not_yet_in_the_journal_is_not_said_direct(self):
+        """Replayed (review 2026-11-19, D1): the engine counts a proxy-relayed request at once,
+        its line reaches the table at the next journal read, up to 5 s later. Between the two,
+        nothing may be said \"direct\"; the badge still counts the request."""
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        feed({feed: {rows: []}});
+        feed({engine_fast: {load: [{num_reqs: 1, num_waiting_reqs: 0}]}});
+        feed({engine_fast: {load: [{num_reqs: 1, num_waiting_reqs: 0}]}});
+        const before = {empty: txt('feed-empty'), note: txt('feed-note'), badge: txt('bdg-traffic')};
+        feed({feed: {rows: [{ts: '2026-11-19T21:00:00', peer: '127.0.0.1:50001', path: '/v1/chat/completions', bytes: 900,
+                             secs: null, age: 3.0, kind: 'live', outcome: 'in flight', detail: null}]}});
+        report({before, after: {empty: txt('feed-empty'), note: txt('feed-note'), badge: txt('bdg-traffic')}});
+        """)
+        for phase in (r["before"], r["after"]):
+            self.assertNotIn("directly", phase["empty"] or "", phase)
+            self.assertNotIn("directly", phase["note"] or "", phase)
+        self.assertEqual(r["before"]["badge"], "1", "the badge counts the request, only the claim waits")
+        self.assertEqual(r["after"]["badge"], "1", r)
+
+    def test_direct_is_said_once_the_gap_outlived_a_journal_read(self):
+        """The real direct case: the engine counts requests on every read, and a journal read
+        lands while the gap is already there and does not absorb it, so they never went through
+        the proxy. Before that journal read, nothing is said."""
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        feed({feed: {rows: []}});
+        feed({engine_fast: {load: [{num_reqs: 2, num_waiting_reqs: 0}]}});
+        feed({engine_fast: {load: [{num_reqs: 2, num_waiting_reqs: 0}]}});
+        const early = txt('feed-empty');
+        feed({feed: {rows: []}});
+        report({early, empty: txt('feed-empty'), badge: txt('bdg-traffic')});
+        """)
+        self.assertNotIn("directly", r["early"], "no journal read has landed since the gap began")
+        self.assertIn("2 requests are running on the engine, sent to :30000 directly, not through the proxy", r["empty"])
+        self.assertEqual(r["badge"], "2", r)
 
     def test_an_engine_that_said_nothing_keeps_the_old_message_and_a_dark_badge(self):
         r = run(self, r"""

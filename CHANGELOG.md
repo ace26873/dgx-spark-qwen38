@@ -77,7 +77,7 @@ details are not in this table", the badge follows the engine's count and its too
 that has not answered counts nothing. The NVIDIA Nemotron Transcribe lane's in-flight requests are now read on its
 own port while it serves (llama.cpp's `/metrics`, `requests_processing` and `requests_deferred`, with the box's key
 in the header, read by the cockpit server and never sent to the browser; the payload carries the counts and the port
-only) and shown beside the table with their port, counted in the badge.
+only) and shown beside the table with their port, counted in the badge. **The "sent directly" note now waits for the journal's own pace.** The engine is read every second and the proxy's journal every 5 s, so a request relayed by the proxy is counted by the engine up to 5 s before its line reaches the Requests table, and the gap between the two counts was read as "sent to :30000 directly" in the meantime: the note blinked on every new request. It is now said only when the gap outlived a journal read (a read of the proxy's journal landed while the gap was already there and did not absorb it), across several engine reads, and with the journal source fresh, so it is never wrong; the badge still counts every request in flight meanwhile.
 
 ## v1.53.1 (2026-11-19): what the blind reviews of v1.52.0 left, rare in normal use
 
