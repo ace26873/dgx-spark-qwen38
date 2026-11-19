@@ -1399,6 +1399,15 @@ function renderBanners(state, errors){
       + (kept ? `, and keeps ${kept === 1 ? 'one setting' : kept + ' settings'} of yours` : '') + '. Settings lists each difference, and the variable that keeps it.');
   }
   if ((upd.stale_code || []).length && !run) add('warn', 'This cockpit runs older code than the files on disk.', `${upd.stale_code.join(', ')} changed under it. Restart it:`, 'sudo systemctl restart qwen38-dashboard.service');
+  // An update staged a new unit that waits for its lane's Load (decision 1408): until then the lane
+  // serves the release it served, and the only trace on the main screen was the Lanes tab's small
+  // badge, invisible on a phone with the rail closed (review of v1.53.0, 2026-11-19). A wait marked
+  // stale is dropped by its Load, not applied, so it gets no banner.
+  if (!run) Object.entries(F.pending || {}).forEach(([unit, lacks]) => {
+    if ((lacks[0] || '').startsWith('stale:')) return;
+    add('orange', `An update waits for the ${LANE_NAME[unit] || unit} lane's Load.`,
+      `Until its Load the lane serves the release it served. Load it from its card in Lanes${lacks.length ? `, which downloads ${lacks.join('; ')} first` : ''}.`);
+  });
   const ocf = F.ocfit;
   // A Load writes the lane's nominal pair before its engine has a pool, and the cockpit lowers
   // it once the engine is ready: while its own fit runs, or waits for the engine to finish

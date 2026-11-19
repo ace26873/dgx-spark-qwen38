@@ -3,6 +3,7 @@
 lane keeps serving the release it served, its card says an update waits and what its Load downloads, the Lanes view's
 badge is orange, and its Load prepares what the waiting unit lacks, puts that unit in place, then restarts the lane.
 Same harness as test_page_behaviour.py."""
+import json
 import pathlib
 import sys
 import unittest
@@ -30,6 +31,40 @@ def page(test, pending):
     askJourney('stock');
     report(Object.assign(out, {open: !$('scrim').hidden, steps: [...$('sh-journey').children].map(li => li.textContent)}));
     """ % (("{'qwen38-sglang.service': %s}" % __import__("json").dumps(LACKS)) if pending else "{}"))
+
+
+class TheWaitingUpdateIsABanner(unittest.TestCase):
+    """An update that waits for a lane's Load was visible only as the Lanes tab's small badge:
+    nothing on the main screen, and on a phone the closed rail hides even that (review of v1.53.0,
+    2026-11-19, finding 7)."""
+
+    STALE = ["stale: the unit in place changed since this update waited (a switch); it is dropped, ./install.sh writes it again"]
+
+    def banners(self, pending):
+        return run(self, r"""
+        const units = JSON.parse(JSON.stringify(UNITS));
+        units.units['qwen38-sglang.service'] = {active: 'active', enabled: 'enabled'};
+        const now = Date.now() / 1000;
+        apply({config: {data: CONFIG, ts: now}, units: {data: units, ts: now},
+               update: {data: {installed: 'v1.53.0'}, ts: now},
+               pending: {data: %s, ts: now},
+               lifecycle: {data: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}), ts: now}});
+        report(txt('banners'));
+        """ % json.dumps(pending))
+
+    def test_a_waiting_update_is_an_orange_banner_naming_the_lane(self):
+        r = self.banners({'qwen38-sglang.service': LACKS})
+        self.assertIn("An update waits for the Qwen3.8 27B lane's Load", r)
+        self.assertIn("Load it from its card in Lanes", r)
+        self.assertIn("; ".join(LACKS), r)
+
+    def test_a_stale_wait_is_dropped_not_applied_so_no_banner(self):
+        r = self.banners({'qwen38-sglang.service': self.STALE})
+        self.assertNotIn("An update waits", r)
+
+    def test_nothing_waiting_no_banner(self):
+        self.assertNotIn("An update waits", self.banners({}))
+
 
 
 class AnUpdateWaitsForItsLoad(unittest.TestCase):
