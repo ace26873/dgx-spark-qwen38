@@ -256,6 +256,7 @@ on('gpu', d => {
     const a = tr.insertCell(); a.className = 'r num'; a.textContent = p.pid; const b = tr.insertCell(); b.className = 'r num'; b.textContent = p.mem; });
   if (!tb.rows.length){ const tr = tb.insertRow(); tr.className = 'empty'; const c = tr.insertCell(); c.colSpan = 3;
     c.textContent = Array.isArray(d.procs) ? 'No process on the GPU.' : 'No reading: nvidia-smi did not answer.'; }
+  labelCells($('gpu-procs'));
 });
 on('kernel', d => { const n = d.nvrm_oom_1h;
   setText('dk-nvrm', n == null ? 'n/a (the kernel log did not answer)' : n ? `${n}, the last at ${(d.nvrm_last || '').slice(11, 19)}` : 'none'); });

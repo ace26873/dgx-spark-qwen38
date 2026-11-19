@@ -453,6 +453,26 @@ class CopyATestIsOfferedOnlyWhenAModelIsKnown(unittest.TestCase):
         self.assertIn("$(cat /home/u/.config/qwen38/api-key)", r["copied"])
 
 
+class TheGpuProcsTableStacksOnAPhone(unittest.TestCase):
+    """The Machine view's GPU processes table kept its three columns on a phone, where every other
+    table of the page becomes cards or scrolls (review of v1.53.0, 2026-11-19): it had neither
+    .stack nor a .scroll-x, and its cells carried no column name. (The Traffic view's orphan table
+    is another task's, feat/traffic-hors-proxy.)"""
+
+    def test_it_carries_the_stack_class(self):
+        r = run(self, r"""report($('gpu-procs').className);""")
+        self.assertIn("stack", r.split())
+
+    def test_its_cells_carry_their_column_names(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({}),
+              gpu: {procs: [{pid: 42, mem: '1024 MiB', name: 'sglang'}]}});
+        report([...$('gpu-procs').tBodies[0].rows[0].cells].map(c => c.dataset.label || null));
+        """)
+        self.assertEqual(r, ["Process", "PID", "Memory"])
+
+
+
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and
     the page kept its last success on screen as "ok, 0.4 s (skipped this round: busy)"."""
