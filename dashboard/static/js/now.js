@@ -213,6 +213,9 @@ function renderServing(){
   const l = F.load || {};
   if ((st === 'ready' || st === 'degraded') && unit === VIDEO_UNIT) sub = VID_NOW.label || 'idle, one video at a time';
   else if ((st === 'ready' || st === 'degraded') && isImageLane(unit)) sub = IMG_NOW.label || 'idle, one image at a time';
+  // the transcribe lane serves no text: no load and no KV pool are read for it, only its own port
+  // (its unit's Conflicts= keep it beside no text lane, so the text port is closed) (review of v1.53.0, 2026-11-19)
+  else if ((st === 'ready' || st === 'degraded') && unit === TRANSCRIBE_UNIT) sub = 'speech to text, on its own port' + (e.elapsed ? `, up ${fmtDur(e.elapsed)}` : '');
   else if (st === 'ready' || st === 'degraded') sub = (loadWords(l) || 'idle') + (F.pool ? `, KV pool ${Math.round(100 * physTokens(l) / F.pool)} %` : '') + (e.elapsed ? `, up ${fmtDur(e.elapsed)}` : '');
   else if (TRANSITIONAL.has(st)){ const eta = e.eta || READY_DEFAULT[unit]; sub = `${fmtDur(e.elapsed)} elapsed` + (eta && e.elapsed ? `, about ${fmtDur(Math.max(0, eta - e.elapsed))} left` : ''); }
   else if (st === 'stopping') sub = `${e.state_elapsed != null ? fmtDur(e.state_elapsed) : ''} elapsed`;
@@ -339,6 +342,17 @@ function renderActivity(){
     facts(fx, [['Up', e.elapsed ? fmtDur(e.elapsed) : null],
                ['Listens on', `127.0.0.1:${imgNowPort(unit)}, behind this cockpit`]]);
     imgPortAsk(unit);
+    return;
+  }
+  if (unit === TRANSCRIBE_UNIT){
+    // no text engine on this lane: nothing of SGLang's load is read for it, so no request count and no
+    // KV pool here, only where it answers (its port, from the api collector) and how long it is up
+    const tr = (API.d && API.d.transcribe) || {};
+    setText('act-title', 'Speech to text');
+    setText('act-v', 'on its own port');
+    setText('act-k', 'the proxy on :30001 is a text client and does not relay it');
+    facts(fx, [['Listens on', tr.base || 'http://127.0.0.1:30036', 'wrap'], ['Up', e.elapsed ? fmtDur(e.elapsed) : null]]);
+    SERIES.act = []; drawSpark($('act-spark'), 'act', cssVar('--brand'), 4, {empty: 'not counted on this page'});
     return;
   }
   // a text lane

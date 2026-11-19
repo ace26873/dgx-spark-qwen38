@@ -396,6 +396,43 @@ class TheTranscribeLaneServesNoText(unittest.TestCase):
         self.assertEqual(r, "qwen38-transcribe")
 
 
+class TheTranscribeLaneOnNow(unittest.TestCase):
+    """The lane that serves speech to text was treated as a text lane by the Now view: the capsule
+    said ready while the Activity panel said "Requests: 0, nothing running" and "KV pool held:
+    waiting for the engine", and nothing on the screen showed the lane transcribing (review of
+    v1.53.0, 2026-11-19, finding 1). The engine reads stay on the text port, which this lane's
+    Conflicts= close: its own port is the one to show."""
+
+    SERVES = r"""
+    const U = JSON.parse(JSON.stringify(UNITS));
+    U.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
+    U.units['qwen38-transcribe.service'] = {active: 'active', enabled: 'enabled'};
+    const api = {known: true, port: 30001, bind: '127.0.0.1', tls: false, client_keys: false,
+                 key_file: '/home/u/.config/qwen38/box.key', addresses: [],
+                 transcribe: {installed: true, base: 'http://127.0.0.1:30036', port: 30036}};
+    feed({config: CONFIG, units: U, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})}),
+          api: api, engine_info: {served_target: 'transcribe', info: {served_model_name: ''}}});
+    """
+
+    def test_the_activity_panel_says_speech_to_text_and_where_it_listens(self):
+        r = run(self, self.SERVES + r"""
+        report({title: txt('act-title'), v: txt('act-v'), k: txt('act-k'), facts: txt('act-facts')});
+        """)
+        self.assertEqual(r["title"], "Speech to text")
+        self.assertEqual(r["v"], "on its own port")
+        self.assertIn("does not relay it", r["k"])
+        self.assertIn("http://127.0.0.1:30036", r["facts"])
+        self.assertNotIn("waiting for the engine", r["facts"])
+        self.assertNotIn("nothing running", r["facts"])
+
+    def test_the_capsule_says_speech_to_text_not_a_kv_pool(self):
+        r = run(self, self.SERVES + r"""report(txt('serving-sub'));""")
+        self.assertIn("speech to text, on its own port", r)
+        self.assertNotIn("KV pool", r)
+        self.assertIn("up 10 min", r)
+
+
+
 class ThePoolLegendNamesNoLaneWhenNoneServes(unittest.TestCase):
     """The reservoir's legend named a "lane" segment while no lane served: its first item read
     "lane, GPU allocations: 0.0 GiB" of nothing (review of v1.53.0, 2026-11-19)."""

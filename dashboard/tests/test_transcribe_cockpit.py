@@ -9,6 +9,7 @@ milestones). The module is imported with its environment pointed at a throwaway 
 """
 import http.server
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -275,6 +276,30 @@ class ItsContainerIsInTheUnitsTable(Base):
         self.assertEqual([(o["unit"], o["container"]) for o in d["orphans"]], [(U, "qwen38-transcribe")])
         blocked = d["blocked"].get("unit:start:qwen38-sglang.service") or []
         self.assertTrue(blocked and "outside systemd" in blocked[0], blocked)
+
+
+class ItsAddressIsWhatThePageOffers(Base):
+    """The api collector carries the lane's own address (its unit's bind and port) so the page can
+    offer it while the lane serves; no key leaves the unit (review of v1.53.0, 2026-11-19)."""
+
+    def test_collect_api_carries_its_base_and_port_and_no_key(self):
+        self.ck.run = lambda argv, **kw: ""
+        d = self.ck.collect_api()
+        self.assertEqual(d["transcribe"], {"installed": True,
+                                           "base": f"http://127.0.0.1:{self.lane.server_port}",
+                                           "port": self.lane.server_port})
+        self.assertNotIn("test-key", json.dumps(d))
+
+    def test_without_its_unit_the_default_port_is_said(self):
+        self.ck.run = lambda argv, **kw: ""
+        saved = self.ck.TRANSCRIBE_UNIT_PATH
+        self.ck.TRANSCRIBE_UNIT_PATH = self.box / "no-such-unit"
+        try:
+            self.assertEqual(self.ck.collect_api()["transcribe"],
+                             {"installed": False, "base": "http://127.0.0.1:30036", "port": 30036})
+        finally:
+            self.ck.TRANSCRIBE_UNIT_PATH = saved
+
 
 
 if __name__ == "__main__":

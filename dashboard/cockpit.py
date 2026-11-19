@@ -4076,7 +4076,9 @@ def collect_api() -> dict:
     TLS and whether it takes keys of its own, read from its unit as systemd runs it (Hasan, 2026-10-18: the address
     to give a client, plain and in sight, for whoever reads nothing else). Only these four are taken from the unit,
     whose environment holds keys: nothing else of it leaves this function. The host is the page's to add, the address
-    the browser reached the cockpit by, the one that works from there."""
+    the browser reached the cockpit by, the one that works from there. The transcribe lane's own unit is read the
+    same way, for its bind and port alone: it serves no text, so while it serves the proxy's address says nothing
+    of it, and no key leaves its unit either."""
     show = run(["systemctl", "show", "qwen38-keepalive.service", "-p", "ExecStart", "-p", "Environment",
                 "-p", "EnvironmentFiles"], timeout=5) or ""
     port = re.search(r"keepalive-proxy\.py (\d+)", show)
@@ -4105,7 +4107,8 @@ def collect_api() -> dict:
     return {"node_id": "local", "known": bool(port), "port": int(port.group(1)) if port else 30001,
             "bind": env.get("PROXY_BIND") or "0.0.0.0", "tls": bool(env.get("QWEN38_TLS_CERT")),
             "client_keys": bool(env.get("QWEN38_CLIENT_KEYS_FILE")), "key_file": str(CONFIG_DIR / "api-key"),
-            "env_unread": unread, "addresses": addrs}
+            "env_unread": unread, "addresses": addrs,
+            "transcribe": {"installed": TRANSCRIBE_UNIT_PATH.exists(), "base": transcribe_base(), "port": transcribe_port()}}
 
 
 def collect_engine_table() -> dict:
