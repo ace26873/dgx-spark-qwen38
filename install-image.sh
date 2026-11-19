@@ -78,6 +78,7 @@ LANE_DIR="${IMAGE_LANE_DIR:-$(installed WorkingDirectory | tr -s /)}"; LANE_DIR=
 VENV="$LANE_DIR/venv"
 SRC="$LANE_DIR/sglang"
 WHEEL_NOTE="$LANE_DIR/sglang-wheel"   # the wheel release the venv's dependencies come from (step 3)
+SOURCE_NOTE="$LANE_DIR/sglang-source" # the SGLang commit the venv runs from (step 3), as the video and image-h3 lanes note theirs: install.sh's side_runtime_waits reads it to say a moved source waits for the lane's Load
 RUNTIME_NOTE="$LANE_DIR/runtime-changed"   # touched whenever this script changes the runtime the lane runs (step 3)
 PORT="${IMAGE_PORT:-$(unit_flag --port)}"; PORT="${PORT:-30020}"
 # The checkpoint and its revision, pinned like the rest: the revision this lane was
@@ -170,7 +171,7 @@ if [ "$ACTION" = uninstall ]; then
   # Only what this script put there: LANE_DIR can be a directory shared with other work,
   # and removing it whole took the rest with it (found in review, 2026-09-24).
   if [ -d "$LANE_DIR" ]; then
-    rm -rf "$VENV" "$SRC" "$WHEEL_NOTE"
+    rm -rf "$VENV" "$SRC" "$WHEEL_NOTE" "$SOURCE_NOTE"
     echo "runtime removed: $VENV and $SRC"
     rmdir "$LANE_DIR" 2>/dev/null || echo "kept $LANE_DIR: it holds files the image lane did not put there"
   fi
@@ -236,7 +237,7 @@ install_service(){
   # or an earlier update changed them (said nothing for the image and video lanes until found in review,
   # 2026-10-14). The runtime's dates: runtime-changed, touched at each change since v1.30, and the notes
   # of the wheel, which said the changes before.
-  LANE_FILES=("$INSTALLED" "$RUNTIME_NOTE" "$WHEEL_NOTE" "$CONFIG_DIR/engine-preflight.sh")
+  LANE_FILES=("$INSTALLED" "$RUNTIME_NOTE" "$WHEEL_NOTE" "$SOURCE_NOTE" "$CONFIG_DIR/engine-preflight.sh")
   # A serving image lane restarts to run them (Hasan, 2026-10-30, v1.40.6): about 70 s, and an image being made
   # then is lost. Its own sockets' filter came in with a unit, which a lane that kept serving never read. The
   # video lane, 12 to 15 min to boot, keeps its NOTE.
@@ -397,6 +398,10 @@ if [ "$CURRENT" != "$PIN" ]; then
 else
   echo "source already at ${PIN:0:12}"
 fi
+# the note side_runtime_waits reads (install.sh): a pin that moved waits for the lane's Load instead of
+# running the new unit on the old source at its next boot (seventh pass of the v1.52.0 reviews, 2026-11-19:
+# the video and image-h3 lanes wrote it, the image lane did not)
+[ "$(cat "$SOURCE_NOTE" 2>/dev/null)" = "$PIN" ] || printf '%s\n' "$PIN" > "$SOURCE_NOTE"
 for P in "${PATCHES[@]}"; do
   PF="$HERE/image-sglang/$P.patch"
   if git -C "$SRC" apply --reverse --check "$PF" >/dev/null 2>&1; then

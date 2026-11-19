@@ -1829,13 +1829,21 @@ side_waited(){ case "$SIDE_WAITED" in *" $1 "*) return 0 ;; esac; return 1; }  #
 # copied the unit IN PLACE into the wait and skipped the render, so the Load applied the old pin and lost the new
 # one in silence.)
 side_runtime_waits(){  # $1 lane: prints the runtime lines the lane's update lacks (nothing when it moved nowhere)
-  local inst="$REPO_DIR/install-$1.sh" dir wheel pin had unit="/etc/systemd/system/qwen38-$1.service" lacks=""
+  local inst="$REPO_DIR/install-$1.sh" dir wheel pin had unit="/etc/systemd/system/qwen38-$1.service" lacks="" _l WHEEL PIN
   case "$1" in image|image-h3|video) ;; *) return 0 ;; esac
   [ -f "$unit" ] || return 0
   dir="$(side_lane_dir "$1")"
   [ -x "$dir/venv/bin/python" ] || return 0              # not built: its first Load builds it, as before
-  wheel="$({ grep -m1 -oE '^WHEEL="\$\{[A-Z0-9_]+:-[^}]+\}"' "$inst" || true; } | sed -E 's/.*:-([^}]+)\}"/\1/')"
-  pin="$({ grep -m1 -oE '^PIN="\$\{[A-Z0-9_]+:-[0-9a-f]{40}\}"' "$inst" || true; } | sed -E 's/.*:-([0-9a-f]{40})\}"/\1/')"
+  # The wheel and the pin AS THIS RUN READS THEM (the installer's ${VAR:-default} with this environment),
+  # not the default alone: an install made with SGLANG_DIFFUSION_WHEEL=0.5.23 notes 0.5.23, and comparing
+  # the default would say the runtime moved at every update (seventh pass of the v1.52.0 reviews,
+  # 2026-11-19).
+  wheel=""; pin=""
+  _l="$(grep -m1 -E '^WHEEL="\$\{[A-Z0-9_]+:-[^}]+\}"' "$inst" || true)"
+  if [ -n "$_l" ]; then eval "$_l"; wheel="$WHEEL"; fi
+  _l="$(grep -m1 -E '^PIN="\$\{[A-Z0-9_]+:-[0-9a-f]{40}\}' "$inst" || true)"
+  if [ -n "$_l" ]; then eval "$_l"; pin="$PIN"; fi
+  unset _l WHEEL PIN
   had="$(cat "$dir/sglang-wheel" 2>/dev/null || true)"
   [ -z "$wheel" ] || [ "$had" = "$wheel" ] || lacks="runtime sglang[diffusion] $wheel (it runs $had)"
   if [ -n "$pin" ] && [ -f "$dir/sglang-source" ] && [ "$(cat "$dir/sglang-source")" != "$pin" ]; then

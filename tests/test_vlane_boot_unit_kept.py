@@ -35,19 +35,23 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
         self.installed.write_text("[Service]\nExecStart=/bin/bash -c 'exec docker run old'\n")
         self.template = self.d / "cfg" / "chat-template.jinja"
 
-    def put(self, enabled, new=None, pending_put=False):
+    def put(self, enabled, new=None, pending_put=False, installed_text=None, hf=None):
         new_unit = self.d / "new.service"
         new_unit.write_text(new or ("[Service]\nExecStart=/bin/bash -c 'exec docker run \\\n"
                                     f"  --mount type=bind,source={self.template},target=/out/t.jinja,readonly \\\n"
                                     f"  --mount type=bind,source={self.d}/cfg,target=/out/cfg,readonly new'\n"))
+        if installed_text is not None:
+            self.installed.write_text(installed_text)
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", ENABLED="1" if enabled else "0",
+                   SUDO_LOG=str(self.sudo_log), PENDING_PUT="1" if pending_put else "0")
+        if hf is not None:
+            env["HF_CACHE"] = str(hf)
         script = "\n".join([
             "set -euo pipefail", f'. "{REPO}/lanes.sh"' if pending_put else ":", f'. "{REPO}/vllm-lane.sh"',
             'die(){ echo "die: $*"; exit 1; }', 'unit_put(){ cp "$1" "$2"; echo installed; }',
             f'CONFIG_DIR="{self.d}/cfg"', f'INSTALLED="{self.installed}"', "UNIT=qwen38-x.service",
             "VLANE_SHORT=X", "SMOKE=1", f'vlane_put_unit "{new_unit}"'])
-        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
-                           env=dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", ENABLED="1" if enabled else "0",
-                                    SUDO_LOG=str(self.sudo_log), PENDING_PUT="1" if pending_put else "0"))
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30, env=env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         return r.stdout, self.installed.read_text()
 
@@ -121,6 +125,30 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
         out, installed = self.put(enabled=True, new=new)
         self.assertNotIn("NOTE", out, "the spaced source is one path: it exists now")
         self.assertIn(" new'", installed)
+
+
+    def test_an_update_waits_when_the_unit_in_place_serves_all_it_reads(self):
+        # the one decision of lanes.sh's unit_put_waits, kept: the unit in place has all it reads, so the
+        # new unit waits for the lane's Load
+        out, installed = self.put(enabled=True, pending_put=True)
+        self.assertIn("NOTE: X starts at boot", out)
+        self.assertTrue((self.d / "cfg" / "pending" / "installed.service").exists(), "the new unit waits")
+        self.assertIn("docker run old", installed)
+
+    def test_a_lane_that_cannot_serve_as_it_is_gets_the_new_unit_not_a_wait(self):
+        # the unit in place already lacks what it reads (its checkpoint is not in its cache): the new unit
+        # goes in place and the lane's Load prepares it, as lanes.sh's unit_put decides (unit_put_waits, the
+        # one reading), not a wait posed on a lane that cannot serve as it is (seventh pass of the v1.52.0
+        # reviews, 2026-11-19: the mounts branch posed the wait whatever the unit in place read)
+        hf = self.d / "hf"
+        hf.mkdir()
+        installed_text = ("[Service]\nExecStart=/bin/bash -c 'exec docker run old' "
+                          f"--model-path org/one --revision {'1' * 40}\n")
+        out, installed = self.put(enabled=True, pending_put=True, installed_text=installed_text, hf=hf)
+        self.assertIn("NOTE: X starts at boot", out)
+        self.assertIn("new'", installed, "unit_put put the new unit in place")
+        self.assertFalse((self.d / "cfg" / "pending" / "installed.service").exists(),
+                         "no wait: the lane cannot serve as it is, its Load prepares the new unit")
 
 
 if __name__ == "__main__":

@@ -104,7 +104,7 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
     lacks, one line each (side_install renders the lane's NEW unit and lets it wait, PENDING_FORCE)."""
     FN = TEXT[TEXT.index("side_runtime_waits(){"):TEXT.index("\n}\n", TEXT.index("side_runtime_waits(){")) + 3]
 
-    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True):
+    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True, env=None):
         d = pathlib.Path(tempfile.mkdtemp(prefix="runtime-waits-"))
         repo, cfg, lanes, etc = d / "repo", d / "config", d / "lanes", d / "etc"
         for x in (repo, cfg, lanes, etc):
@@ -124,7 +124,12 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
             (ldir / "sglang-source").write_text(source + "\n")
         script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"\nside_lane_dir(){{ echo "{lanes}/$1"; }}\n'
                   + self.FN.replace("/etc/systemd/system/", f"{etc}/") + f'\nside_runtime_waits {lane}\n')
+        if env:
+            for k, v in env.items():
+                os.environ[k] = v
+                self.addCleanup(os.environ.pop, k, None)
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        pathlib.Path("/tmp/dbg-inst.sh").write_text((repo / f"install-{lane}.sh").read_text())
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout, (cfg / "pending").exists()
 
@@ -137,6 +142,22 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
         self.assertEqual(self.run_fn(lane="image-h3", note="0.5.22", source="d" * 40)[0],
                          f"runtime SGLang source {'e' * 12}\n")
 
+    def test_the_image_lanes_source_note_is_read_too(self):
+        # install-image.sh writes the note like the video and image-h3 lanes do, so a moved source pin
+        # waits for the image lane's Load as for the other two (seventh pass of the v1.52.0 reviews,
+        # 2026-11-19: it wrote no note, so the move was never said)
+        self.assertEqual(self.run_fn(lane="image", note="0.5.22", source="d" * 40)[0],
+                         f"runtime SGLang source {'e' * 12}\n")
+
+    def test_an_override_in_this_runs_environment_is_the_value_compared(self):
+        # the install was made with SGLANG_DIFFUSION_WHEEL=0.5.23, the note holds 0.5.23: a run with the
+        # same environment must not say the runtime moved (the default alone would have, at every update;
+        # seventh pass of the v1.52.0 reviews, 2026-11-19)
+        out, _ = self.run_fn(note="0.5.23", env={"SGLANG_DIFFUSION_WHEEL": "0.5.23"})
+        self.assertEqual(out, "")
+        out, _ = self.run_fn(note="0.5.23", env={"SGLANG_DIFFUSION_PIN": "d" * 40}, source="d" * 40)
+        self.assertEqual(out, "")
+
     def test_nothing_moved_says_nothing(self):
         self.assertEqual(self.run_fn(note="0.5.22", source="e" * 40), ("", False))
 
@@ -147,6 +168,21 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
     def test_a_wheel_and_a_source_that_moved_are_one_line_each(self):
         self.assertEqual(self.run_fn(lane="image-h3", source="d" * 40)[0],
                          f"runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\nruntime SGLang source {'e' * 12}\n")
+
+
+class TheImageLaneNotesItsSGLangSource(unittest.TestCase):
+    """install-image.sh runs its venv from a cloned SGLang source checked out at its pin; it now notes the
+    commit in sglang-source, as the video and image-h3 lanes do, so install.sh's side_runtime_waits can say
+    a moved pin waits for the lane's Load (seventh pass of the v1.52.0 reviews, 2026-11-19: no note was
+    written, the move was never said for this lane)."""
+
+    def test_the_note_is_written_at_the_checkout_and_removed_with_the_runtime(self):
+        text = (REPO / "install-image.sh").read_text()
+        self.assertIn('SOURCE_NOTE="$LANE_DIR/sglang-source"', text)
+        self.assertIn("printf '%s\\n' \"$PIN\" > \"$SOURCE_NOTE\"", text)
+        self.assertIn('rm -rf "$VENV" "$SRC" "$WHEEL_NOTE" "$SOURCE_NOTE"', text)
+        lane_files = text[text.index("LANE_FILES="):text.index("LANE_FILES=") + 220]
+        self.assertIn('"$SOURCE_NOTE"', lane_files)
 
 
 class SideInstall(unittest.TestCase):

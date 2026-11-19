@@ -217,10 +217,20 @@ vlane_put_unit(){  # $1 the rendered unit, $2... what else the lane's start read
       # says each mount it lacks as a path line (lanes.sh), so nothing is appended here again (sixth review of
       # v1.52.0, 2026-11-19, GLM 5.3: every file came out twice on the card). Nothing waited, a wait of an earlier
       # run stayed, and install.sh went on to update the lane whole (Vibe's blind review of v1.52.0, Mistral Large 4).
-      if [ "${PENDING_PUT:-0}" = 1 ]; then
-        unit_pending_put "$1" "$INSTALLED" || return 1
+      # Not an update: the boot lane keeps the unit it has (the note above says why).
+      if [ "${PENDING_PUT:-0}" != 1 ]; then
+        return 0
       fi
-      return 0
+      # An update: the wait is posed only when the unit in place has all it reads, the very decision
+      # lanes.sh's unit_put makes (unit_put_waits), not a second copy that diverges (seventh pass of the
+      # v1.52.0 reviews, 2026-11-19: a lane that cannot serve as it is got its new unit waiting, where
+      # unit_put puts it in place and its Load prepares it).
+      if unit_put_waits "$1" "$INSTALLED"; then
+        unit_pending_put "$1" "$INSTALLED" || return 1
+        return 0
+      fi
+      # the unit in place lacks what it reads too: it has nothing to keep, the new unit goes in place below
+      # (unit_put), and the lane's Load prepares what it reads
     fi
   fi
   local put
