@@ -1467,6 +1467,21 @@ class TheTranscribeRelay(Base):
         self.assertEqual(st, 400)
         self.assertIn("WAV", json.loads(data)["refused"]["detail"])
 
+    def test_a_lane_401_is_a_lane_error_not_a_session_expiry(self):
+        # the lane answers 401 when its key is not the box's (its key file changed while it runs):
+        # the page reads any 401 as an expired session and sends the user to the login, so the
+        # relay dresses it as a lane error (502) that says what happened
+        cookie = self.login()
+        self.with_lane(FakeLane(error=self.cp.urllib.error.HTTPError(
+            CLOSED + "/v1/audio/transcriptions", 401, "x", {},
+            __import__("io").BytesIO(b'{"detail": "invalid api key"}'))))
+        st, _, data = self.post_tr({"audio": self.AUDIO}, cookie)
+        self.assertEqual(st, 502, f"a lane 401 leaked as a session expiry: {st} {data}")
+        out = json.loads(data)
+        self.assertIn("key", out["error"])
+        self.assertIn("401", out["error"])
+        self.assertNotIn(API_KEY, data.decode(), "the box key came back to the browser")
+
     def test_a_lane_that_does_not_answer_says_how_to_start_it(self):
         cookie = self.login()
         self.with_lane(FakeLane(error=OSError("connection refused")))

@@ -93,7 +93,9 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
   two or three letter code or empty to detect it, since the lane's server puts it in its prompt.
   The data URL's MIME is checked against the list the lane reads (wav, mp3, flac, the same list the
   page has) before anything is forwarded, so a CRLF in it cannot inject headers into the multipart
-  sent to the lane, and the file name is reduced to plain characters for the same reason.
+  sent to the lane, and the file name is reduced to plain characters for the same reason. A 401 from
+  the lane (its key file changed while it runs) is answered as a 502 that says the key, not passed
+  through: the page reads any 401 as an expired session and would sign the user out.
 - **What the lane accepts and answers, read out of its server at its pinned revision (llama.cpp
   b12316, commit 5d4c8eeb24db), not assumed.** It reads **wav, mp3 and flac** (`tools/mtmd/mtmd-helper.cpp`
   sniffs RIFF/WAVE, ID3 or a MPEG sync word, fLaC, and decodes with miniaudio); anything else is

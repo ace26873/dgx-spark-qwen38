@@ -1507,6 +1507,14 @@ def transcribe_call(payload: dict) -> tuple[int, dict]:
                 detail = json.loads(raw_err.decode())
             except Exception:                       # noqa: BLE001
                 detail = raw_err[:400].decode("utf-8", "replace")
+            if e.code == 401:
+                # The lane answers 401 when its key is not this box's (its key file changed while
+                # it runs). The page reads any 401 as an expired session and sends the user to the
+                # login, so the relay dresses it as a lane error that says what happened.
+                return 502, {"error": "the transcribe lane refused this box's key (401): its key file "
+                                      "changed while it runs, restart it (Load NVIDIA Nemotron Transcribe "
+                                      "from the Lanes view, or ./switch-model.sh transcribe)",
+                             "seconds": round(time.time() - t0, 2)}
             return e.code, {"refused": detail, "seconds": round(time.time() - t0, 2)}
         except Exception as e:                      # noqa: BLE001 (isolated route)
             return 502, {"error": f"the transcribe lane did not answer ({type(e).__name__}). Load NVIDIA "
