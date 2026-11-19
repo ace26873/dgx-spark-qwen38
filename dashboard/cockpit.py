@@ -212,6 +212,7 @@ UNIT2CONT = {"qwen38-sglang.service": "qwen38-sglang",
              "qwen38-flash-local.service": "qwen38-flash-local",
              "qwen38-ornith-122b.service": "qwen38-ornith-122b",
              "qwen38-flash-unsloth.service": "qwen38-flash-unsloth",
+             "qwen38-transcribe.service": "qwen38-transcribe",
              "qwen38-lfm25.service": "qwen38-lfm25",
              "qwen38-lfm3.service": "qwen38-lfm3"}
 HISTORY_FILE_NAME = "cockpit-history.json"

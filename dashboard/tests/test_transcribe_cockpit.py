@@ -255,5 +255,27 @@ class ATextActionIsRefusedWhileItServes(Base):
         self.assertEqual(code, 202, out)
 
 
+class ItsContainerIsInTheUnitsTable(Base):
+    """UNIT2CONT is what the orphans list is built from (collect_lifecycle) and so the banner
+    (base.js reads it): without the transcribe entry, an orphan container of the lane refused every
+    other lane's Start with "remove it first, see the banner" and no banner appeared (review of
+    2026-11-19)."""
+
+    def test_the_unit_maps_to_its_container(self):
+        self.assertEqual(self.ck.UNIT2CONT[U], "qwen38-transcribe")
+
+    def test_an_orphan_of_it_is_listed_and_the_other_lanes_start_is_refused(self):
+        self.ck.run = lambda argv, **kw: (
+            "c0ffee\n" if argv[:2] == ["docker", "ps"] and "name=^qwen38-transcribe$" in argv else
+            "ActiveState=failed\nSubState=failed\nResult=timeout\nActiveEnterTimestampMonotonic=1000\n"
+            if argv[:3] == ["systemctl", "show", U] else "")
+        out = self.ck.collect_lifecycle()
+        d = out.get("data", out)
+        self.assertEqual(d["engines"][U]["state"], "orphan")
+        self.assertEqual([(o["unit"], o["container"]) for o in d["orphans"]], [(U, "qwen38-transcribe")])
+        blocked = d["blocked"].get("unit:start:qwen38-sglang.service") or []
+        self.assertTrue(blocked and "outside systemd" in blocked[0], blocked)
+
+
 if __name__ == "__main__":
     unittest.main()
