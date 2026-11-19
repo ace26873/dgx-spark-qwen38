@@ -346,7 +346,7 @@ class FetchOnly(unittest.TestCase):
         pins = box.lfm3_pins
         self.assertEqual(len(runs), 1, runs)
         self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['LFM3_REPO']} {pins['LFM3_REV']} ", runs[0])
-        # vLLM can read the tokenizer without its revision, by name: the fetch pins refs/main
+        # pinned as refs/main, as install-lfm3.sh pins it: a read by name offline finds the pinned commit
         self.assertIn(" --offline-first --refs-main pin ", runs[0])
         self.assertIn(f"--need-gb {pins['LFM3_GB']} ", runs[0])
         self.assertIn(f" {pins['LFM3_IMAGE']} ", runs[0], "in vLLM's nightly image, by digest")

@@ -1716,8 +1716,8 @@ if [ "$CHOICE" = "lfm3" ]; then
   fi
   # In the lane's own image, as the other vLLM lanes fetch theirs; --init so that a cockpit job stopped past its
   # timeout stops this too. ckpt-fetch.py is the one fetch of every lane's checkpoint (it says why). Pinned as
-  # refs/main: the unit runs with HF_HUB_OFFLINE=1 and vLLM can read the tokenizer without its revision, by name,
-  # through refs/main, which a download by commit never writes.
+  # refs/main, as install-lfm3.sh pins it: the unit runs with HF_HUB_OFFLINE=1, and a read of the repo by its name
+  # then finds the pinned commit. None is known in this image (vLLM reads the tokenizer at --revision).
   docker run --rm --init --network host --user "$(id -u):$(id -g)" --entrypoint python3 \
     -e HF_HOME=/hf -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_DISABLE_XET=1 \
     -e HF_HUB_DISABLE_PROGRESS_BARS="$DL_NO_BARS" \
