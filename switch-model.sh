@@ -261,6 +261,11 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
       diff "$KOL_STAGE" "$KOLIBRI_UNIT" || true   # show exactly what changes
       sudo install -m 644 "$KOL_STAGE" "$KOLIBRI_UNIT"
       [ -n "$KOL_POSE" ] && unit_pending_clear "$KOLIBRI_UNIT"
+      # a wait that stays waiting (KOL_POSE empty) keeps a .base naming the unit from before this
+      # rewrite: the next Load or switch would drop it as changed since it was rendered; it names
+      # the unit in place now
+      [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" ] \
+        && sha256sum "$KOLIBRI_UNIT" | cut -d' ' -f1 > "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base"
       rm -f "$KOL_STAGE"
       sudo systemctl daemon-reload
       [ -n "$KOL_POSE" ] && echo "the update that waited for this Load is in place: $KOLIBRI_UNIT_NAME"
@@ -1172,6 +1177,11 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
       diff "$IMG_STAGE" "$IMAGE_UNIT" || true   # show exactly what changes
       sudo install -m 644 "$IMG_STAGE" "$IMAGE_UNIT"
       [ -n "$IMG_POSE" ] && unit_pending_clear "$IMAGE_UNIT"
+      # a wait that stays waiting (IMG_POSE empty) keeps a .base naming the unit from before this
+      # rewrite: the next Load or switch would drop it as changed since it was rendered; it names
+      # the unit in place now
+      [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" ] \
+        && sha256sum "$IMAGE_UNIT" | cut -d' ' -f1 > "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base"
       rm -f "$IMG_STAGE"
       sudo systemctl daemon-reload
       [ -n "$IMG_POSE" ] && echo "the update that waited for this Load is in place: $IMAGE_UNIT_NAME"

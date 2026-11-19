@@ -1281,6 +1281,146 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
                       "the image fetch reads the asked target even when a wait exists")
 
 
+class TheStaysWaitSurvivesTheNextLoad(unittest.TestCase):
+    """A wait that stays waiting (it serves the asked target but still lacks something) is kept by the
+    switch that rewrites the unit in place to the asked target. That rewrite changes the unit in place,
+    so the wait's .base (the sha of the unit it was rendered against, lanes.sh's unit_pending_put) must
+    be rewritten with it: the next Load, which poses the wait once the box has what it lacked, must not
+    read it as changed since it was rendered and drop it (blind review of v1.52.1, 2026-11-19, GLM 5.3:
+    the .base was left naming the unit from before the rewrite, and both the switch's own .base check
+    and the cockpit's pending_stale dropped the wait at the next Load). The block runs twice here
+    against the same pending folder: the switch, then the next Load's switch again, now that the box
+    has what the wait lacked."""
+
+    FP8_CUR = "r/fp8 --revision " + "e" * 40
+    NVFP4_WANT, NVFP4_REV = "r/nvfp4 --revision " + "n" * 40, "n" * 40
+
+    def kolibri_block(self):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index('  KOL_POSE=""')
+        end = text.index("  # Which lane this box served at boot", start)
+        return text[start:end]
+
+    def image_block(self):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index("  # The unit names one checkpoint; a switch between the lane's two rewrites that name and")
+        end = text.index("  # Which text lane this box served", start)
+        return text[start:end]
+
+    def run_kolibri_twice(self, pend_text, unit_text, needs1, cur1, gmu1, cur2, gmu2):
+        import hashlib
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-kol-stays-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-kolibri.service"
+        unit.write_text(unit_text)
+        pend = cfg / "pending" / "qwen38-kolibri.service"
+        pend.write_text(pend_text)
+        (cfg / "pending" / "qwen38-kolibri.service.needs").write_text(needs1)
+        (cfg / "pending" / "qwen38-kolibri.service.base").write_text(
+            hashlib.sha256(unit.read_bytes()).hexdigest() + "\n")
+        log = d / "log"
+        log.write_text("")
+        block = self.kolibri_block()
+
+        def run(needs, cur, gmu):
+            script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+KOLIBRI_UNIT="{unit}"; KOLIBRI_UNIT_NAME="qwen38-kolibri.service"
+KOL_STAGE="$CONFIG_DIR/qwen38-kolibri.service.switch-stage"
+KOL_MODEL="r/nvfp4"; KOL_REV="{self.NVFP4_REV}"
+KOL_CUR="{cur}"; KOL_CUR_GMU="{gmu}"; KOL_WANT="{self.NVFP4_WANT}"; KOL_WANT_GMU="--gpu-memory-utilization 0.95"
+NEEDS='{needs}'
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then printf '%s\\n' "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + block + f'\necho "UNIT=$(cat "{unit}")"\necho "REWRITTEN=$KOL_REWRITTEN"\n'
+            return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        r1 = run(needs1, cur1, gmu1)
+        return r1, lambda: run("", cur2, gmu2), unit, pend, cfg, log
+
+    def run_image_twice(self, pend_text, unit_text, needs1, cur1, cur2):
+        import hashlib
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-img-stays-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-image.service"
+        unit.write_text(unit_text)
+        pend = cfg / "pending" / "qwen38-image.service"
+        pend.write_text(pend_text)
+        (cfg / "pending" / "qwen38-image.service.needs").write_text(needs1)
+        (cfg / "pending" / "qwen38-image.service.base").write_text(
+            hashlib.sha256(unit.read_bytes()).hexdigest() + "\n")
+        log = d / "log"
+        log.write_text("")
+        block = self.image_block()
+
+        def run(needs, cur):
+            script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+IMAGE_UNIT="{unit}"; IMAGE_UNIT_NAME="qwen38-image.service"
+IMG_STAGE="$CONFIG_DIR/qwen38-image.service.switch-stage"
+IMG_BEFORE_TURBO="$CONFIG_DIR/image-model-before-turbo"
+IMG_CUR="{cur}"; IMG_MODEL="pin-t"; IMAGE_MODEL_PIN="pin-b"; IMAGE_TURBO_PIN="pin-t"
+NEEDS='{needs}'
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then printf '%s\\n' "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + block + f'\necho "UNIT=$(cat "{unit}")"\necho "REWRITTEN=$IMG_REWRITTEN"\n'
+            return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        r1 = run(needs1, cur1)
+        return r1, lambda: run("", cur2), unit, pend, cfg, log
+
+    def test_kolibri_a_stays_wait_is_posed_at_the_next_load_not_dropped(self):
+        import hashlib
+        pend_text = f"image qwen38-kolibri:newtag \\\n  {self.NVFP4_WANT} \\\n  --gpu-memory-utilization 0.95 \\\n"
+        unit_text = f"image qwen38-kolibri:oldtag \\\n  {self.FP8_CUR} \\\n  --gpu-memory-utilization 0.9 \\\n"
+        r1, load_again, unit, pend, cfg, log = self.run_kolibri_twice(
+            pend_text, unit_text, needs1="image qwen38-kolibri:newtag", cur1=self.FP8_CUR,
+            gmu1="--gpu-memory-utilization 0.9", cur2=self.NVFP4_WANT, gmu2="--gpu-memory-utilization 0.95")
+        self.assertEqual(r1.returncode, 0, r1.stderr)
+        self.assertIn("still lacks image qwen38-kolibri:newtag", r1.stdout)
+        self.assertIn(self.NVFP4_WANT, unit.read_text(), "the first switch rewrote the unit in place to the asked target")
+        self.assertTrue(pend.exists(), "the wait is kept by the stays-branch")
+        base = cfg / "pending" / "qwen38-kolibri.service.base"
+        self.assertEqual(base.read_text().strip(), hashlib.sha256(unit.read_bytes()).hexdigest(),
+                         "the wait's .base names the unit in place after the rewrite")
+        # the next Load: the lane's switch again, now that the box has the image the wait lacked
+        r2 = load_again()
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        self.assertIn("is in place", r2.stdout, "the wait is posed at the next Load, not dropped as changed since rendered")
+        self.assertNotIn("was dropped", r2.stdout)
+        self.assertFalse(pend.exists())
+        self.assertEqual(unit.read_text().strip(), pend_text.strip())
+
+    def test_image_a_stays_wait_is_posed_at_the_next_load_not_dropped(self):
+        import hashlib
+        pend_text = "--model-path pin-t \\nExecStart=venv/bin/python serve.py\\n"
+        unit_text = "--model-path pin-a \\nother\\n"
+        r1, load_again, unit, pend, cfg, log = self.run_image_twice(pend_text, unit_text, needs1="path /venv/bin/python",
+                                                                    cur1="pin-a", cur2="pin-t")
+        self.assertEqual(r1.returncode, 0, r1.stderr)
+        self.assertIn("still lacks path /venv/bin/python", r1.stdout)
+        self.assertIn("--model-path pin-t ", unit.read_text(), "the first switch rewrote the unit in place")
+        self.assertTrue(pend.exists(), "the wait is kept by the stays-branch")
+        base = cfg / "pending" / "qwen38-image.service.base"
+        self.assertEqual(base.read_text().strip(), hashlib.sha256(unit.read_bytes()).hexdigest(),
+                         "the wait's .base names the unit in place after the rewrite")
+        # the next Load: the lane's switch again, now that the box has the runtime the wait lacked
+        r2 = load_again()
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        self.assertIn("is in place", r2.stdout, "the wait is posed at the next Load, not dropped as changed since rendered")
+        self.assertNotIn("was dropped", r2.stdout)
+        self.assertFalse(pend.exists())
+        self.assertEqual(unit.read_text().strip(), pend_text.strip())
+
+
 class TheSwitchReadsTheWaitingUnitsCache(unittest.TestCase):
     """The image, video and MiniMax-H3-Image switches fetch what the unit that waits reads, so the cache
     they fetch into is read from that same unit (IMG_SRC/VID_SRC/H3_SRC), not from the one in place: a cache

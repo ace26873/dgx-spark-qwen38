@@ -21,8 +21,9 @@ line), then rewritten like any unit in place, and a wait that still lacks stays 
 that rewrite. And a switch to the other target of a lane whose wait serves the asked one but still lacks
 something (Kolibri's `KOL_STAYS`, the image lane's `IMG_STAYS`) rewrote nothing while printing "Switch queued" for
 a target the unit in place did not serve; the unit in place is now rewritten to the asked target or checkpoint,
-whose checkpoint the switch just fetched, and the wait is kept, cleared only when it was posed. Each new test
-fails on the code before.
+whose checkpoint the switch just fetched, and the wait is kept, with its `.base` rewritten to the unit in place
+now (before, the next Load read that `.base` as changed since the wait was rendered and dropped it), cleared
+only when it was posed. Each new test fails on the code before.
 
 **The "to check" of the sixth review, each verified in the code.** Three held and were fixed with tests: a vLLM
 boot lane whose new unit mounts a file not written yet posed its wait whatever the unit in place read, where
