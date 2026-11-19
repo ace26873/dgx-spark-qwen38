@@ -1007,7 +1007,13 @@ class TheKolibriAndNemotronSwitchAppliesTheWaitingUnit(unittest.TestCase):
         end = text.index("  # Which lane this box served at boot", start)
         return text[start:end]
 
-    def run_block(self, marker, unit_name, stage_var, unit_var, pending_text="new unit\n", base=None, needs="", same=False):
+    def run_block(self, marker, unit_name, stage_var, unit_var, pending_text="new unit\n", base=None, needs="", same=False,
+                  wellformed=False):
+        e = "e" * 40
+        # a waiting unit as install.sh renders it (the pose revalidates the fields it reads back)
+        nem_want = (f"r/old --revision {e}", "--gpu-memory-utilization 0.9", "--speculative-config.model d/old",
+                    f"--speculative-config.revision {e}", "--max-num-seqs 8", f"models--r--old/snapshots/{e}/") \
+            if wellformed else ("", "", "", "", "", "")
         d = pathlib.Path(tempfile.mkdtemp(prefix=f"switch-{unit_name}-"))
         cfg, etc = d / "config", d / "etc"
         (cfg / "pending").mkdir(parents=True)
@@ -1031,10 +1037,12 @@ CHOICE="nemotron"
 NEMOTRON_UNIT="{unit}"; NEMOTRON_SUPER_UNIT="{unit}"
 {stage_var}="$CONFIG_DIR/{unit_name}.switch-stage"
 KOL_CUR=""; KOL_WANT=""; KOL_CUR_GMU=""; KOL_WANT_GMU=""
-NEM_CUR=""; NEM_WANT=""; NEM_CUR_GMU=""; NEM_WANT_GMU=""; NEM_CUR_D=""; NEM_WANT_D=""
-NEM_CUR_DREV=""; NEM_WANT_DREV=""; NEM_CUR_SEQS=""; NEM_WANT_SEQS=""
+NEM_CUR=""; NEM_WANT="{nem_want[0]}"; NEM_CUR_GMU=""; NEM_WANT_GMU="{nem_want[1]}"; NEM_CUR_D=""; NEM_WANT_D="{nem_want[2]}"
+NEM_CUR_DREV=""; NEM_WANT_DREV="{nem_want[3]}"; NEM_CUR_SEQS=""; NEM_WANT_SEQS="{nem_want[4]}"; NEM_WANT_SNAP="{nem_want[5]}"
+NEM_TITLE="Nemotron"; NEM_INSTALLER=install-nemotron.sh; NEM_NEEDS_SNAP=0; NEM_SEQS=""
 NEM_LANE_STAGE="${stage_var}"
 NEEDS='{needs}'
+die(){{ echo "DIE: $*" >&2; exit 1; }}
 sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
 unit_needs(){{ if [ -n "$NEEDS" ]; then echo "$NEEDS"; fi; }}
 unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
@@ -1064,12 +1072,16 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertFalse(pend.exists())
 
     def test_nemotron_the_waiting_unit_goes_in_place_and_the_wait_is_cleared(self):
+        e = "e" * 40
+        pend_text = (f"image qwen38-nemotron:vllm-nightly-99999-b12x1.6.0-new \\\\\n  r/old --revision {e} \\\\\n"
+                     f"  --gpu-memory-utilization 0.9 \\\\\n  --speculative-config.model d/old \\\\\n"
+                     f"  --speculative-config.revision {e} \\\\\n  --max-num-seqs 8\n")
         r, unit, pend, cfg, log = self.run_block('  NEM_REWRITTEN=""', "qwen38-nemotron.service",
                                                  "NEM_STAGE", "NEM_UNIT",
-                                                 pending_text="image qwen38-nemotron:vllm-nightly-99999-b12x1.6.0-new\n")
+                                                 pending_text=pend_text, wellformed=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("is in place", r.stdout)
-        self.assertEqual(unit.read_text(), "image qwen38-nemotron:vllm-nightly-99999-b12x1.6.0-new\n")
+        self.assertEqual(unit.read_text(), pend_text)
         self.assertIn(f'sudo install -m 644 {cfg}/qwen38-nemotron.service.switch-stage {unit}', log.read_text())
         self.assertIn(f"clear {unit}", log.read_text())
         self.assertFalse(pend.exists())
@@ -1592,6 +1604,19 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
         self.assertIn("still lacks image qwen38-nemotron:newtag", r.stdout)
         self.assertIn(f"r/new --revision {self.NEW}", r.stdout, "the unit in place serves the asked revision")
         self.assertTrue(pend.exists(), "the wait is kept, not cleared")
+    def test_a_malformed_waiting_unit_dies_before_the_wait_is_cleared(self):
+        # blind review of v1.52.1 (2026-11-19, GLM 5.3): the pose cleared the wait BEFORE the rewrite
+        # to the asked revision, and the fields read back from the posed unit were not revalidated:
+        # a malformed waiting unit (no memory share) died in the rewrite with the wait already gone,
+        # and the lane served the wait's revision while the operator read the asked one queued
+        pend_text = (f"image qwen38-nemotron:newtag \\\\\n  r/old --revision {self.OLD} \\\\\n"
+                     f"  --speculative-config.model d/old \\\\\n"
+                     f"  --speculative-config.revision {self.OLD} \\\\\n  --max-num-seqs 8\n")
+        r, unit, pend, cfg, log = self.run_block(pend_text)
+        self.assertNotEqual(r.returncode, 0, "the malformed posed unit dies")
+        self.assertIn("DIE:", r.stderr)
+        self.assertTrue(pend.exists(), "the wait is kept: the rewrite died before it was applied")
+        self.assertNotIn("clear ", log.read_text(), "nothing was cleared")
 
 
 if __name__ == "__main__":

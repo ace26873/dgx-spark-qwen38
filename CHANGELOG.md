@@ -17,7 +17,10 @@ the cached checkpoint as the fetch left it. Each new test fails on the code befo
 **The switches' waits.** The Nemotron switch posed the waiting unit whole and never rewrote it to the asked
 revision, so with the pins moved since the update was rendered the lane served the wait's revision while the
 output said the asked one was queued, the fetched checkpoint unused; the wait is posed whole first (its image
-line), then rewritten like any unit in place, and a wait that still lacks stays waiting and is not cleared by
+line), then rewritten like any unit in place, and is cleared only once the posed unit is in place AND rewritten to
+the asked revision (the fields read back from the posed unit are revalidated as the ones of the unit in place were,
+so a malformed waiting unit dies with the wait kept, for the retry), and a wait that still lacks stays waiting and
+is not cleared by
 that rewrite. And a switch to the other target of a lane whose wait serves the asked one but still lacks
 something (Kolibri's `KOL_STAYS`, the image lane's `IMG_STAYS`) rewrote nothing while printing "Switch queued" for
 a target the unit in place did not serve; the unit in place is now rewritten to the asked target or checkpoint,

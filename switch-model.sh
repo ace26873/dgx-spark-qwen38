@@ -462,7 +462,8 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
   # place, and the rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3). It is then
   # rewritten to the asked revision like any unit in place: posed whole and left as it was, it would
   # serve the revision the update was rendered with, not the one this switch just fetched (seventh
-  # pass of the v1.52.0 reviews, 2026-11-19).
+  # pass of the v1.52.0 reviews, 2026-11-19). The wait is cleared only once the posed unit is in place
+  # AND rewritten to the asked revision: a rewrite that fails leaves it waiting for the retry.
   if [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME" ]; then
     if [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base" ] && [ -f "$NEM_UNIT" ] \
        && [ "$(cat "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base")" != "$(sha256sum "$NEM_UNIT" | cut -d' ' -f1)" ]; then
@@ -493,8 +494,13 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
       NEM_CUR_DREV="$(grep -m1 -oE -- "--speculative-config.revision [0-9a-f]{40}" "$NEM_UNIT" || true)"
       NEM_CUR_SEQS="$({ grep -m1 -oE -- "--max-num-seqs [0-9]+" "$NEM_UNIT" || true; })"
       NEM_CUR_REPO="${NEM_CUR%% *}"; NEM_CUR_SNAP="models--${NEM_CUR_REPO//\//--}/snapshots/${NEM_CUR##* }/"
+      # the fields read back from the posed unit are validated as the ones of the unit in place
+      # above were: a malformed waiting unit dies here, before the wait is cleared below
+      [ -n "$NEM_CUR" ] && [ -n "$NEM_CUR_GMU" ] && [ -n "$NEM_CUR_D" ] && [ -n "$NEM_CUR_DREV" ] \
+        && { [ "$NEM_NEEDS_SNAP" -eq 0 ] || grep -qF -- "$NEM_CUR_SNAP" "$NEM_UNIT"; } \
+        && { [ -z "$NEM_SEQS" ] || [ -n "$NEM_CUR_SEQS" ]; } \
+        || die "the $NEM_TITLE unit names no checkpoint, drafter or memory share where this expects it (hand-edited unit?): re-run ./$NEM_INSTALLER --no-smoke"
     fi
-    unit_pending_clear "$NEM_UNIT"
     NEM_REWRITTEN=1
   fi
   if [ "$NEM_CUR|$NEM_CUR_GMU|$NEM_CUR_D|$NEM_CUR_DREV|$NEM_CUR_SEQS" != "$NEM_WANT|$NEM_WANT_GMU|$NEM_WANT_D|$NEM_WANT_DREV|$NEM_WANT_SEQS" ]; then
@@ -515,13 +521,17 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
     # one exact command per lane, as the cockpit's sudoers allowlist names it
     if [ "$CHOICE" = "nemotron" ]; then
       sudo install -m 644 "$NEM_STAGE" "$NEMOTRON_UNIT"
-      [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_UNIT"   # its new unit is in place: the wait is applied
+      [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_UNIT"   # posed and rewritten to the asked revision: the wait is applied
     else
       sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
-      [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_SUPER_UNIT"   # its new unit is in place: the wait is applied
+      [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_SUPER_UNIT"   # posed and rewritten to the asked revision: the wait is applied
     fi
     rm -f "$NEM_LANE_STAGE"
     NEM_REWRITTEN=1
+  else
+    # posed whole and already the asked revision: the wait is applied too, now that the unit is in
+    # place; a rewrite that died above left the wait in place for the retry
+    [ -n "$NEM_POSE" ] && unit_pending_clear "$NEM_UNIT"
   fi
   # Which lane this box served at boot, written down before it is disabled: removing the
   # Nemotron lane later gives the boot back to it (its installer's --uninstall).
