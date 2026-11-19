@@ -436,7 +436,7 @@ async function loadRecipes(){
     setText('rcp-dir', d.custom_dir ? `Custom recipes live in ${d.custom_dir}.` : '');
     const inst = (d.builtin || []).concat(d.custom || []).filter(x => x.installed).map(x => x.recipe.id);
     const drift = (d.builtin || []).filter(x => x.installed && x.drift && x.drift.length).length;
-    setText('rcp-line', (inst.length ? 'Installed: ' + inst.join(', ') + '.' : 'No lane matches a recipe.') + (drift ? ` ${drift} installed lane differs from its recipe (open the difference).` : ''));
+    setText('rcp-line', (inst.length ? 'Installed: ' + inst.join(', ') + '.' : 'No installed lane has a recipe: the built-in ones cover the 27B and flash lanes.') + (drift ? ` ${drift} installed lane differs from its recipe (open the difference).` : ''));
     setText('rcp-age', 'read ' + new Date().toLocaleTimeString([], {hour12: false}));
     badge('library', drift ? `${drift} drift` : '', 'warn'); setText(b, 'Reload');
   }catch(e){ setText('rcp-line', 'Could not load the recipes: ' + e.message); setText(b, 'Retry'); }

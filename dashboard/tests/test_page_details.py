@@ -502,6 +502,26 @@ class RestartKeepsItsTooltip(unittest.TestCase):
         self.assertEqual(r[1], r[0])
 
 
+class TheRecipesPanelSaysWhatItCovers(unittest.TestCase):
+    """The Recipes panel said "No lane matches a recipe." on a box whose lane has none, reading as
+    a defect of the box where it is the panel's perimeter: the built-in recipes cover the 27B and
+    flash lanes only (recipes.py builtin(); review of v1.53.0, 2026-11-19)."""
+
+    def test_the_panel_text_names_the_two_lanes(self):
+        self.assertIn("The built-in recipes are the 27B and flash lanes'", PAGE)
+
+    def test_the_empty_line_says_the_perimeter_not_a_defect(self):
+        r = run(self, r"""
+        __fetch = async url => url.startsWith('/api/recipes') ? __response(200, {builtin: [], custom: [], custom_dir: ''}) : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({})});
+        loadRecipes(); await __settle(); await __settle(); await __settle();
+        report(txt('rcp-line'));
+        """)
+        self.assertIn("No installed lane has a recipe", r)
+        self.assertIn("27B and flash", r)
+
+
+
 class AnUnreadableOpencodeConfigSaysSo(unittest.TestCase):
     """U31: a config that does not parse read like an empty one: "none" for the default
     model, "not declared" for the limits."""
