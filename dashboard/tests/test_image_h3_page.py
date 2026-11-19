@@ -92,5 +92,29 @@ class TheViewAddressesTheLaneThatServes(unittest.TestCase):
         self.assertEqual(r, ["Load Qwen-Image", "Load MiniMax-H3-Image"])
 
 
+class TheRefusalSaysOneUnit(unittest.TestCase):
+    """The refusal of a too large H3-Image call mixed Go and Gio in one sentence: "92.3 GB for the
+    engine" beside the Qwen-Image lane's "45.5 GiB" (review of v1.53.0, 2026-11-19; the rule: Go =
+    10^9, Gio = 2^30, never mixed). The study measured a 92.3 GB peak (images-h3-flux3/BILAN.md),
+    which is 85.9 GiB, and the cost line keeps the measured figure as its source."""
+
+    def test_the_refusal_says_gib(self):
+        r = run(self, lanes(h3="ready") + r"""
+        $('img-size').value = 'custom'; imgSync(); $('img-w').value = '5024'; $('img-h').value = '3360'; $('img-prompt').value = 'x';
+        report(imgProblem());
+        """)
+        self.assertIn("85.9 GiB for the engine at its peak", r)
+        self.assertNotIn("GB for the engine", r)
+
+    def test_the_cost_line_keeps_the_measured_figure_as_its_source(self):
+        r = run(self, lanes(h3="ready") + r"""
+        $('img-prompt').value = 'x'; imgSync();
+        report(txt('img-cost-b'));
+        """)
+        self.assertIn("85.9 GiB at its peak", r)
+        self.assertIn("92.3 GB as measured", r)
+
+
+
 if __name__ == "__main__":
     unittest.main()
