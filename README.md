@@ -1005,7 +1005,9 @@ fresh box.
 ```bash
 systemctl status qwen38-sglang          # 27B server state (the 27B lane, whichever of its five targets serves)
 systemctl status qwen38-flash           # Flash-Next server state (target flash)
-systemctl status qwen38-kolibri qwen38-nemotron qwen38-nemotron-super qwen38-flash-local qwen38-ornith-122b qwen38-lfm25 qwen38-lfm3   # the vLLM text lanes
+systemctl status qwen38-lfm25           # Liquid AI LFM2.5 24B-A2B server state (SGLang)
+systemctl status qwen38-kolibri qwen38-nemotron qwen38-nemotron-super qwen38-flash-local qwen38-ornith-122b qwen38-lfm3   # the vLLM text lanes
+systemctl status qwen38-flash-unsloth qwen38-transcribe                 # the llama.cpp lanes, when installed
 systemctl status qwen38-image qwen38-video qwen38-speech                # images, video, speech, when installed
 systemctl status qwen38-keepalive       # keepalive proxy state
 systemctl status qwen38-dashboard       # cockpit state, if you installed it
