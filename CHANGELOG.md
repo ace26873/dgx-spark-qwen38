@@ -62,6 +62,14 @@ is then not known.
 box: decisions 1408 to 1410 (an update writes code, units and configs, and everything large waits for a Load or a
 Download, the lane that serves included) are v1.52.0's.
 
+**Proved on the reference box.** Before the push, the release installed from its branch, then, from the cockpit as
+its page runs it: the 27B lane stopped, its DFlash2 draft (1.55 GB) deleted from Library, its sheet's 1.55 GB planned
+and 1.55 GB more free on its disk; the cockpit then said the lane was not ready, and its Load (prepare, switch,
+start) downloaded the draft again, wrote its `refs/main` and set it for its window: its seven files byte for byte the
+same (sha256), the 27B serving again 3 min 53 after the Load began, and the eight clients (Claude Code, opencode,
+Hermes, pi, the OpenAI and Anthropic SDKs, fetch under Node and Bun, LiteLLM) OK on it. After the push, the box
+updated by the README's one-liner in 1 min 22, the eight clients OK again, and the cockpit with no banner on any view.
+
 ## v1.50.0 (2026-11-19): MiniMax-H3-Image, a second image lane
 
 **MiniMax-H3-Image, a second image lane (`image-h3`).** MiniMax's `MiniMaxAI/MiniMax-H3-Image` (@ `5f90473`), text to
