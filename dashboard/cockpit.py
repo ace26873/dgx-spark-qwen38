@@ -3423,6 +3423,14 @@ def job_apply_pending(job: Job):
                 f.unlink(missing_ok=True)
         return False, [f"{unit} changed since the update that waited for it (a switch): that update was dropped; "
                        "./install.sh writes it again"], {"ok": False}
+    if launch is not None and not launch.is_file():
+        # the flash lane's wait is its launcher's: without it there is nothing to pose (src is a copy of the
+        # unit in place, not the new launcher), so the incoherent wait is cleared and refused, and unit_needs
+        # is not run on that copy (sixth review of v1.52.0, 2026-11-19, GLM 5.3: the job said ok, posed nothing)
+        for f in (src, launch, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
+            if f is not None:
+                f.unlink(missing_ok=True)
+        return False, [f"{unit}: the launch script that waited is gone: ./install.sh writes it again"], {"ok": False}
     r = subprocess.run(["bash", "-c", 'set -u; . "$1/lanes.sh"; unit_needs "$2"', "x", str(REPO_DIR),
                         str(launch if launch and launch.is_file() else src)],
                        capture_output=True, text=True, timeout=120)

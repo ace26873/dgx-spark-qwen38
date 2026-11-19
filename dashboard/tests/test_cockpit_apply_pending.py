@@ -260,5 +260,43 @@ class ApplyPending(unittest.TestCase):
         self.assertEqual(self.calls, [], "no sudo for the user's own file")
         self.assertNotIn(flash, self.cp.pending_units())
 
+
+    def test_a_flash_wait_whose_launcher_is_gone_refuses_and_clears_without_asking_unit_needs(self):
+        # pending/qwen38-flash.service without pending/launch-flash.sh: what waits is the launcher, and src
+        # is only a copy of the unit in place, so nothing can be posed, unit_needs must not run on that copy,
+        # and the job must not report a success that posed nothing (sixth review of v1.52.0, 2026-11-19,
+        # GLM 5.3)
+        flash = "qwen38-flash.service"
+        (self.pdir / flash).write_text("[Service]\nExecStart=launch\n")
+        (self.pdir / (flash + ".needs")).write_text("image x\n")
+        launcher = self.cp.CONFIG_DIR / "launch-flash.sh"
+        launcher.write_text("#!/bin/bash\nold\n")
+        import hashlib
+        (self.pdir / (flash + ".base")).write_text(hashlib.sha256(launcher.read_bytes()).hexdigest() + "\n")
+        needs_calls = []
+        real_sp = subprocess.run
+
+        def spy_sp(argv, **kw):
+            if argv[:2] == ["bash", "-c"] and "unit_needs" in argv[2]:
+                needs_calls.append(argv[2])
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            return real_sp(argv, **kw)
+        self.cp.subprocess.run = spy_sp
+        code, body = self.cp.start_action("apply_pending", {"unit": flash})
+        self.assertEqual(code, 202, body)
+        job = self.cp.JOBS[body["job"]]
+        for _ in range(200):
+            if job.status != "running":
+                break
+            time.sleep(0.05)
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertTrue(any("the launch script that waited is gone: ./install.sh writes it again" in ln
+                            for ln in job.lines), job.lines)
+        self.assertEqual(needs_calls, [], "unit_needs ran on the copy of the unit in place")
+        self.assertEqual(launcher.read_text(), "#!/bin/bash\nold\n", "nothing was posed")
+        self.assertNotIn(flash, self.cp.pending_units(), "the incoherent wait is cleared")
+        self.assertFalse((self.pdir / flash).exists())
+        self.assertFalse((self.pdir / (flash + ".needs")).exists())
+
 if __name__ == "__main__":
     unittest.main()
