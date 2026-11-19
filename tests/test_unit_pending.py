@@ -624,10 +624,12 @@ unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(
 class TheSwitchPutsALaneBesidesNewUnit(unittest.TestCase):
     def test_each_unit_its_switch_puts_in_place_clears_what_waited(self):
         # a lane beside the text lane takes its new unit from its switch, which renders it (code review of
-        # v1.52.0); the transcribe, LFM2.5 and LFM3 lanes' switches too, since they sit on v1.52
+        # v1.52.0); the transcribe, LFM2.5 and LFM3 lanes' switches too, since they sit on v1.52; a wait that
+        # stays waiting (it still lacks something) is not cleared by the rewrite of the unit in place
         import re
         text = (REPO / "switch-model.sh").read_text()
-        puts = re.findall(r'sudo install -m 644 "\$(KOL|NEM|NSV|FLL|ORN|FLU|IMG|TRANSCRIBE|LFM25|LFM3)_STAGE" "\$([A-Z0-9_]+)"\n\s*unit_pending_clear "\$\2"', text)
+        puts = re.findall(r'sudo install -m 644 "\$(KOL|NEM|NSV|FLL|ORN|FLU|IMG|TRANSCRIBE|LFM25|LFM3)_STAGE" "\$([A-Z0-9_]+)"\n'
+                          r'\s*(?:\[ -n "\$[A-Z_]+" \] && )?unit_pending_clear "\$\2"', text)
         self.assertEqual(len(puts), 10, puts)
 
     def test_every_installer_that_puts_its_unit_itself_says_when_it_waits(self):
@@ -882,13 +884,15 @@ class ThePrepareReadsTheWaitingTarget(unittest.TestCase):
             end = text.index("  # by its name, a target given by its repo", start)
         return text[start:end]
 
-    def run_block(self, which, in_place_model, waiting_model, target=""):
+    def run_block(self, which, in_place_model, waiting_model, target="", waiting_rev=""):
         d = pathlib.Path(tempfile.mkdtemp(prefix=f"prepare-{which}-"))
         cfg = d / "config"
         (cfg / "pending").mkdir(parents=True)
         launch = cfg / ("launch-flash.sh" if which == "flash" else "qwen38-sglang.service")
         launch.write_text(f"--model-path {in_place_model}\n")
-        (cfg / "pending" / launch.name).write_text(f"--model-path {waiting_model}\n")
+        pend_line = f"--model-path {waiting_model} --revision {waiting_rev}\n" if waiting_rev \
+            else f"--model-path {waiting_model}\n"
+        (cfg / "pending" / launch.name).write_text(pend_line)
         (cfg / "pending" / "qwen38-flash.service.needs").write_text("checkpoint r/nvda@f\n")
         script = f"""
 set -euo pipefail
@@ -923,9 +927,16 @@ target_fits(){{ return 0; }}
 
     def test_flash_a_wait_for_the_asked_target_is_prepared(self):
         # the card proposes flash-nvda, the waiting launcher serves it too: what the wait reads is prepared
-        r = self.run_block("flash", "r/flash", "r/nvda", target="flash-nvda")
+        r = self.run_block("flash", "r/flash", "r/nvda", target="flash-nvda", waiting_rev="n" * 40)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(f"TARGET=flash-nvda MODEL=r/nvda REV={'n' * 40}", r.stdout)
+
+    def test_flash_a_wait_whose_revision_moved_from_the_pin_is_prepared_at_its_own(self):
+        # the pin moved since the wait was rendered (no ./install.sh re-run): the revision prepared is the
+        # waiting launcher's own --revision, not the pin's (seventh pass, 2026-11-19)
+        r = self.run_block("flash", "r/flash", "r/nvda", target="flash-nvda", waiting_rev="x" * 40)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"TARGET=flash-nvda MODEL=r/nvda REV={'x' * 40}", r.stdout)
 
     def test_flash_without_a_wait_the_card_target_is_prepared(self):
         d = pathlib.Path(tempfile.mkdtemp(prefix="prepare-flash-nopend-"))
@@ -968,11 +979,17 @@ image_as_the_switch_reads(){{ :; }}
 
     def test_27b_a_wait_for_the_asked_target_is_prepared(self):
         # the card proposes uncensored, the waiting unit serves it too: what the wait reads is prepared
-        r = self.run_block("27b", "r/stock", "r/unc27", target="uncensored")
+        r = self.run_block("27b", "r/stock", "r/unc27", target="uncensored", waiting_rev="c" * 40)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("TARGET=uncensored", r.stdout)
         self.assertIn("TREPO=r/unc27", r.stdout)
         self.assertIn(f"TREV={'c' * 40}", r.stdout)
+
+    def test_27b_a_wait_whose_revision_moved_from_the_pin_is_prepared_at_its_own(self):
+        # seventh pass, 2026-11-19: the waiting unit's --revision wins over the pin
+        r = self.run_block("27b", "r/stock", "r/unc27", target="uncensored", waiting_rev="y" * 40)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"TREV={'y' * 40}", r.stdout)
 
 
 class TheKolibriAndNemotronSwitchAppliesTheWaitingUnit(unittest.TestCase):
@@ -1324,6 +1341,97 @@ class PathsWithASpace(unittest.TestCase):
         (encdir / "te-1.safetensors").unlink()
         self.assertEqual(self.b.needs(text), [f"path {self.b.hf}/{rel}"],
                          "the quoted spaced path whole, not the fragment after the space")
+
+
+class TheNemotronSwitchRewritesTheWaitingUnitToTheAskedRevision(unittest.TestCase):
+    """Seventh pass of the v1.52.0 reviews (2026-11-19): the Nemotron switch posed the waiting unit whole
+    and never rewrote it to the asked revision (the pins moved since the update was rendered): the lane
+    served the revision the update named while the output said the asked one was queued, and the asked
+    revision's checkpoint, just fetched, went unused. The wait is posed whole first (its image line can
+    differ from the one in place), then rewritten like any unit in place. The block runs here against a
+    pending folder of the test's own."""
+
+    OLD, NEW = "e" * 40, "f" * 40
+
+    def block(self):
+        text = (REPO / "switch-model.sh").read_text()
+        start = text.index('  NEM_REWRITTEN=""')
+        end = text.index("  # Which lane this box served at boot", start)
+        return text[start:end]
+
+    def run_block(self, pending_text, unit_text="old unit\n", needs=""):
+        d = pathlib.Path(tempfile.mkdtemp(prefix="switch-nem-rev-"))
+        cfg, etc = d / "config", d / "etc"
+        (cfg / "pending").mkdir(parents=True)
+        etc.mkdir()
+        unit = etc / "qwen38-nemotron.service"
+        unit.write_text(unit_text)
+        pend = cfg / "pending" / "qwen38-nemotron.service"
+        pend.write_text(pending_text)
+        (cfg / "pending" / "qwen38-nemotron.service.needs").write_text("image qwen38-nemotron:newtag\n")
+        import hashlib
+        (cfg / "pending" / "qwen38-nemotron.service.base").write_text(
+            hashlib.sha256(unit.read_bytes()).hexdigest() + "\n")
+        log = d / "log"
+        log.write_text("")
+        script = f"""
+set -euo pipefail
+CONFIG_DIR="{cfg}"
+CHOICE="nemotron"
+NEM_UNIT="{unit}"; NEM_UNIT_NAME="qwen38-nemotron.service"
+NEMOTRON_UNIT="{unit}"; NEMOTRON_SUPER_UNIT="{unit}"
+NEM_LANE_STAGE="$CONFIG_DIR/qwen38-nemotron.service.switch-stage"
+NEM_STAGE="$NEM_LANE_STAGE"; NSV_STAGE="$NEM_LANE_STAGE"
+NEM_CUR="r/old --revision {self.OLD}"; NEM_CUR_GMU="--gpu-memory-utilization 0.9"
+NEM_CUR_D="--speculative-config.model d/old"; NEM_CUR_DREV="--speculative-config.revision {self.OLD}"
+NEM_CUR_SEQS="--max-num-seqs 8"
+NEM_CUR_REPO="r/old"; NEM_CUR_SNAP="models--r--old/snapshots/{self.OLD}/"
+NEM_WANT="r/new --revision {self.NEW}"; NEM_WANT_GMU="--gpu-memory-utilization 0.95"
+NEM_WANT_D="--speculative-config.model d/new"; NEM_WANT_DREV="--speculative-config.revision {self.NEW}"
+NEM_WANT_SEQS="--max-num-seqs 8"; NEM_WANT_SNAP="models--r--new/snapshots/{self.NEW}/"
+NEM_MODEL="r/new"; NEM_TITLE="Nemotron 3.5 Bolt"; NEM_INSTALLER=install-nemotron.sh
+NEM_NEEDS_SNAP=0; NEM_SEQS=""
+NEEDS='{needs}'
+die(){{ echo "DIE: $*" >&2; exit 1; }}
+sudo(){{ echo "sudo $*" >> "{log}"; if [ "$1" = install ]; then cp "$4" "$5"; fi; }}
+unit_needs(){{ if [ -n "$NEEDS" ]; then printf '%s\\n' "$NEEDS"; fi; }}
+unit_pending_clear(){{ echo "clear $1" >> "{log}"; rm -f "$CONFIG_DIR/pending/$(basename "$1")" "$CONFIG_DIR/pending/$(basename "$1").needs" "$CONFIG_DIR/pending/$(basename "$1").base"; }}
+""" + self.block() + f'\necho "UNIT=$(cat "{unit}")"\necho "REWRITTEN=$NEM_REWRITTEN"\n'
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+        return r, unit, pend, cfg, log
+
+    def test_the_waiting_unit_is_posed_then_rewritten_to_the_asked_revision(self):
+        pend_text = (f"image qwen38-nemotron:newtag \\\\\n  r/old --revision {self.OLD} \\\\\n"
+                     f"  --gpu-memory-utilization 0.9 \\\\\n  --speculative-config.model d/old \\\\\n"
+                     f"  --speculative-config.revision {self.OLD} \\\\\n  --max-num-seqs 8\n")
+        r, unit, pend, cfg, log = self.run_block(pend_text)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("is in place", r.stdout)
+        unit_line = unit.read_text()
+        self.assertIn("image qwen38-nemotron:newtag", unit_line)
+        self.assertIn(f"r/new --revision {self.NEW}", unit_line, "the asked revision serves, not the wait's")
+        self.assertIn("--gpu-memory-utilization 0.95", unit_line)
+        self.assertIn("--speculative-config.model d/new", unit_line)
+        self.assertNotIn(f"r/old --revision {self.OLD}", unit_line)
+        self.assertIn("REWRITTEN=1", r.stdout)
+        self.assertIn(f"clear {unit}", log.read_text())
+        self.assertFalse(pend.exists())
+
+    def test_a_wait_that_still_lacks_stays_and_the_unit_in_place_is_rewritten_to_the_asked_one(self):
+        # the wait cannot be posed (its image is not built): it stays waiting, and the unit in place is
+        # rewritten to the asked revision anyway, whose checkpoint this switch just fetched
+        pend_text = (f"image qwen38-nemotron:newtag \\\\\n  r/old --revision {self.OLD} \\\\\n"
+                     f"  --gpu-memory-utilization 0.9 \\\\\n  --speculative-config.model d/old \\\\\n"
+                     f"  --speculative-config.revision {self.OLD} \\\\\n  --max-num-seqs 8\n")
+        unit_text = (f"image qwen38-nemotron:oldtag \\\\\n  r/old --revision {self.OLD} \\\\\n"
+                     f"  --gpu-memory-utilization 0.9 \\\\\n  --speculative-config.model d/old \\\\\n"
+                     f"  --speculative-config.revision {self.OLD} \\\\\n  --max-num-seqs 8\n")
+        r, unit, pend, cfg, log = self.run_block(pend_text, unit_text=unit_text,
+                                                 needs="image qwen38-nemotron:newtag")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("still lacks image qwen38-nemotron:newtag", r.stdout)
+        self.assertIn(f"r/new --revision {self.NEW}", r.stdout, "the unit in place serves the asked revision")
+        self.assertTrue(pend.exists(), "the wait is kept, not cleared")
 
 
 if __name__ == "__main__":

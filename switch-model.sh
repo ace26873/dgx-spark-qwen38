@@ -447,9 +447,13 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
   NEM_WANT_D="--speculative-config.model $NEM_DRAFT"; NEM_WANT_DREV="--speculative-config.revision $NEM_DREV"
   NEM_WANT_SNAP="models--${NEM_MODEL//\//--}/snapshots/$NEM_REV/"
   NEM_REWRITTEN=""
-  # The update that waited for this Load (if any) goes in place whole: this lane's local image is tagged from
-  # the pins its installer pins, so a waiting unit's image line can differ from the one in place, and the
-  # rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3). Same block as the other lanes beside.
+  NEM_POSE=""
+  # The update that waited for this Load (if any) goes in place whole first: this lane's local image is
+  # tagged from the pins its installer pins, so a waiting unit's image line can differ from the one in
+  # place, and the rewrite below would lose it (review of v1.52.0, 2026-11-19, GLM 5.3). It is then
+  # rewritten to the asked revision like any unit in place: posed whole and left as it was, it would
+  # serve the revision the update was rendered with, not the one this switch just fetched (seventh
+  # pass of the v1.52.0 reviews, 2026-11-19).
   if [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME" ]; then
     if [ -f "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base" ] && [ -f "$NEM_UNIT" ] \
        && [ "$(cat "$CONFIG_DIR/pending/$NEM_UNIT_NAME.base")" != "$(sha256sum "$NEM_UNIT" | cut -d' ' -f1)" ]; then
@@ -458,22 +462,33 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
     elif [ -n "$(unit_needs "$CONFIG_DIR/pending/$NEM_UNIT_NAME")" ]; then
       echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$CONFIG_DIR/pending/$NEM_UNIT_NAME" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-$CHOICE applies it"
     else
-      if ! cmp -s "$CONFIG_DIR/pending/$NEM_UNIT_NAME" "$NEM_UNIT"; then
-        cp "$CONFIG_DIR/pending/$NEM_UNIT_NAME" "$NEM_LANE_STAGE"
-        # one exact command per lane, as the cockpit's sudoers allowlist names it
-        if [ "$CHOICE" = "nemotron" ]; then
-          sudo install -m 644 "$NEM_STAGE" "$NEMOTRON_UNIT"
-        else
-          sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
-        fi
-        rm -f "$NEM_LANE_STAGE"
-        sudo systemctl daemon-reload
-        echo "the update that waited for this Load is in place: $NEM_UNIT_NAME"
-      fi
-      unit_pending_clear "$NEM_UNIT"
-      NEM_REWRITTEN=1
+      NEM_POSE="$CONFIG_DIR/pending/$NEM_UNIT_NAME"
     fi
-  elif [ "$NEM_CUR|$NEM_CUR_GMU|$NEM_CUR_D|$NEM_CUR_DREV|$NEM_CUR_SEQS" != "$NEM_WANT|$NEM_WANT_GMU|$NEM_WANT_D|$NEM_WANT_DREV|$NEM_WANT_SEQS" ]; then
+  fi
+  if [ -n "$NEM_POSE" ]; then
+    if ! cmp -s "$NEM_POSE" "$NEM_UNIT"; then
+      cp "$NEM_POSE" "$NEM_LANE_STAGE"
+      # one exact command per lane, as the cockpit's sudoers allowlist names it
+      if [ "$CHOICE" = "nemotron" ]; then
+        sudo install -m 644 "$NEM_STAGE" "$NEMOTRON_UNIT"
+      else
+        sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
+      fi
+      rm -f "$NEM_LANE_STAGE"
+      sudo systemctl daemon-reload
+      echo "the update that waited for this Load is in place: $NEM_UNIT_NAME"
+      # read back what is in place now, for the rewrite to the asked revision below
+      NEM_CUR="$(grep -m1 -oE -- "[^ ]+ --revision [0-9a-f]{40}" "$NEM_UNIT" || true)"
+      NEM_CUR_GMU="$(grep -m1 -oE -- "--gpu-memory-utilization [0-9.]+" "$NEM_UNIT" || true)"
+      NEM_CUR_D="$(grep -m1 -oE -- "--speculative-config.model [^ ]+" "$NEM_UNIT" || true)"
+      NEM_CUR_DREV="$(grep -m1 -oE -- "--speculative-config.revision [0-9a-f]{40}" "$NEM_UNIT" || true)"
+      NEM_CUR_SEQS="$({ grep -m1 -oE -- "--max-num-seqs [0-9]+" "$NEM_UNIT" || true; })"
+      NEM_CUR_REPO="${NEM_CUR%% *}"; NEM_CUR_SNAP="models--${NEM_CUR_REPO//\//--}/snapshots/${NEM_CUR##* }/"
+    fi
+    unit_pending_clear "$NEM_UNIT"
+    NEM_REWRITTEN=1
+  fi
+  if [ "$NEM_CUR|$NEM_CUR_GMU|$NEM_CUR_D|$NEM_CUR_DREV|$NEM_CUR_SEQS" != "$NEM_WANT|$NEM_WANT_GMU|$NEM_WANT_D|$NEM_WANT_DREV|$NEM_WANT_SEQS" ]; then
     NEM_TEXT="$(cat "$NEM_UNIT")"
     NEM_TEXT="${NEM_TEXT//"$NEM_CUR"/"$NEM_WANT"}"
     NEM_TEXT="${NEM_TEXT//"$NEM_CUR_SNAP"/"$NEM_WANT_SNAP"}"
@@ -491,10 +506,10 @@ if [ "$CHOICE" = "nemotron" ] || [ "$CHOICE" = "nemotron-super" ]; then
     # one exact command per lane, as the cockpit's sudoers allowlist names it
     if [ "$CHOICE" = "nemotron" ]; then
       sudo install -m 644 "$NEM_STAGE" "$NEMOTRON_UNIT"
-      unit_pending_clear "$NEMOTRON_UNIT"   # its new unit is in place: an update that waited for this Load is applied
+      [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_UNIT"   # its new unit is in place: the wait is applied
     else
       sudo install -m 644 "$NSV_STAGE" "$NEMOTRON_SUPER_UNIT"
-      unit_pending_clear "$NEMOTRON_SUPER_UNIT"   # its new unit is in place: an update that waited for this Load is applied
+      [ -n "$NEM_POSE" ] && unit_pending_clear "$NEMOTRON_SUPER_UNIT"   # its new unit is in place: the wait is applied
     fi
     rm -f "$NEM_LANE_STAGE"
     NEM_REWRITTEN=1
