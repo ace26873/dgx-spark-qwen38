@@ -1021,7 +1021,8 @@ class TheInstallSetsTheUsersOpencodeForTheWindow(unittest.TestCase):
         start = self.TEXT.index('if [ -n "${FLASH_UNSLOTH_CONTEXT+set}" ]; then')
         block = self.TEXT[start:self.TEXT.index("\nfi\n", start) + 4]
         self.assertLess(start, self.TEXT.index('OC_FLASH_UNSLOTH_PAIR="$('))
-        self.assertLess(start, self.TEXT.index('install-flash-unsloth.sh" "$(side_mode'))
+        # the lane's call is side_install's since v1.52 (an update waits for the lane's Load)
+        self.assertLess(start, self.TEXT.index('side_install flash-unsloth "$(side_mode flash-unsloth'))
         r = subprocess.run(["bash", "-c", block + 'echo "after=${FLASH_UNSLOTH_CONTEXT-unset}"'], capture_output=True,
                            text=True, timeout=30, env={"PATH": "/usr/bin:/bin", "FLASH_UNSLOTH_CONTEXT": "1m"})
         self.assertIn("FLASH_UNSLOTH_CONTEXT=1m ./install-flash-unsloth.sh --units-only", r.stdout)
