@@ -1,7 +1,7 @@
 # Alzeo: one command turns a DGX Spark into a private AI server
 
 <p align="center">
-  <img src="docs/img/tour.webp" width="270" alt="The cockpit in ten seconds: a laptop and a phone driving the box, the live memory, a coding agent whose test passes, an image and a video made on the box, the seven lanes">
+  <img src="docs/img/tour.webp" width="270" alt="The cockpit in ten seconds: a laptop and a phone driving the box, the live memory, a coding agent whose test passes, an image and a video made on the box, the fourteen lanes">
 </p>
 <p align="center"><a href="#see-it-in-49-seconds">Watch the 49-second tour, with sound</a></p>
 <p align="center"><a href="https://alzeo.ai/">The website: every model measured, guides, every GB10 machine</a></p>
@@ -31,7 +31,7 @@ its folder and services keep their names, and every old address of the repositor
 A second ASUS Ascent GX10, set up from scratch with that one command: [what it measured](docs/asus-gx10.md).
 
 **Why this rather than a recipe.** A recipe starts one model. On a Spark the hard part comes
-after: ten lanes take turns in one 128 GB pool, SGLang's memory accounting misses 25-40 GB of
+after: fourteen lanes take turns in one 128 GB pool, SGLang's memory accounting misses 25-40 GB of
 transient allocations in it, and a pool pushed to zero freezes the box until a power cycle
 ([the unified-memory trap](docs/gb10-memory.md)). This repo is what lets them live on one box:
 
@@ -88,7 +88,7 @@ Bolt** since v1.34, **Nemotron 3.5 Super VL** since v1.35, **NVIDIA's FP4-Local 
 Flash-Next** since v1.37, **Ornith AI's Ornith 1.5 122B** since v1.38 and **Liquid AI's LFM3 1.7B** since
 v1.51, with, on SGLang, **Liquid AI's LFM2.5 24B-A2B** since v1.51 too. The one command installs
 all of it: the lane that serves, proved before the run ends, and every other lane on demand,
-built at its first Load from the cockpit (`--all-weights` builds and proves them all at install). One cockpit drives the ten lanes, one Load button moves
+built at its first Load from the cockpit (`--all-weights` builds and proves them all at install). One cockpit drives the fourteen lanes, one Load button moves
 between them, and text answers on the same OpenAI-compatible API.
 
 The two Qwen text lanes come with **nine switchable targets**, and speculation costs **no quality** on any of them (NVFP4 is the quantization floor, Qwen's own FP8 is available above it; every speculative path is lossless by construction). Since v1.8 the flash lane serves an **official SGLang image** for this hardware with nothing added, serves **8 concurrent requests** by default where it used to serve one (since v1.19; opencode keeps a 205,000-token window on it since v1.20.3, and eight sessions that outgrow the pool queue rather than fail; `FLASH_TIER=context` keeps 4, so fewer sessions share the pool), and got **14 to 25% of its decode back from one flag** (`--speculative-token-map`, see below):
@@ -434,7 +434,7 @@ A second image lane, **MiniMax-H3-Image**, makes images from 2048 x 2048 (15.6 s
 venv on SGLang's main ([docs/image-h3-lane.md](docs/image-h3-lane.md)). Its licence, the MiniMax-H3-Image Community License, is not granted in the European Union, the United Kingdom, South Korea or the United States (its Excluded Territories: definition 5 and clause V.4 of its LICENSE).
 
 31 GiB of weights do not fit beside a serving LLM, so the lanes take turns: the cockpit refuses
-to start any engine while another is busy, for the ten lanes alike, and the unit's `Conflicts=` is
+to start any engine while another is busy, for the fourteen lanes alike, and the unit's `Conflicts=` is
 a second belt for a `systemctl start` typed at a terminal.
 
 **Measured on a Spark, not copied from the cookbook** (SGLang v0.5.21, 2026-10-10):
@@ -1080,7 +1080,7 @@ question you had when you opened the page.
 
 | View | What it answers | What you can do there |
 |---|---|---|
-| **Now** | Is the box serving, and on what? The pool of unified memory and what holds it, the ten lanes with each one's engine and its version, activity (how far a long prompt has got), the last events | Load a lane from the rack; the Engine actions button at the top, on every view, runs a smoke generation, flushes the prefix cache, aborts every generation, writes a diagnostics bundle and fits opencode's limits |
+| **Now** | Is the box serving, and on what? The pool of unified memory and what holds it, the fourteen lanes with each one's engine and its version, activity (how far a long prompt has got), the last events | Load a lane from the rack; the Engine actions button at the top, on every view, runs a smoke generation, flushes the prefix cache, aborts every generation, writes a diagnostics bundle and fits opencode's limits |
 | **Agent** | opencode's own web interface, framed behind this login | Run a session on the box from a laptop or a phone, no terminal |
 | **Lanes** | Which lanes exist, which one serves, each one's versions by their official names and its engine with its version, what the probes and containers say, the engine's facts and the proxy | Act on any lane this repo installed: Load runs the switch-stop-start journey in one path |
 | **Traffic** | What the engine and the proxy each did with the same traffic: live feed, abandoned-request guard, pool and decode, and the last 5 minutes from the engine's own counters (prompt tokens from the cache, decode speed, first token, tokens per second) | Read a dead decode from both sides of the wire |
