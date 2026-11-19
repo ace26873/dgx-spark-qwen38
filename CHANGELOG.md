@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.54.0 (date à venir): the cockpit's Transcription tab, the UX review of v1.53.0, and the two latent defects of the v1.53.1 review
+## v1.54.0 (date à venir): the cockpit gets a Transcription tab, a sign out and a Traffic view that says what the proxy never saw, the 27B lane gains DaisyRose 27B as a sixth target, opencode moves to 1.19.6, and a local CI run measures what the runner's does
 
 The cockpit gets a **Transcription** view (in the Create group, after Video) that drives the
 NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video views drive theirs.
@@ -53,6 +53,55 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
   `docs/cockpit.md` and `docs/transcribe-lane.md` document the view, the formats, the answer and the
   cap.
 
+**The cockpit signs out, and its Now view reads at a glance (pull request #73, by x42en).** The login lasted as
+long as its cookie and the page had no way to end it: a red Sign out button now sits at the right of the head
+(`dashboard/static/index.html`), asks `POST /api/logout` with the session and its CSRF token, and the server
+expires the cockpit cookie with `Max-Age=0` (`dashboard/cockpit.py`, behind the same session and CSRF checks as
+every mutating POST) and records the logout in the audit log; the page returns to `/`, the login page once the
+cookie is gone. The login and the logout share one `session_cookie()`, so a change to the cookie's name or path
+cannot leave a sign-out deleting a cookie the login no longer sets. A sign-out the server refuses or that is
+interrupted says "Could not sign out" and stays for a retry (`dashboard/static/js/base.js`), and the button is
+disabled while a lane Load runs, as every action button is (`data-act="logout"` through the same busy rule). The
+signed token stays stateless: a copy taken before the logout remains bounded by its own 12 h age, as it always
+was. The machine's six vitals now open the Now view, each card with a glyph at its right (CPU bars, a bolt for
+GPU power against a 100 W visual scale, a thermometer for GPU temperature, a disk for free space, a memory stick
+for swap, an alert triangle for driver refusals, `dashboard/static/js/now.js`): each fill owns the vertical span
+of its own shape, the word, the glyph and the card change at the same degrees (75 and 85 °C), and a collector that
+did not answer leaves an empty grey outline, never a healthy looking glyph. Every copyable command and address in
+Decide, Image, Video, Logs, Settings, the update banner and Connect a client now carries a copy icon inside its
+field or fact row (a copy mark at rest, a green check for 1.6 s after a successful copy, then the mark again,
+`dashboard/static/js/base.js`): the icon keeps the field's label for assistive technology, the clipboard fallback
+for plain HTTP is unchanged, and the icons are 44 px under a finger (`dashboard/static/css/cockpit.css`). The lane
+callouts in Decide, Agent, Image and Video keep one rule of distance below themselves. The pull request's eight
+glyphs were the paths of an icon set, and a public repository does not take another's code: they are drawn again
+here in our own lines, the same shapes, and the classes the page and its tests read stay. x42en's seven commits
+keep their author. Thanks to x42en.
+
+**DaisyRose 27B, a sixth target of the 27B lane (`daisyrose`).** RadixArk's reinforcement-learning-only fine-tune
+of Qwen3.8 27B (Apache-2.0, no SFT and no distillation), in RadixArk's own NVFP4 of the 27B
+(`RadixArk/DaisyRose-27B-NVFP4`, pinned at revision `c4d85c5`): MIXED_PRECISION, 401 layers (208 FP8 and 193 NVFP4),
+identical layer to layer to `RadixArk/Qwen3.8-27B-NVFP4`, same architecture, tokenizer files and chat template byte
+for byte, 21.95 GB, and its config loads with the lane image's transformers 5.19.0. It serves on the 27B lane's
+image and unit exactly as `stock` does, with the DFlash2 draft; its checkpoint declares no KV cache (like
+`arete`'s), so `./switch-model.sh daisyrose` and `MODEL_CHOICE=daisyrose ./install.sh` write the fp8 declaration
+into its cached config with `patch-kv.py`, after the YaRN step, not as a `--kv-cache-dtype` flag. A 64 GB box
+takes it (21.95 GB and the same KV cache as stock, `boxmem.py`). opencode names it "DaisyRose-27B NVFP4 + DFlash2"
+(`oc-point-default.py`), its limits are the 27B's (`oc-limits.sh`), and the cockpit offers it as a sixth version of
+the lane with its recipe, pin and switch; `stock` stays the default, and the first switch downloads about 22 GB.
+Nothing is measured on the reference box yet: RadixArk publishes, at xhigh reasoning and temperature 1.0,
+Terminal-Bench 2.1 at 75.5 against 73.0 for Qwen3.8-27B (also Terminal-Bench 4.1 at 12.0 against 5.6, SWE Bench Pro
+v2 at 94.7 against 91.3, GPQA Diamond at 90.7 against 89.2; several of the Qwen3.8-27B scores come from model cards
+or an article, not a paired run). `docs/models/qwen38-27b.md` and the README carry the same facts, and the base
+image list of `uninstall.sh` that the same change had dropped is back.
+
+**opencode 1.19.6.** The Agent lane's pin moves from 1.19.5 to 1.19.6 (`OPENCODE_VERSION` in `install.sh`): the
+sha256 is GitHub's own digest of the release asset `opencode-linux-arm64.tar.gz`, the CI bench carries the x64
+asset's digest of the same release (`dashboard/tests/agent-bench.mjs`), and a version given without its checksum
+is refused. Checked against 1.19.5 on 2026-11-18: 1.19.6 compacts and retries on a provider's "request body too
+large" too and bounds the images a session sends inline, the 21 overflow phrases the proxy answers with are all
+present, and `agent-bench.mjs` passes 34 of 34 on 1.19.6. `OPENCODE_PIN=0` keeps whatever opencode the box already
+runs.
+
 - Cockpit, UX review of v1.53.0 (2026-11-19): the Now view's memory legend says "GPU allocations" when no lane serves, instead of naming an empty "lane" segment.
 - Cockpit, UX review of v1.53.0: "Copy a test" in Connect a client is offered only when a text lane serves a known model; with none, no curl with a placeholder model is copied.
 - Cockpit, UX review of v1.53.0: the Image view's refusal of a too large MiniMax-H3-Image call says one unit (86.0 GiB, the 92.3 GB the study measured) instead of mixing Go and GiB in one sentence.
@@ -78,6 +127,17 @@ that has not answered counts nothing. The NVIDIA Nemotron Transcribe lane's in-f
 own port while it serves (llama.cpp's `/metrics`, `requests_processing` and `requests_deferred`, with the box's key
 in the header, read by the cockpit server and never sent to the browser; the payload carries the counts and the port
 only) and shown beside the table with their port, counted in the badge. **The "sent directly" note now waits for the journal's own pace.** The engine is read every second and the proxy's journal every 5 s, so a request relayed by the proxy is counted by the engine up to 5 s before its line reaches the Requests table, and the gap between the two counts was read as "sent to :30000 directly" in the meantime: the note blinked on every new request. It is now said only when the gap outlived a journal read (a read of the proxy's journal landed while the gap was already there and did not absorb it), across several engine reads, and with the journal source fresh, so it is never wrong; the badge still counts every request in flight meanwhile. **The cockpit's own canary is taken out of that count.** The generation probe the cockpit sends to :30000 every 90 s is a real request the engine counts like a client's, and the Traffic view could name the cockpit itself as "sent directly" while it ran; the fast collector now says when a canary is in flight (`canary_inflight` in the `engine_fast` payload) and the page subtracts it from the engine's count, so neither the note nor the badge counts the box's own probe. **The Transcribe lane's collector runs in a thread of its own.** Its `/metrics` read can wait its whole 4 s timeout on a lane slow to answer, and it shared the metrics collector's thread, so a slow lane could delay the metrics windows' reads by as much; it now has its own tier like the pair's collector.
+
+**A local CI run measures what the runner's does (C20).** `./ci-local.sh` now runs every step with a runner's
+environment: the developer's `HF_HOME`, `HF_HUB_CACHE`, `HF_CACHE`, `HF_TOKEN`, `HF_ENDPOINT`, `HF_HUB_OFFLINE`,
+`XDG_CACHE_HOME`, `GITHUB_TOKEN`, `COCKPIT_CONFIG_DIR`, `COCKPIT_SYSTEMD_DIR` and `QWEN38_MEMINFO` are dropped, and
+`HF_HOME`, `XDG_CACHE_HOME` and `COCKPIT_SYSTEMD_DIR` point at empty directories of the step's throwaway `HOME`,
+so a local coverage run is the runner's (decision 1485). The cockpit reads every unit path it needs from one
+directory, `COCKPIT_SYSTEMD_DIR` (default `/etc/systemd/system`, `dashboard/cockpit.py`), and the on-demand lanes'
+unit path falls back on it too; what the cockpit writes (the sudo install of a switched unit) stays on the real
+directory. The cockpit's registry suites now read no unit and no cache but their own witness directory, and the
+xet retry test gives each environment variable back the value it had, `HF_HOME` included
+(`tests/test_ci_local.py`, `tests/test_install_xet_retry.py`).
 
 ## v1.53.1 (2026-11-19): what the blind reviews of v1.52.0 left, rare in normal use
 
