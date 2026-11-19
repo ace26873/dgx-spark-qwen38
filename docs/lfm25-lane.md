@@ -11,7 +11,7 @@ the pair loaded once in the 27B lane's SGLang image with the command its draft's
 and the memory share the lane keeps, the GPU clock capped at 2,000 MHz and the chip under 70 °C before each step,
 the 27B stopped. That trial ran without the tool-call and reasoning parsers the lane passes. The lane's own unit then
 served in the proof campaign of v1.53.0, on the same box on 2026-11-19: loaded from the cockpit, its flags as they
-ship, through the proxy, the GPU clock capped at 2,000 MHz, every other lane stopped. What that campaign measured is
+ship, through the proxy, the GPU clock capped at 2,000 MHz, no other text lane running. What that campaign measured is
 below, and what neither it nor the trial measured is said so where it stands.
 
 ## Why SGLang, and the 27B lane's image
@@ -67,9 +67,9 @@ The trial of 2026-11-14, under the conditions above:
 
 | | the trial, no parser | the lane as it ships, 2026-11-19 |
 |---|---|---|
-| ready, its `/v1/models` answering | 286 s | 292 s |
-| KV cache | 1,667,049 tokens (BF16), the window 12.7 times | not measured yet |
-| MemAvailable | 28 GiB once ready, 24 GiB at its lowest | 22 GiB at its lowest |
+| ready, its `/v1/models` answering | 286 s | 292 s, its first reply through the proxy (read every 10 s) |
+| KV cache | 1,667,049 tokens (BF16), the window 12.7 times | 1,662,263 tokens (BF16), the window 12.7 times, in its journal |
+| MemAvailable | 28 GiB once ready, 24 GiB at its lowest | 28 GiB once ready, 22 GiB at its lowest during its start |
 | GSM8K, 250 questions | 0.912 | not measured yet |
 | a first answer | 17 x 23 = 391, right | not measured yet |
 
@@ -79,9 +79,9 @@ read in the server's log while it ran, 183 readings: 5.28 tokens at the median (
 requests, as `run_eval` reads it from each answer).
 
 **Speed**: only what the server's log said while GSM8K ran, 8 requests at once: 362 tokens/s in all at the median of
-its 183 readings, 443 at the most. The lane as it ships, measured on 2026-11-19 through the proxy (1,024 tokens in,
-512 out): one stream alone 102.2 tokens/s (93.7 in all over its 191 tokens, first token in 0.17 s), 8 at once 389.2
-tokens/s in all, 73.4 per stream at the median (48.5 at the least), first token in 1.10 s. Not measured yet: 32 and
+its 183 readings, 443 at the most. The lane as it ships, measured on 2026-11-19 through the proxy (1,024 tokens in, at
+most 512 out): one stream alone 102.2 tokens/s (93.7 in all over its 191 tokens, first token in 0.17 s), 8 at once 389.2
+tokens/s in all over 1,550 tokens, 73.4 per stream at the median (48.5 at the least), first token in 1.10 s. Not measured yet: 32 and
 48 at once, a prompt of 32,768 and one of 120,000 tokens.
 
 **The prefix cache under an agent**, measured the same day (`prefix_probe.py`, six turns, prompts of 34,940 to
@@ -96,8 +96,9 @@ Through the proxy on `:30001`, with the box's key, as model `lfm2.5-24b-a2b`:
 - **opencode** gets an `lfm25` provider, text only (the model reads no image), with no variant, as the template reads
   no level, and 74,000 tokens of context and 32,000 of output at its window of 131,072 ([docs/opencode.md](opencode.md)).
   Loading the lane makes it opencode's default. Measured on 2026-11-19, a limit this lane ships with: one try of five
-  succeeded, for the model reads an invented absolute path (`/home/hasan/hello.txt`) where the other lanes read a
-  relative one, and opencode refuses a read outside its working directory (`external_directory`).
+  succeeded, for the model asks to read the test file at an invented absolute path in the home directory, outside
+  opencode's working directory where the file is, and opencode refuses a read outside its working directory
+  (`external_directory`).
 - **pi** offers `high` alone and sends no effort field, **omp** gets `high` as its one effort
   ([docs/pi.md](pi.md)). pi answered OK through the proxy on 2026-11-19. No omp session has run on the lane yet.
 - **System One** is not served here (proxy v6.60): its template opens a thought at every answer, so the one token

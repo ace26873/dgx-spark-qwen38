@@ -55,8 +55,8 @@ vllm serve LiquidAI/LFM3-1.7B-NVFP4 --revision <pinned sha> --served-model-name 
   window, and the box kept 1,087 MiB available at its lowest during the campaign, close to the edge where a GB10
   freezes ([docs/gb10-memory.md](gb10-memory.md)). A share of 0.75 of the 121.63 GiB the engine sees on the
   reference box is about 91 GiB for the engine, by the arithmetic. Measured at that share on 2026-11-19, the lane as
-  it ships: the box kept 20 GiB available at its lowest, and the engine was ready in 133 s. The cache's size at that
-  share is not in the campaign's log.
+  it ships: the box kept 20 GiB available at its lowest, the engine answered through the proxy 133 s after its start,
+  and its journal gives the cache 4,567,209 tokens, 17.42 requests at the full window of 262,144 as vLLM counts it.
 - **Sampling**: the checkpoint's `generation_config.json` asks temperature 0.1, top_k 50 and repetition_penalty
   1.1, and vLLM applies it to every request that sets none of its own, as it says at boot.
 - **Reasoning** is on by default (the template's `enable_thinking`, true unless a request says false). A request
@@ -83,8 +83,8 @@ All in the "base" campaign of 2026-11-16, under the conditions above.
 
 | | with no memory share | at the lane's share, 0.75, 2026-11-19 |
 |---|---|---|
-| boot, to `/health` | 160 s at its first boot: 127.5 s of engine init (11.1 s of compile), FlashInfer's NVFP4 tuning 29 s of it | 133 s, the lane as it ships |
-| KV cache | 5,239,455 tokens, 19.99 requests at the full window as vLLM counts it | not measured yet |
+| boot, to `/health` | 160 s at its first boot: 127.5 s of engine init (11.1 s of compile), FlashInfer's NVFP4 tuning 29 s of it | 133 s to its first reply through the proxy (read every 10 s) |
+| KV cache | 5,239,455 tokens, 19.99 requests at the full window as vLLM counts it | 4,567,209 tokens, 17.42 requests, in its journal |
 | MemAvailable, lowest seen | 1,087 MiB | 20 GiB |
 | GSM8K, 250 questions | 0.896 | not measured yet |
 

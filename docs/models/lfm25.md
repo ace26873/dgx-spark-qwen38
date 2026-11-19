@@ -22,7 +22,7 @@ One short trial, on 2026-11-14, the GPU clock capped at 2,000 MHz, without the l
 
 The lane as it ships, on 2026-11-19, through the proxy, the GPU clock capped at 2,000 MHz:
 
-- **102.2 tok/s** on one stream (1,024 tokens in, 512 out), **389.2 tok/s** in all at 8 requests at once.
+- **102.2 tok/s** on one stream (1,024 tokens in, at most 512 out), **389.2 tok/s** in all at 8 requests at once.
 - Ready in 292 s, 22 GiB of memory left available at its lowest, a tool call right.
 - An agent's next turn served **94 %** from the prefix cache, from its second turn.
 

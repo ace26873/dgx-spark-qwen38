@@ -25,7 +25,7 @@ On 2026-11-16, with no memory share set, the GPU clock capped at 2,000 MHz:
 
 The lane serves it with a memory share of 0.75, measured as it ships on 2026-11-19, through the proxy, the GPU
 clock capped at 2,000 MHz: ready in 133 s, 20 GiB of memory left available at its lowest, **90.7 tok/s** on one
-stream and **732.2 tok/s** in all at 8 requests at once (1,024 tokens in, 512 out), an agent's next turn served
+stream and **732.2 tok/s** in all at 8 requests at once (1,024 tokens in, at most 512 out), an agent's next turn served
 **99 to 100 %** from the prefix cache.
 
 ## What it is good at

@@ -182,8 +182,8 @@ if [ "$MODE" = prepare ]; then
 fi
 
 step "3/5 Checkpoint ($MODEL @ ${MODEL_REV:0:12}, resumable)"
-# Pinned as refs/main: the unit runs with HF_HUB_OFFLINE=1 and vLLM can read the tokenizer
-# without its revision, by name, through refs/main, which a download by commit never writes.
+# Pinned as refs/main, as the LFM2.5 lane's fetches are: the unit runs with HF_HUB_OFFLINE=1, and a read of the repo
+# by its name then finds the pinned commit. None is known in this image (vLLM reads the tokenizer at --revision).
 vlane_fetch "$MODEL" "$MODEL_REV" pin
 
 install_service

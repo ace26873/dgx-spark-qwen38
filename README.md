@@ -714,7 +714,7 @@ column the lane as it ships, through the proxy:
 
 | | LFM3 1.7B NVFP4, 2026-11-16, no memory share set | LFM2.5 24B-A2B FP8 + DSpark, 2026-11-19, the lane as it ships |
 |---|---|---|
-| one request alone | 87.7 tok/s (1,024 tokens in, 512 out) | 102.2 tok/s (1,024 tokens in, 512 out) |
+| one request alone | 87.7 tok/s (1,024 tokens in, 512 out) | 102.2 tok/s (1,024 tokens in, 191 out of at most 512) |
 | many at once, in all | 3,911.8 tok/s at 128 requests | 389.2 tok/s at 8 requests, 73.4 per stream |
 | GSM8K (250) | 0.896 | 0.912 (the 2026-11-14 trial, no parser) |
 | a long prompt | 131,072 tokens, 10.2 s to its first token | not measured yet |
@@ -724,7 +724,7 @@ column the lane as it ships, through the proxy:
 The LFM3 lane sets a memory share of 0.75, as vLLM's nightly grows its KV cache into all the memory left (with none
 set, the box kept 1,087 MiB available at its lowest): measured at that share, the lane as it ships on 2026-11-19,
 through the proxy, it was ready in 133 s with 20 GiB available at its lowest, one stream at 90.7 tok/s and 8 at once
-732.2 tok/s in all (1,024 tokens in, 512 out), and an agent's next turn 99 to 100 % from the prefix cache.
+732.2 tok/s in all (1,024 tokens in, at most 512 out), and an agent's next turn 99 to 100 % from the prefix cache.
 Every number, what is not measured yet and why: **[docs/lfm3-lane.md](docs/lfm3-lane.md)** and
 **[docs/lfm25-lane.md](docs/lfm25-lane.md)**.
 
