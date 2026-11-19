@@ -95,6 +95,22 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
         out, installed = self.put(enabled=True, new=self.installed.read_text())
         self.assertNotIn("NOTE", out)
 
+    def test_a_mount_source_with_a_space_is_one_missing_file(self):
+        # a HOME with a space renders --mount type=bind,source=<spaced path>,...: one source, read whole,
+        # not two halves both read missing (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+        spaced = self.d / "my cfg"
+        spaced.mkdir()
+        tmpl = spaced / "chat-template.jinja"
+        new = ("[Service]\nExecStart=/bin/bash -c 'exec docker run \\\n"
+               f"  --mount type=bind,source={tmpl},target=/out/t.jinja,readonly new'\n")
+        out, installed = self.put(enabled=True, new=new)
+        self.assertIn(f"NOTE: X starts at boot, and its new unit mounts what is not there yet: {tmpl}.", out)
+        self.assertIn("docker run old", installed)
+        tmpl.write_text("{{ messages }}\n")
+        out, installed = self.put(enabled=True, new=new)
+        self.assertNotIn("NOTE", out, "the spaced source is one path: it exists now")
+        self.assertIn(" new'", installed)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1230,5 +1230,66 @@ class TheSwitchReadsTheWaitingUnitsCache(unittest.TestCase):
                                  "the cache is read from the unit in place, not from the one that waits")
 
 
+class PathsWithASpace(unittest.TestCase):
+    """A HOME or a cache whose path holds a space: the loops over the unit's paths read line by line, and the
+    patterns naming the cache read it whole (sixth review of v1.52.0, 2026-11-19, GLM 5.3: a for over $(...)
+    cut a bind source at the space, and the snapshot and unit_hf_cache patterns refused it, so a spaced cache
+    read truncated or nowhere, and a unit was posed without its weights)."""
+
+    def setUp(self):
+        self.b = Box()
+        self.b.t = self
+        self.b.hf = self.b.d / "my cache"
+        self.b.hf.mkdir()
+        self.b.ckpt("RadixArk/Qwen3.8-27B-NVFP4", REV1)
+        self.b.ckpt("maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal", DREV, draft=True)
+
+    def test_the_cache_a_unit_mounts_is_read_whole(self):
+        rel = f"hub/models--RadixArk--Qwen3.8-27B-NVFP4/snapshots/{REV1}"
+        text = (f"ExecStart=/usr/bin/docker run --rm -v {self.b.hf}:/root/.cache/huggingface \\\n"
+                f"  {OLD_IMG} \\\n"
+                f"  python3 -m sglang.launch_server --model-path /root/.cache/huggingface/{rel} --port 30000\n")
+        self.assertEqual(self.b.needs(text), [])
+        (self.b.hf / rel / "model.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"path {self.b.hf}/{rel}"],
+                         "the GGUF/snapshot under the spaced cache is looked for whole, via the mount")
+
+    def test_the_hf_home_a_native_lane_names_is_read_whole(self):
+        self.b.ckpt("MiniMaxAI/MiniMax-H3", REV1)
+        text = (f"[Service]\nEnvironment=HF_HOME={self.b.hf}\n"
+                f"ExecStart=/x/venv/bin/python -m sglang serve --model-path MiniMaxAI/MiniMax-H3 --revision {REV1}\n")
+        self.assertEqual(self.b.needs(text), [])
+        (self.b.hf / "hub/models--MiniMaxAI--MiniMax-H3/snapshots" / REV1 / "model.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"checkpoint MiniMaxAI/MiniMax-H3@{REV1}"])
+
+    def test_a_bind_mount_source_with_a_space_is_one_path(self):
+        key = self.b.d / "my cfg" / "api-key"
+        key.parent.mkdir()
+        text = (f"ExecStart=/usr/bin/docker run --rm -v {self.b.hf}:/root/.cache/huggingface {OLD_IMG} \\\n"
+                f"  --mount type=bind,source={key},target=/out/api-key,readonly \\\n"
+                f"  --model-path RadixArk/Qwen3.8-27B-NVFP4 --revision {REV1} \\\n"
+                f"  --speculative-draft-model-path maurienne-ai/Qwen3.8-27B-DFlash2-NVFP4-RTNcal "
+                f"--speculative-draft-model-revision {DREV}\n")
+        self.assertEqual(self.b.needs(text), [f"path {key}"], "one path, not two halves")
+        key.write_text("k\n")
+        self.assertEqual(self.b.needs(text), [])
+
+    def test_a_quoted_snapshot_path_with_a_space_is_read_whole(self):
+        enc = "e" * 40
+        rel = f"hub/models--MiniMaxAI--MiniMax-H3/snapshots/{enc}/text_encoder"
+        encdir = self.b.hf / rel
+        encdir.mkdir(parents=True)
+        (encdir / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "te-1.safetensors"}}))
+        (encdir / "te-1.safetensors").write_bytes(b"e")
+        text = (f"[Service]\nEnvironment=HF_HOME={self.b.hf}\n"
+                f"ExecStart=/x/venv/bin/python -m sglang serve --model-path MiniMaxAI/MiniMax-H3-Image "
+                f"--revision {REV1} --text-encoder-path \"{self.b.hf}/{rel}\" --port 30026\n")
+        self.b.ckpt("MiniMaxAI/MiniMax-H3-Image", REV1)
+        self.assertEqual(self.b.needs(text), [])
+        (encdir / "te-1.safetensors").unlink()
+        self.assertEqual(self.b.needs(text), [f"path {self.b.hf}/{rel}"],
+                         "the quoted spaced path whole, not the fragment after the space")
+
+
 if __name__ == "__main__":
     unittest.main()

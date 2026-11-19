@@ -281,7 +281,9 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   # the cache a container mounts, or the one a native lane names in its environment (the image and video lanes: code
   # review of v1.52.0, read in the default cache they were not)
   hf="$(unit_hf_cache "$1")"
-  [ -n "$hf" ] || hf="$({ grep -m1 -oE '^Environment=HF_HOME=[^ ]+' "$1" || true; } | cut -d= -f3- | tr -s /)"
+  # read to the end of the line: the cache's path may hold a space (a HOME with one), as the switch reads it
+  # (cut -d= -f3-) (sixth review of v1.52.0, 2026-11-19, GLM 5.3: [^ ]+ stopped at the space)
+  [ -n "$hf" ] || hf="$({ grep -m1 -oE '^Environment=HF_HOME=.*' "$1" || true; } | cut -d= -f3- | tr -s /)"
   hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"
   # a cache that exists but cannot be read (a disk not mounted, a permission): nothing read from it can be
   # concluded, and the line says unknown rather than missing (review of v1.52.0, 2026-11-19: a docker that did
@@ -326,7 +328,10 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
   # serves, and the folders a lane loads, as the image-h3 lane's text_encoder, named by --text-encoder-path
   # (review of v1.52.0, 2026-11-19: a pin that moved went in place unseen, and the lane found no encoder at
   # its next start)
-  for f in $({ grep -oE '/[^ "=]*/hub/models--[^ "/]+/snapshots/[0-9a-f]{40}/[^ "]+' "$1" || true; } | sort -u); do
+  # read line by line, and the quoted form beside the plain one: a path with a space (a HOME or a cache with
+  # one) is one path whole, and a for over $(...) cut it at the space (sixth review of v1.52.0, 2026-11-19,
+  # GLM 5.3: the snapshot pattern refused the space, and a spaced cache read truncated or nowhere)
+  while IFS= read -r f; do
     # a GGUF the unit names as its container sees it (-m /root/.cache/huggingface/... when it mounts the host's
     # cache there, another than the default one or not: hf, unit_hf_cache's) is looked for where that mount puts
     # it on the host: /root is 0700, so the container's path tested as it is never exists (review of v1.52.0,
@@ -339,16 +344,19 @@ unit_needs(){  # $1 a unit or a launcher (a file: read more than once)
     else
       [ -e "$f" ] || echo "path $f"
     fi
-  done
+  done < <({ grep -oE '/[^ \"=]*/hub/models--[^ \"/]+/snapshots/[0-9a-f]{40}/[^ \"]+' "$1" || true; }
+            { grep -oE '"[^"]*/hub/models--[^"]+/snapshots/[0-9a-f]{40}/[^"]+"' "$1" \
+                | sed -e 's/^"//' -e 's/"$//' || true; } | sort -u)
   fi
   # a file the unit bind-mounts by its own source (--mount type=bind,source=...): the vLLM lanes' chat template
   # and api key, mounted that way on purpose so that a missing source fails the start where -v made a
   # root-owned directory in its place (their templates say why). Read where it is, a host path already. The
   # gates (a switch, apply_pending) read unit_needs alone, and without this a wait could be posed with its
-  # mount absent (third review of v1.52.0, 2026-11-19, GLM 5.3).
-  for f in $({ grep -oE -- '--mount type=bind,source=[^,]+' "$1" | sed -e 's/.*source=//' | sort -u || true; }); do
+  # mount absent (third review of v1.52.0, 2026-11-19, GLM 5.3). Line by line as above: the source is one
+  # path even with a space in it.
+  while IFS= read -r f; do
     [ -e "$f" ] || echo "path $f"
-  done
+  done < <({ grep -oE -- '--mount type=bind,source=[^,]+' "$1" | sed -e 's/.*source=//' | sort -u || true; })
 }
 unit_pending_put(){  # $1 the rendered unit, $2 where it would go: kept beside, what it lacks with it
   local d="${CONFIG_DIR:-$HOME/.config/qwen38}/pending" n
@@ -570,9 +578,11 @@ PY
 # stat can look. One reading each for every script: they were copied into a dozen places, a fix to
 # one missing from the next (found in review, 2026-10-16).
 unit_hf_cache(){  # $1... units or launchers; one slash at a time, as a unit rendered from a home with a
-  # trailing slash wrote "//" and the home is spelled without it now (install.sh, 2026-10-22)
-  { grep -hoE -- '-v [^ :]+:/root/\.cache/huggingface' "$@" 2>/dev/null || true; } \
-    | head -1 | sed -e 's/^-v //' -e 's|:/root/\.cache/huggingface$||' | tr -s /
+  # trailing slash wrote "//" and the home is spelled without it now (install.sh, 2026-10-22). The cache's
+  # path may hold a space (a HOME with one): read whole, to the colon that ends it, quotes off (sixth review
+  # of v1.52.0, 2026-11-19, GLM 5.3: [^ :]+ stopped at the space and the cache read truncated)
+  { grep -hoE -- '-v [^:]+:/root/\.cache/huggingface' "$@" 2>/dev/null || true; } \
+    | head -1 | sed -e 's/^-v //' -e 's|:/root/\.cache/huggingface$||' -e 's/^"//' -e 's/"$//' | tr -s /
 }
 # The window one request of a llama.cpp unit gets (v1.48): the -c of its engine, which its requests at once share with
 # -kvu (one request may take it whole), or which holds a window for each of its -np requests without it. Read in the

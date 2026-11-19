@@ -203,9 +203,11 @@ vlane_put_unit(){  # $1 the rendered unit, $2... what else the lane's start read
   # start at boot takes the new unit: its next Load writes what it mounts before it starts.
   if ! cmp -s "$1" "$INSTALLED" && systemctl is-enabled --quiet "$UNIT" 2>/dev/null; then
     local src missing=""
-    for src in $(grep -o 'type=bind,source=[^,]*' "$1" | cut -d= -f3); do
+    # line by line: a source with a space (a HOME with one) is one path, and a for over $(...) cut it in two,
+    # both halves read missing (sixth review of v1.52.0, 2026-11-19, GLM 5.3)
+    while IFS= read -r src; do
       [ -e "$src" ] || missing="$missing $src"
-    done
+    done < <(grep -o 'type=bind,source=[^,]*' "$1" | cut -d= -f3)
     if [ -n "$missing" ]; then
       echo "NOTE: $VLANE_SHORT starts at boot, and its new unit mounts what is not there yet:$missing. The unit it has is kept; a Load, or ./install.sh once its checkpoint is in reach, brings the new one."
       # an update (PENDING_PUT=1) says so as for every unit that waits: the new unit and what it lacks, the files it
