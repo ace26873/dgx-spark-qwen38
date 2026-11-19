@@ -385,6 +385,16 @@ class TheTranscribeLaneServesNoText(unittest.TestCase):
         """)
         self.assertIn("Modelno text lane serves now", r)
 
+    def test_logs_opens_its_container(self):
+        """defaultLogSource() had no branch for the transcribe lane: with it serving, Logs opened
+        qwen38-sglang's container (review of 2026-11-19)."""
+        r = run(self, self.SERVES + r"""
+        __fetch = async () => __response(200, {lines: []});
+        showView('logs'); await __settle();
+        report($('log-src').value);
+        """)
+        self.assertEqual(r, "qwen38-transcribe")
+
 
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and

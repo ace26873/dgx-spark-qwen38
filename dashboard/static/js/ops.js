@@ -668,6 +668,7 @@ function defaultLogSource(){
   return u === UFLASH ? 'qwen38-flash' : u === KOLIBRI_UNIT ? 'qwen38-kolibri' : u === NEMOTRON_UNIT ? 'qwen38-nemotron'
     : u === NEMOTRON_SUPER_UNIT ? 'qwen38-nemotron-super' : u === FLASH_LOCAL_UNIT ? 'qwen38-flash-local'
     : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth'
+    : u === TRANSCRIBE_UNIT ? 'qwen38-transcribe'
     : u === LFM25_UNIT ? 'qwen38-lfm25' : u === LFM3_UNIT ? 'qwen38-lfm3' : 'qwen38-sglang';
 }
 onShow('logs', () => {
