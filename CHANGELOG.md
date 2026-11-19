@@ -22,9 +22,10 @@ update writes the code, the units and the configs, and everything large waits fo
   lane: the 27B's by `apply_pending` (`prepare-lane.sh` prepares what the waiting unit reads, then the unit goes in
   through the fixed staging path its exact sudoers line allows, and its switch fetches the target the Load asks for),
   the flash lane's launch script the same way with no sudo, and a lane beside them by its own switch, which renders
-  its new unit (the video and MiniMax-H3-Image lanes: the one their update left waiting), fetches what it reads and
-  clears the wait. `apply_pending` puts a waiting unit in place only when the box has all it reads, its checkpoint
-  included. A waiting unit records the unit in place it was rendered against: a switch since makes it stale, said
+  its new unit (the image, video, MiniMax-H3-Image, Kolibri and Nemotron lanes: the one their update left waiting),
+  fetches what it reads and clears the wait. `apply_pending` puts a waiting unit in place only when the box has all it
+  reads, its checkpoint included. A waiting unit records the unit in place it was rendered against: a switch since
+  makes it stale, said
   before the Load (the lane's card marks it and proposes no Load that would download then drop it), cleared by the
   switch that made it so, and dropped rather than put over that switch;
 - a box that boots a side lane is covered too, a lane whose unit lacks what it
@@ -43,6 +44,22 @@ start); a unit this user cannot read (root's 0600) is no longer taken for whole,
 `side_runtime_waits` makes the runtime lines of a unit already waiting current, so the lane's card says what its Load
 does; and `vlane_put_unit`, on an update, records the new unit as waiting for a boot lane that keeps its unit (its new
 one mounts a file not written yet), with the files it mounts named. Each new test fails on the code before.
+
+**What the second blind review found (GLM 5.3, 2026-11-19 07:27), fixed with tests.** Four defects, each read in the
+code again before fixing: the image lane's switch read the wait nowhere, so a Load whose pin had moved fetched the
+old pin, posed nothing and cleared nothing, and the lane's card looped its Load forever (its switch now fetches what
+the waiting unit reads and puts it in place, as the video and MiniMax-H3-Image lanes' do); a runtime wait kept the
+unit in place as the waiting one, so the Load that cleared it applied the old pin and lost the new one in silence
+(a runtime wait now keeps the lane's new unit, rendered by its installer's `--units-only` with `PENDING_FORCE`, and
+the Load that clears the wait applies the moved pin too); the wait was armed only by the run's text lane unit, so on
+a box holding side lanes alone (installed by their own installer) an update re-downloaded what a Load would have
+fetched (`PENDING_PUT` is armed by any lane unit in place now); and a Load whose flash launcher or 27B unit waited
+prepared the card's target instead of the waiting file's own, fetching a checkpoint the wait does not read
+(`prepare-lane.sh` prepares the waiting file's target when one waits). The review's "to check" held for the Kolibri
+and Nemotron lanes: their local image's tag names the pins its installer pins, so a waiting unit's image line can
+differ from the one in place, and their switch rewrote only the checkpoint, drafter and memory lines, losing it (and
+never clearing the wait when only the image moved); their switch now puts the waiting unit in place whole, image
+line included. Each new test fails on the code before.
 
 **A llama.cpp lane's GGUF files are looked for on the host, where its unit mounts them.** `unit_needs` tested the GGUF
 paths a unit names as its container sees them (`-m /root/.cache/huggingface/...`) on the host, where `/root` is 0700:
