@@ -1827,6 +1827,12 @@ case "$CHOICE" in
   flash-uncensored) TARGET_REPO="$FLASH_UNC_REPO"; TARGET_REV="$FLASH_UNC_REV"; TARGET_LANE=flash ;;
 esac
 
+# --fetch honors MODEL_REV= as the revision to fetch, not the pin: prepare-lane.sh passes it when the unit
+# that waits names another revision than the pin (the pin moved since the update waited, or a MODEL_REV=
+# custom install), and a fetch of the pin would leave that wait forever unfilled (seventh pass of the
+# v1.52.0 reviews, 2026-11-19). A switch (no --fetch) still points the unit at the pin.
+if [ "$FETCH_ONLY" -eq 1 ] && [ -n "${MODEL_REV:-}" ]; then TARGET_REV="$MODEL_REV"; fi
+
 # The pins come from install.sh through eval, so a pin renamed or emptied there
 # would otherwise reach the download step as an empty repo or revision. CI
 # guards the names; this guards the values on a box that already diverged.

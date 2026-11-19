@@ -49,20 +49,28 @@ class Box:
     """prepare-lane.sh 27b|flash, with a waiting unit (or launcher) in $CONFIG_DIR/pending and a
     fabricated cache holding the new revision's snapshot in the cache that unit mounts."""
 
-    def __init__(self, lane, target, window="1m", model=None, pending=True, quant=None):
+    def __init__(self, lane, target, window="1m", model=None, pending=True, quant=None,
+                 pend_rev=None, pin_rev=None):
         self.t = t = pathlib.Path(tempfile.mkdtemp(prefix=f"prepare-wait-{lane}-"))
         self.d = d = t / "repo"
         d.mkdir()
-        for f in ("lanes.sh", "install.sh", "flash-ats-check.sh", "boxmem.py", "patch-yarn.py",
+        install_text = (REPO / "install.sh").read_text()
+        if pin_rev is not None:
+            # the pin moved in this checkout of the repo since the update waited (no ./install.sh re-run)
+            key = "STOCK_REV" if lane == "27b" else "FLASH_REV"
+            install_text = re.sub(rf'(?m)^{key}="[0-9a-f]{{40}}"', f'{key}="{pin_rev}"', install_text)
+        for f in ("lanes.sh", "flash-ats-check.sh", "boxmem.py", "patch-yarn.py",
                   "patch-kv.py", "patch-template.py"):
             (d / f).write_text((REPO / f).read_text())
+        (d / "install.sh").write_text(install_text)
         self.units = t / "units"
         self.units.mkdir()
         (d / "prepare-lane.sh").write_text(
             (REPO / "prepare-lane.sh").read_text().replace("/etc/systemd/system/", f"{self.units}/"))
-        # the switch the Load's prepare calls: a stub recording its argv and the HF_CACHE it got
+        # the switch the Load's prepare calls: a stub recording its argv and the HF_CACHE and MODEL_REV it got
         (d / "switch-model.sh").write_text(
-            f'#!/bin/bash\necho "switch-model.sh $*" >> "{t}/calls"\necho "${{HF_CACHE:-}}" >> "{t}/hfenv"\n')
+            f'#!/bin/bash\necho "switch-model.sh $*" >> "{t}/calls"\n'
+            f'echo "${{HF_CACHE:-}}" >> "{t}/hfenv"\necho "${{MODEL_REV:-}}" >> "{t}/modrev"\n')
         (d / "switch-model.sh").chmod(0o755)
         self.bin = t / "bin"
         self.bin.mkdir()
@@ -88,35 +96,37 @@ class Box:
         rev = PINS[{"27b": "STOCK_REV", "flash": "FLASH_REV"}[lane]] if model is None else PINS["ARETE_REV"]
         if model is not None:
             repo = PINS["ARETE_REPO"]
+        wrev = pend_rev or rev   # the revision the waiting unit names (the pin's unless it moved)
         window_line = "    --context-length 1010000 \\\\\n" if window == "1m" else ""
         unit_text = (
             "[Service]\nExecStart=/usr/bin/docker run --rm --name qwen38 --gpus all \\\n"
             f"  -v {{hf}}:/root/.cache/huggingface \\\\\n"
             f"  {img} \\\\\n  python3 -m sglang.launch_server \\\\\n"
-            f"    --model-path {repo} --revision {rev} \\\\\n{window_line}    --port 30000\n")
+            f"    --model-path {repo} --revision {{rev}} \\\\\n{window_line}    --port 30000\n")
         # the unit in place mounts the old cache and serves the target, the waiting one the new cache
-        (self.units / "qwen38-sglang.service").write_text(unit_text.replace("{hf}", str(self.hf_inplace)))
+        (self.units / "qwen38-sglang.service").write_text(
+            unit_text.replace("{hf}", str(self.hf_inplace)).replace("{rev}", rev))
         (self.cfg / "launch-flash.sh").write_text(
             "exec /usr/bin/docker run --rm --name qwen38-flash --gpus all \\\n"
             f"  -v {self.hf_inplace}:/root/.cache/huggingface \\\n  -e HF_HUB_OFFLINE=1 \\\n"
             f"  {img} \\\n  python3 -m sglang.launch_server \\\n    --model-path {PINS['FLASH_REPO']} "
-            f"--revision {PINS['FLASH_REV']}\\n")
+            f"--revision {rev}\\n")
         if pending:
             (self.cfg / "pending").mkdir()
             if lane == "27b":
                 (self.cfg / "pending" / "qwen38-sglang.service").write_text(
-                    unit_text.replace("{hf}", str(self.hf_wait)))
+                    unit_text.replace("{hf}", str(self.hf_wait)).replace("{rev}", wrev))
                 (self.cfg / "pending" / "qwen38-sglang.service.needs").write_text("checkpoint gone\n")
             else:
                 (self.cfg / "pending" / "launch-flash.sh").write_text(
                     "exec /usr/bin/docker run --rm --name qwen38-flash --gpus all \\\n"
                     f"  -v {self.hf_wait}:/root/.cache/huggingface \\\n  -e HF_HUB_OFFLINE=1 \\\n"
                     f"  {img} \\\n  python3 -m sglang.launch_server \\\n    --model-path {PINS['FLASH_REPO']} "
-                    f"--revision {PINS['FLASH_REV']}\\n")
+                    f"--revision {wrev}\n")
                 (self.cfg / "pending" / "qwen38-flash.service.needs").write_text("checkpoint gone\n")
         # the fabricated cache: the new revision's snapshot, as if the fetch had just brought it
-        self.repo, self.rev = repo, rev
-        snap = self.hf_wait / "hub" / ("models--" + repo.replace("/", "--")) / "snapshots" / rev
+        self.repo, self.rev = repo, wrev
+        snap = self.hf_wait / "hub" / ("models--" + repo.replace("/", "--")) / "snapshots" / wrev
         snap.mkdir(parents=True)
         cfg = dict(NATIVE)
         if quant == "arete":
@@ -136,6 +146,7 @@ class Box:
                            text=True, timeout=60, env=env)
         calls = (self.t / "calls").read_text().splitlines() if (self.t / "calls").exists() else []
         hfenv = (self.t / "hfenv").read_text().splitlines() if (self.t / "hfenv").exists() else []
+        self.modrev = (self.t / "modrev").read_text().splitlines() if (self.t / "modrev").exists() else []
         return r.returncode, r.stdout + r.stderr, calls, hfenv
 
     def config(self):
@@ -216,6 +227,39 @@ class TheLoadPatchesTheWaitingUnitsCheckpoint(unittest.TestCase):
         tc = b.config().get("text_config", {})
         self.assertEqual(tc.get("max_position_embeddings"), 262144, out)
         self.assertFalse((b.cfg / "chat-template-sglang.jinja").exists(), out)
+
+
+class ThePrepareFetchesTheRevisionTheWaitingUnitNames(unittest.TestCase):
+    """Seventh pass of the v1.52.0 reviews (2026-11-19): when an update waits, the prepare fetched and
+    patched the PIN's revision, not the one the waiting unit names in its --revision. With the pin moved
+    since the wait was posed (a newer checkout without a re-run of ./install.sh), or a MODEL_REV= install,
+    each Load fetched the pin's revision while the wait kept asking for its own, and apply_pending
+    refused forever. The prepare now reads the revision in the waiting unit and passes it to the fetch
+    (MODEL_REV=, honored by switch-model.sh --fetch)."""
+
+    OLD, NEW = "1" * 40, "2" * 40   # the revision the waiting unit names, the pin's (moved) one
+
+    def test_27b_the_waiting_units_revision_is_fetched_and_patched(self):
+        b = Box("27b", "stock", window="1m", pend_rev=self.OLD, pin_rev=self.NEW)
+        rc, out, calls, hfenv = b.run("27b", "stock")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(b.modrev, [self.OLD], "the fetch was given the waiting unit's revision, not the pin's")
+        self.assertIn("switch-model.sh stock --fetch", calls)
+        tc = b.config().get("text_config", {})
+        self.assertEqual(tc["max_position_embeddings"], 1010000, out)   # patched at the waiting revision
+
+    def test_flash_the_waiting_launchers_revision_is_fetched(self):
+        b = Box("flash", "flash", pend_rev=self.OLD, pin_rev=self.NEW)
+        rc, out, calls, hfenv = b.run("flash", "flash")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(b.modrev, [self.OLD], "the fetch was given the waiting launcher's revision")
+        self.assertIn("switch-model.sh flash --fetch", calls)
+
+    def test_without_a_wait_the_pins_revision_is_fetched(self):
+        b = Box("27b", "stock", window="1m", pending=False)
+        rc, out, calls, hfenv = b.run("27b", "stock")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(b.modrev, [PINS["STOCK_REV"]], out)   # no wait: the pin, as the switch reads it
 
 
 if __name__ == "__main__":

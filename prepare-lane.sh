@@ -128,6 +128,12 @@ prepare_flash(){
     *) if [ -n "$TARGET" ]; then die "$TARGET is not a flash lane target (flash, flash-nvda or flash-uncensored)"; fi
        die "the flash launcher serves $model, which no flash target names: ./switch-model.sh flash points it at one" ;;
   esac
+  # When an update waits, the revision prepared is the one the waiting launcher names in its --revision,
+  # not the pin's: the pin may have moved since the wait was posed (a newer checkout, without a re-run
+  # of ./install.sh), or a MODEL_REV= install posed the wait, and each Load would otherwise fetch and
+  # patch the pin's revision while the wait keeps asking for its own, forever (seventh pass of the
+  # v1.52.0 reviews, 2026-11-19).
+  if [ -n "$pend" ]; then rev="$(arg_of "$launch" --revision)"; [ -n "$rev" ] || rev=main; fi
   # what it downloads, summed on each disk before the first byte (lanes.sh room_per_disk); each
   # part checks its own room again as it comes
   local img_need=49 table_need=0
@@ -142,8 +148,9 @@ prepare_flash(){
   # passed, and a cache moved by a re-run of install with HF_CACHE= would then get the download
   # while the waiting launcher kept reading the other one, and the Load would loop (sixth review
   # of v1.52.0, 2026-11-19, GLM 5.3: the image, video and image-h3 switches already read the
-  # waiting unit's cache, the two text lanes did not).
-  HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
+  # waiting unit's cache, the two text lanes did not). MODEL_REV carries the revision read above:
+  # the waiting launcher's own when an update waits, the pin's otherwise (seventh pass, 2026-11-19).
+  MODEL_REV="$rev" HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
   # An update waits for this Load and this Load loads its target: the switch's steps after the
   # fetch run here too, against the launcher that waits (the switch reads the one in place, not
   # yet put): the new revision's chat template regenerated from its own snapshot (sixth review
@@ -213,6 +220,12 @@ prepare_27b(){
     *) if [ -n "$TARGET" ]; then die "$TARGET is not a 27B lane target (stock, uncensored, fp8, uncensored-fp8 or arete)"; fi
        die "the 27B unit serves $model, which no 27B target names: ./switch-model.sh stock points it at one" ;;
   esac
+  # When an update waits, the revision prepared is the one the waiting unit names in its --revision,
+  # not the pin's: the pin may have moved since the wait was posed (a newer checkout, without a re-run
+  # of ./install.sh), or a MODEL_REV= install posed the wait, and each Load would otherwise fetch and
+  # patch the pin's revision while the wait keeps asking for its own, forever (seventh pass of the
+  # v1.52.0 reviews, 2026-11-19).
+  if [ -n "$pend" ]; then trev="$(arg_of "$unit" --revision)"; [ -n "$trev" ] || trev=main; fi
   # by its name, a target given by its repo or a typo checked as one was refused as too big, and the
   # unit's own target was not checked at all (found in review, 2026-10-23)
   [ "$(box_mem_class)" != 64 ] || target_fits "$target" \
@@ -249,8 +262,9 @@ prepare_27b(){
   # passed, and a cache moved by a re-run of install with HF_CACHE= would then get the download
   # while the waiting unit kept reading the other one, and the Load would loop (sixth review of
   # v1.52.0, 2026-11-19, GLM 5.3: the image, video and image-h3 switches already read the waiting
-  # unit's cache, the two text lanes did not).
-  HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
+  # unit's cache, the two text lanes did not). MODEL_REV carries the revision read above: the
+  # waiting unit's own when an update waits, the pin's otherwise (seventh pass, 2026-11-19).
+  MODEL_REV="$trev" HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
   # An update waits for this Load and this Load loads its target: the switch's steps after the
   # fetch run here too, against the unit that waits (the switch reads the one in place, not yet
   # put): the new revision's config patched for the window that unit serves (YaRN in 1M, its
