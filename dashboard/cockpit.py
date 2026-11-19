@@ -6120,6 +6120,31 @@ def repo_readers(repo_id: str, real: str | None = None, shared=()) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def containers_mounting(paths) -> list[str]:
+    """The running containers that mount one of the given host paths, another project's too: a bind shows in
+    .Mounts whatever the container's user may read of /proc (its fd and maps are root's), the folder mounted whole
+    or one under it. A Delete under a mounted folder reaches the container."""
+    reals = [os.path.realpath(p) for p in paths]
+
+    def mounted(src):
+        src = os.path.realpath(src)
+        return any(src == r or src.startswith(r + "/") or r.startswith(src + "/") for r in reals)
+
+    out = []
+    ids = run(["docker", "ps", "-q", "--no-trunc"], timeout=10).split()
+    if not ids:
+        return out
+    for ln in run(["docker", "inspect", "--format", "{{.Name}} {{json .Mounts}}", *ids], timeout=10).splitlines():
+        name, _, mounts = ln.partition(" ")
+        try:
+            srcs = [m.get("Source") for m in json.loads(mounts) if isinstance(m, dict)]
+        except ValueError:
+            continue
+        if any(s and mounted(s) for s in srcs):
+            out.append(f"the container {name.lstrip('/')}")
+    return out
+
+
 def repo_keep(repo_id: str, reg: dict) -> tuple[list, list]:
     """The part of a repository a lane loads alone, kept by its Delete while that lane's checkpoint is whole here:
     MiniMax-H3's text_encoder/, which MiniMax-H3-Image loads (the cleanup of 2026-11-16 kept it by hand). (patterns,
@@ -6515,6 +6540,11 @@ def job_delete_runtime(job: Job):
     procs = processes_reading(lambda s: any(u.search(s) for u in under))
     if procs:
         return False, [f"kept the {item} runtime: used by " + "; ".join(procs)], {"ok": False}
+    # a container of another project that mounts these folders reads them too, whatever its user may read of /proc:
+    # by docker inspect of the containers that run, as repo_readers does for a repository (revue of v1.51.0, 2026-11-19)
+    conts = containers_mounting(paths)
+    if conts:
+        return False, [f"kept the {item} runtime: mounted by " + "; ".join(conts)], {"ok": False}
     folder = rg.unwritable(paths)
     if folder:
         return False, [f"kept the {item} runtime: this user may not change {folder} (another user's, root's?)"], \

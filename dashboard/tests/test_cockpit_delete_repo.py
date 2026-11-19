@@ -6,6 +6,7 @@ loads alone kept (MiniMax-H3's text_encoder/). Its parameters are a closed set r
 here (not dry run), on a Hugging Face cache, a /proc and a Hub of the test's own."""
 import hashlib
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -275,6 +276,42 @@ class DeleteRepo(unittest.TestCase):
         self.assertEqual(body["status"], "done", body)
         self.assertFalse(spill.exists())
         self.assertTrue((self.tmp / ".cache" / "sglang" / "diffusion").exists(), "only the caches go")
+
+    def test_a_container_of_another_project_that_mounts_the_caches_keeps_them(self):
+        # another project's container binds the diffusion caches: seen by docker inspect of the containers that
+        # run, not by /proc (its fd and maps are root's), as repo_readers does for a repository
+        # (revue of v1.51.0, 2026-11-19)
+        spill = self.tmp / ".cache" / "sglang" / "diffusion" / "host_spill"
+        spill.mkdir(parents=True, exist_ok=True)
+        (spill / "w.bin").write_bytes(b"w" * 100)
+
+        def fake_run2(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[:3] == ["docker", "ps", "-q"]:
+                return "gta-diff\n"
+            if argv[:2] == ["docker", "inspect"]:
+                mounts = json.dumps([{"Source": str(self.tmp / ".cache" / "sglang"),
+                                      "Destination": "/root/.cache/sglang", "Type": "bind"}])
+                return f"/gta-diff {mounts}\n"
+            return self.fake_run(argv, timeout, merge_err, errors)
+
+        self.cp.run = fake_run2
+        self.addCleanup(setattr, self.cp, "run", self.fake_run)
+        code, body = self.runtime("diffusion-caches")
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(spill.exists())
+        self.assertTrue(any("mounted by" in ln and "gta-diff" in ln for ln in body["lines"]), body["lines"])
+        # nothing mounted: the Delete goes on
+        def fake_run3(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[:3] == ["docker", "ps", "-q"]:
+                return "gta-diff\n"
+            if argv[:2] == ["docker", "inspect"]:
+                return "/gta-diff []\n"
+            return self.fake_run(argv, timeout, merge_err, errors)
+
+        self.cp.run = fake_run3
+        code, body = self.runtime("diffusion-caches")
+        self.assertEqual(body["status"], "done", body)
+        self.assertFalse(spill.exists())
 
     def test_only_a_known_item(self):
         self.assertEqual(self.runtime("../../etc")[0], 400)
