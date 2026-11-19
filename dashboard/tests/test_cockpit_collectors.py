@@ -600,6 +600,17 @@ class TheOtherBoxOfAPair(Base):
         self.assertEqual(tiers, [{"pair": self.cp.collect_pair}], "a box that went holds its read: alone in its thread")
 
 
+class TheTranscribeCollectorHasItsOwnThread(Base):
+    """collect_transcribe reads the Transcribe lane's own /metrics, which can wait its whole
+    4 s timeout on a lane slow to answer (its model loading, say). Sharing the metrics
+    collector's thread let it delay the metrics window's reads by as much (review 2026-11-19, D3)."""
+
+    def test_transcribe_is_alone_in_its_tier(self):
+        tiers = [cols for _, cols in self.cp.TIERS if "transcribe" in cols]
+        self.assertEqual(tiers, [{"transcribe": self.cp.collect_transcribe}],
+                         "its own thread: a slow lane must not hold the metrics window's reads back")
+
+
 class Survive(Base):
     """Output no collector expects. None of these may raise, and none may
     silently turn into a plausible-looking number."""

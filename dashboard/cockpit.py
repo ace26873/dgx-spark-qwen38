@@ -4163,7 +4163,11 @@ TIERS = [
            "feed": collect_feed, "agent": collect_agent}),
     # its own thread: a /metrics read can wait its whole 4 s on an engine slow to answer,
     # and the units, the feed and the agent must not wait with it
-    (5.0, {"metrics": collect_engine_metrics, "transcribe": collect_transcribe}),
+    (5.0, {"metrics": collect_engine_metrics}),
+    # its own thread too: the Transcribe lane's /metrics read can wait its whole 4 s as well
+    # (its model loading, say), and the metrics window's reads must not wait with it
+    # (review 2026-11-19, D3)
+    (5.0, {"transcribe": collect_transcribe}),
     # the other box of a pair (decision 975), its own thread too: a box that went holds its read 8 s
     (5.0, {"pair": collect_pair}),
     (30.0, {"engine_info": collect_engine_info, "engine_table": collect_engine_table, "api": collect_api,
