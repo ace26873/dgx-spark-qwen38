@@ -210,13 +210,13 @@ vlane_put_unit(){  # $1 the rendered unit, $2... what else the lane's start read
     done < <(grep -o 'type=bind,source=[^,]*' "$1" | cut -d= -f3)
     if [ -n "$missing" ]; then
       echo "NOTE: $VLANE_SHORT starts at boot, and its new unit mounts what is not there yet:$missing. The unit it has is kept; a Load, or ./install.sh once its checkpoint is in reach, brings the new one."
-      # an update (PENDING_PUT=1) says so as for every unit that waits: the new unit and what it lacks, the files it
-      # mounts with it, wait for the lane's Load, which writes them. Nothing waited, a wait of an earlier run stayed,
-      # and install.sh went on to update the lane whole (Vibe's blind review of v1.52.0, Mistral Large 4).
+      # an update (PENDING_PUT=1) says so as for every unit that waits: the new unit and what it lacks wait for
+      # the lane's Load, which writes them. unit_pending_put writes the .needs from unit_needs, which already
+      # says each mount it lacks as a path line (lanes.sh), so nothing is appended here again (sixth review of
+      # v1.52.0, 2026-11-19, GLM 5.3: every file came out twice on the card). Nothing waited, a wait of an earlier
+      # run stayed, and install.sh went on to update the lane whole (Vibe's blind review of v1.52.0, Mistral Large 4).
       if [ "${PENDING_PUT:-0}" = 1 ]; then
         unit_pending_put "$1" "$INSTALLED" || return 1
-        for src in $missing; do echo "path $src"; done \
-          >> "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$INSTALLED").needs"
       fi
       return 0
     fi

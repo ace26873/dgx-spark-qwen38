@@ -73,6 +73,17 @@ class TheUnitOfALaneThatStartsAtBoot(unittest.TestCase):
         self.assertIn(f"path {self.template}", needs)
         self.assertNotIn("checkpoint old/one@1", needs)
 
+    def test_each_missing_mount_is_one_path_line_in_the_wait(self):
+        # unit_pending_put writes the .needs from unit_needs, which already says each bind-mount source it
+        # lacks as a path line: appending them again put every file twice on the card (sixth review of v1.52.0,
+        # 2026-11-19, GLM 5.3)
+        (self.bin / "docker").write_text("#!/bin/bash\nexit 1\n")
+        (self.bin / "docker").chmod(0o755)
+        out, installed = self.put(enabled=True, pending_put=True)
+        needs = (self.d / "cfg" / "pending" / "installed.service.needs").read_text().splitlines()
+        paths = [ln for ln in needs if ln.startswith("path ")]
+        self.assertEqual(paths, [f"path {self.template}"], needs)
+
     def test_outside_an_update_nothing_is_written_to_wait(self):
         out, installed = self.put(enabled=True)
         self.assertIn("NOTE: X starts at boot", out)
