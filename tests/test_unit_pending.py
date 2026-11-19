@@ -9,7 +9,6 @@ import os
 import pathlib
 import subprocess
 import tempfile
-import time
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]

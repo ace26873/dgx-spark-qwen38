@@ -134,7 +134,9 @@ class TheUnitFollowsThePinsWhole(unittest.TestCase):
     OLD = ("nvidia/old-bolt", "1" * 40, "nvidia/old-drafter", "2" * 40, "0.66")
 
     def switch(self, lane, d):
-        return bash(f'REPO_DIR="{REPO}"; CHOICE={lane}\n' + units(d) + 'sudo(){ "$@"; }\n'
+        # the switch clears the lane's waiting unit once its new one is in place (lanes.sh's unit_pending_clear, v1.52.0):
+        # a no-op here, never the box's own pending folder; tests/test_unit_pending.py tests the function itself
+        return bash(f'REPO_DIR="{REPO}"; CHOICE={lane}\n' + units(d) + 'sudo(){ "$@"; }\nunit_pending_clear(){ :; }\n'
                     + SWITCH_PICK + SWITCH_REWRITE + '\necho "rewritten=$NEM_REWRITTEN"')
 
     def test_a_unit_from_older_pins_becomes_the_one_the_installer_renders_now(self):
@@ -179,7 +181,7 @@ class TheUnitFollowsThePinsWhole(unittest.TestCase):
         repo.mkdir()
         (repo / "install-nemotron.sh").write_text(NEM)
         (repo / "install-nemotron-super.sh").write_text(re.sub(r'(?m)^NEMOTRON_SUPER_SEQS="[^"]*"', 'NEMOTRON_SUPER_SEQS="2"', SUPER))
-        rc, out = bash(f'REPO_DIR="{repo}"; CHOICE=nemotron-super\n' + units(d) + 'sudo(){ "$@"; }\n'
+        rc, out = bash(f'REPO_DIR="{repo}"; CHOICE=nemotron-super\n' + units(d) + 'sudo(){ "$@"; }\nunit_pending_clear(){ :; }\n'
                        + SWITCH_PICK + SWITCH_REWRITE + '\necho "rewritten=$NEM_REWRITTEN"')
         self.assertEqual(rc, 0, out)
         self.assertTrue(out.endswith("rewritten=1"), out)
