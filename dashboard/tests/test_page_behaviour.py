@@ -334,6 +334,58 @@ class TheLfm3LaneReadsAsAVllmLane(unittest.TestCase):
         self.assertIn("qwen38-lfm3.service", r)
 
 
+class TheTranscribeLaneServesNoText(unittest.TestCase):
+    """The NVIDIA Nemotron Transcribe lane holds the GPU but serves no text, on its own port: the
+    text engine's panel stays closed, Smoke, Flush and Abort are refused with the reason, and Now
+    says no text lane serves. textReady() counted it before (review of 2026-11-19): the actions
+    stayed allowed against the closed :30000 and Now read "reading the lane that serves…"."""
+
+    SERVES = r"""
+    const U = JSON.parse(JSON.stringify(UNITS));
+    U.units['qwen38-sglang.service'] = {active: 'inactive', enabled: 'disabled'};
+    U.units['qwen38-transcribe.service'] = {active: 'active', enabled: 'enabled'};
+    feed({config: CONFIG, units: U, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+    """
+
+    WHY = "The NVIDIA Nemotron Transcribe lane is serving: this talks to the text engine, which is not running."
+
+    def test_text_ready_is_false_the_reason_names_the_lane_and_the_traffic_caption_says_it(self):
+        r = run(self, self.SERVES + r"""
+        report({ready: textReady(), why: noEngineWhy(), trCap: txt('tr-cap')});
+        """)
+        self.assertEqual(r, {"ready": False, "why": self.WHY,
+                             "trCap": "no text engine: the NVIDIA Nemotron Transcribe lane serves"})
+
+    def test_smoke_flush_and_abort_are_disabled_with_that_reason(self):
+        r = run(self, self.SERVES + r"""
+        openMenu(); applyBusy();
+        report([...document.querySelectorAll('#menu-list [data-act]')]
+          .filter(b => ['smoke', 'flush_cache', 'abort_all'].includes(b.dataset.act))
+          .map(b => [b.dataset.act, b.disabled, b.title]));
+        """)
+        self.assertEqual([x[0] for x in r], ["smoke", "flush_cache", "abort_all"])
+        for act, disabled, title in r:
+            self.assertEqual((disabled, title), (True, self.WHY), r)
+
+    def test_the_engine_facts_panel_stays_closed_and_says_why(self):
+        r = run(self, self.SERVES + r"""
+        renderEngineFacts();
+        report({factsHidden: $('eng-facts').hidden, down: txt('eng-down')});
+        """)
+        self.assertEqual(r, {"factsHidden": True,
+                             "down": "The NVIDIA Nemotron Transcribe lane is serving, so there is no text engine: it answers on its own port."})
+
+    def test_now_says_no_text_lane_serves(self):
+        r = run(self, self.SERVES + r"""
+        location.hostname = '127.0.0.1';
+        feed({engine_info: {served_target: 'transcribe', info: {served_model_name: ''}},
+              api: {known: true, port: 30001, bind: '127.0.0.1', tls: false, client_keys: false,
+                    key_file: '/home/u/.config/qwen38/api-key', addresses: []}});
+        report(txt('api-facts'));
+        """)
+        self.assertIn("Modelno text lane serves now", r)
+
+
 class TheProbeLineIsNotAStaleOk(unittest.TestCase):
     """With no text engine serving (stopped, or a diffusion lane up) the canary skips, and
     the page kept its last success on screen as "ok, 0.4 s (skipped this round: busy)"."""

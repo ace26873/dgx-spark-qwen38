@@ -1295,6 +1295,13 @@ def llamacpp_engine_state(unit: str, *, active: str, sub: str, prev_state: str |
 TRANSCRIBE_UNIT = "qwen38-transcribe.service"
 TRANSCRIBE_UNIT_PATH = Path("/etc/systemd/system/qwen38-transcribe.service")
 TRANSCRIBE_CONTAINER = "qwen38-transcribe"
+
+
+def transcribe_serving() -> bool:
+    """True while the NVIDIA Nemotron Transcribe lane holds the GPU (from its boot to its stop): it
+    serves no text, so the text port is closed and no text action has an engine to talk to."""
+    with LIFE_LOCK:
+        return (LIFE.get("states") or {}).get(TRANSCRIBE_UNIT) in lc.BUSY_STATES
 # The Liquid AI LFM2.5 24B-A2B lane: SGLang on the 27B lane's image, on the text port behind the proxy, so a text unit
 # of lc.TEXT_UNITS with every SGLang belt (the canary, the pool guard, the autoheal), its facts read as the 27B's are.
 LFM25_UNIT = "qwen38-lfm25.service"
@@ -7053,6 +7060,13 @@ def start_action(name: str, params: dict, origin: str = "ui") -> tuple[int, dict
     if why_not:
         audit({"kind": "action_blocked", "action": name, "params": clean, "reasons": [why_not]})
         return 409, {"error": "blocked", "reasons": [why_not]}
+    # the transcribe lane serves no text: while it holds the GPU, the text port is closed and a
+    # text action has no engine to answer it (the page refuses it too, base.js's NEEDS_ENGINE)
+    if name in ("flush_cache", "abort_all", "smoke") and transcribe_serving():
+        why = ("The NVIDIA Nemotron Transcribe lane is serving: it answers on its own port, and this "
+               "talks to the text engine on :30000, which is not running.")
+        audit({"kind": "action_blocked", "action": name, "params": clean, "reasons": [why]})
+        return 409, {"error": "blocked", "reasons": [why]}
     warnings = []
     if name in ("unit", "switch", "prepare"):
         with LIFE_LOCK:

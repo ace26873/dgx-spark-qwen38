@@ -219,5 +219,41 @@ class ItStartsOnlyWithItsFilesThere(Base):
                     self.whole()
 
 
+class ATextActionIsRefusedWhileItServes(Base):
+    """The lane holds the GPU but serves no text, on its own port: the text port is closed, so a
+    text action (smoke, flush, abort) is refused by the server with the reason, as the page refuses
+    it (base.js's NEEDS_ENGINE) - before, the job ran against the closed :30000 (review 2026-11-19)."""
+
+    def setUp(self):
+        super().setUp()
+        with self.ck.LIFE_LOCK:
+            self.ck.LIFE["states"] = {U: "ready"}
+
+    def tearDown(self):
+        with self.ck.LIFE_LOCK:
+            self.ck.LIFE["states"] = {}
+        if self.ck.JOB_LOCK.locked():
+            try:
+                self.ck.JOB_LOCK.release()
+            except RuntimeError:
+                pass
+
+    def test_smoke_flush_and_abort_are_refused_with_the_reason(self):
+        for name in ("smoke", "flush_cache", "abort_all"):
+            with self.subTest(name):
+                code, out = self.ck.start_action(name, {})
+                self.assertEqual(code, 409, out)
+                self.assertEqual(out["error"], "blocked")
+                self.assertIn("The NVIDIA Nemotron Transcribe lane is serving", out["reasons"][0])
+                self.assertIn(":30000", out["reasons"][0])
+                self.assertFalse(self.ck.JOB_LOCK.locked(), "a refusal holds no job lock")
+
+    def test_a_text_action_is_allowed_again_once_it_does_not_serve(self):
+        with self.ck.LIFE_LOCK:
+            self.ck.LIFE["states"] = {}
+        code, out = self.ck.start_action("smoke", {})
+        self.assertEqual(code, 202, out)
+
+
 if __name__ == "__main__":
     unittest.main()

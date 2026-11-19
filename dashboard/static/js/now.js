@@ -332,7 +332,7 @@ function renderActivity(){
 }
 on('canary', d => {
   let txt;
-  if (d.skipped && !textReady()) txt = imageServing() ? 'no text engine (the image lane serves)' : videoServing() ? 'no text engine (the video lane serves)' : 'no text engine';
+  if (d.skipped && !textReady()) txt = imageServing() ? 'no text engine (the image lane serves)' : videoServing() ? 'no text engine (the video lane serves)' : transcribeServing() ? 'no text engine (the NVIDIA Nemotron Transcribe lane serves)' : 'no text engine';
   // the Kolibri lane is not probed: the last Qwen lane's result read as its own (review, 2026-10-14)
   else if (d.skipped && (servingEngine() || [])[0] === KOLIBRI_UNIT) txt = `not run: ${d.why || 'the Kolibri-1 lane is checked by its own /health'}`;
   else if (d.skipped && isVllmTable((servingEngine() || [])[0])) txt = `not run: ${d.why || b12xName((servingEngine() || [])[0]) + ' is checked by its own /health'}`;

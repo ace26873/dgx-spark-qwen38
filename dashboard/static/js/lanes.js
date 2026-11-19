@@ -208,6 +208,7 @@ function renderEngineFacts(){
   show('eng-down', !on);
   setText('eng-down', on ? '' : imageServing() ? 'The image lane is serving, so there is no text engine. Its facts are on the Image view.'
     : videoServing() ? 'The video lane is serving, so there is no text engine. Its facts are on the Video view.'
+    : transcribeServing() ? 'The NVIDIA Nemotron Transcribe lane is serving, so there is no text engine: it answers on its own port.'
     : s ? `The engine is ${STATE_LABEL[s[1].state] || s[1].state}: these facts arrive from the engine itself, once it answers.`
     : 'No engine is running.');
 }

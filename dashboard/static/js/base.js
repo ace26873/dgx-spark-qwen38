@@ -279,8 +279,9 @@ function enabledUnit(){ return bootUnit() || U27; }
 const bootKnown = () => LANE_UNITS.every(n => F.units && F.units[n] && F.units[n].enabled !== '?' && F.units[n].enabled !== undefined);
 function servingReady(){ const s = servingEngine(); return !!(s && ['ready', 'degraded', 'wedged'].includes(s[1].state)); }
 // A TEXT engine is up: the pool, the context window, flush, abort and smoke all talk to
-// the text engine on :30000, and with a diffusion lane serving that port is closed.
-function textReady(){ const s = servingEngine(); return servingReady() && !!s && !isImageLane(s[0]) && s[0] !== VIDEO_UNIT; }
+// the text engine on :30000, and with a lane that serves none of it (the image and video
+// lanes, the transcribe lane on its own port) that port is closed.
+function textReady(){ const s = servingEngine(); return servingReady() && !!s && !isImageLane(s[0]) && s[0] !== VIDEO_UNIT && s[0] !== TRANSCRIBE_UNIT; }
 const imageServing = () => { const s = servingEngine(); return !!s && isImageLane(s[0]); };
 const videoServing = () => { const s = servingEngine(); return !!s && s[0] === VIDEO_UNIT; };
 const transcribeServing = () => { const s = servingEngine(); return !!s && s[0] === TRANSCRIBE_UNIT; };

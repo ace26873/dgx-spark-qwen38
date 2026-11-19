@@ -16,7 +16,7 @@ on('engine_fast', d => {
 // said after the whole payload: which lane serves is the lifecycle's, read after this one
 afterApply(() => {
   const none = F.noEngine || !textReady(), n = loadWords(F.load || {});
-  cap('tr-cap', none ? (imageServing() ? 'no text engine: the image lane serves' : videoServing() ? 'no text engine: the video lane serves' : 'no text engine')
+  cap('tr-cap', none ? (imageServing() ? 'no text engine: the image lane serves' : videoServing() ? 'no text engine: the video lane serves' : transcribeServing() ? 'no text engine: the NVIDIA Nemotron Transcribe lane serves' : 'no text engine')
       : (n && F.prompt ? n + ', computing a prompt' : n) || 'idle', none ? '' : n ? 'ok' : '', n && !none ? 'live' : true);
 });
 on('decode', d => {
