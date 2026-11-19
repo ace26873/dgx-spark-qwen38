@@ -212,7 +212,7 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   # target is the one served, never the reverse, and the checkpoint fetched above is the asked one's, so
   # nothing is downloaded for a target that will not serve (third review of v1.52.0, 2026-11-19, GLM 5.3: the
   # wait was posed whole and the asked target dropped, after its 102 GB checkpoint had been fetched).
-  KOL_POSE=""; KOL_STAYS=""
+  KOL_POSE=""
   if [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME" ]; then
     if [ -f "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base" ] && [ -f "$KOLIBRI_UNIT" ] \
        && [ "$(cat "$CONFIG_DIR/pending/$KOLIBRI_UNIT_NAME.base")" != "$(sha256sum "$KOLIBRI_UNIT" | cut -d' ' -f1)" ]; then
@@ -226,7 +226,7 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
         # it serves the asked target (or names no checkpoint): it waits for what it lacks, as before
         if [ -n "$(unit_needs "$KOL_POSE")" ]; then
           echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$KOL_POSE" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-kolibri applies it"
-          KOL_POSE=""; KOL_STAYS=1
+          KOL_POSE=""   # it stays waiting: the unit in place is rewritten to the asked target below
         fi
       elif [ -n "$(unit_needs "$KOL_POSE" | grep -v "^checkpoint ${KOL_POSE_CUR%% --revision *}@${KOL_POSE_CUR##* --revision }$" || true)" ]; then
         # it serves the other target and still lacks what the rewrite to the asked one does not replace
@@ -240,7 +240,7 @@ if [ "$CHOICE" = "kolibri" ] || [ "$CHOICE" = "kolibri-nvfp4" ]; then
   fi
   KOL_FROM="$KOLIBRI_UNIT"; KOL_FROM_CUR="$KOL_CUR"; KOL_FROM_GMU="$KOL_CUR_GMU"
   if [ -n "$KOL_POSE" ]; then KOL_FROM="$KOL_POSE"; KOL_FROM_CUR="$KOL_POSE_CUR"; KOL_FROM_GMU="$KOL_POSE_GMU"; fi
-  # KOL_STAYS (the wait serves the asked target but still lacks something, its image): the unit in place
+  # The wait that serves the asked target but still lacks something (its image) is not posed: the unit in place
   # is rewritten to the asked target anyway, whose checkpoint was just fetched, and the wait is kept, not
   # cleared: the output's "Switch queued" is then true (seventh pass of the v1.52.0 reviews, 2026-11-19:
   # with the stays-branch the unit in place kept the other target while the output named the asked one).
@@ -1124,7 +1124,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   # downloaded for a target that will not serve (third review of v1.52.0, 2026-11-19, GLM 5.3: a Load of
   # image-turbo with a wait for the base posed the wait whole and dropped the Turbo, after its 33 GB had
   # been fetched).
-  IMG_POSE=""; IMG_STAYS=""
+  IMG_POSE=""
   if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME" ]; then
     if [ -f "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base" ] && [ -f "$IMAGE_UNIT" ] \
        && [ "$(cat "$CONFIG_DIR/pending/$IMAGE_UNIT_NAME.base")" != "$(sha256sum "$IMAGE_UNIT" | cut -d' ' -f1)" ]; then
@@ -1137,7 +1137,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
         # it serves the asked checkpoint (or names none): it waits for what it lacks, as before
         if [ -n "$(unit_needs "$IMG_POSE")" ]; then
           echo "NOTE: the update that waited for this Load still lacks $(unit_needs "$IMG_POSE" | paste -sd ';' | sed 's/;/; /g'): it stays waiting; ./install.sh --with-image applies it"
-          IMG_POSE=""; IMG_STAYS=1
+          IMG_POSE=""   # it stays waiting: the unit in place is rewritten to the asked checkpoint below
         fi
       elif [ -n "$(unit_needs "$IMG_POSE" | grep -v "^checkpoint ${IMG_POSE_CUR}@" || true)" ]; then
         # it serves the other checkpoint and still lacks what the rewrite to the asked one does not
@@ -1151,7 +1151,7 @@ if [ "$CHOICE" = "image" ] || [ "$CHOICE" = "image-turbo" ]; then
   fi
   IMG_FROM="$IMAGE_UNIT"; IMG_FROM_CUR="$IMG_CUR"
   if [ -n "$IMG_POSE" ]; then IMG_FROM="$IMG_POSE"; IMG_FROM_CUR="$IMG_POSE_CUR"; fi
-  # IMG_STAYS (the wait serves the asked checkpoint but still lacks something, its runtime): the unit in
+  # The wait that serves the asked checkpoint but still lacks something (its runtime) is not posed: the unit in
   # place is rewritten to the asked checkpoint anyway, whose checkpoint was just fetched, and the wait is
   # kept, not cleared: the output's "Switch queued" is then true (seventh pass of the v1.52.0 reviews,
   # 2026-11-19: with the stays-branch the unit in place kept the other checkpoint while the output named
