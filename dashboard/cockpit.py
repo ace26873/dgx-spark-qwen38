@@ -3382,8 +3382,10 @@ def job_apply_pending(job: Job):
     r = subprocess.run(["bash", "-c", 'set -u; . "$1/lanes.sh"; unit_needs "$2"', "x", str(REPO_DIR),
                         str(launch if launch and launch.is_file() else src)],
                        capture_output=True, text=True, timeout=120)
-    # its checkpoint is the switch's to fetch and check, the step after this one (any target the Load asks for)
-    lacks = [ln for ln in r.stdout.splitlines() if ln.strip() and not ln.startswith("checkpoint ")]
+    # a waiting unit goes in place only when the box has all it reads, its checkpoint included (the Load's
+    # prepare fetched it): one that is not there refuses here, rather than leaving a unit that serves in
+    # memory and does not start at the lane's next boot (review of v1.52.0, 2026-11-19)
+    lacks = [ln for ln in r.stdout.splitlines() if ln.strip()]
     if r.returncode != 0 or lacks:
         return False, [f"{unit}'s update still lacks: " + ("; ".join(lacks) or r.stderr.strip()[:200])
                        + " (its Load prepares it first)"], {"ok": False}

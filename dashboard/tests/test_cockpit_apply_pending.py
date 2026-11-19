@@ -114,10 +114,16 @@ class ApplyPending(unittest.TestCase):
         self.assertEqual(self.cp.pending_units(), {})
         self.assertTrue(any("changed since the update" in ln for ln in job.lines), job.lines)
 
-    def test_the_checkpoint_is_the_switchs_to_fetch(self):
+    def test_a_waiting_unit_whose_checkpoint_is_not_on_the_box_is_not_put_in_place(self):
+        # apply_pending alone (an API call, steps clicked in another order) must not pose a unit whose
+        # weights are not there: the lane would serve in memory and not start at its next boot
+        # (review of v1.52.0, 2026-11-19)
         self.lacks = "checkpoint RadixArk/Qwen3.8-27B-NVFP4@" + "2" * 40 + "\n"
         job = self.act()
-        self.assertEqual(job.status, "done", job.lines)
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertEqual(self.calls, [])
+        self.assertTrue((self.pdir / UNIT).exists(), "the wait is kept, not cleared")
+        self.assertTrue(any("still lacks" in ln and "checkpoint" in ln for ln in job.lines), job.lines)
 
     def test_a_unit_that_still_lacks_something_is_not_put_in_place(self):
         self.lacks = "image lmsysorg/sglang@sha256:" + "b" * 64 + "\n"
