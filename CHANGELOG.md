@@ -166,15 +166,15 @@ an update's wait too, as the lanes of v1.52.0 do. Each fix is held by a test tha
 `test_unit_pending.py` counts the switch puts of the three lanes and checks that every installer that runs `unit_put`
 itself handles the pending arm: transcribe did not. `test_update_waits_for_load`'s test that no side lane's installer
 is called but through `side_install` failed on the 6 direct calls before, and its test of the lanes beside armed the
-wait for the three lanes. `test_benches_close_side_lanes` asks every bench that closes one side lane's COCKPIT_ address
-to close them all (the benches written on v1.52 closed the image ones only, and COCKPIT_VIDEO and COCKPIT_TRANSCRIBE
-stayed open). The two SGLang-start tests (a health route that generates nothing, a rendezvous by file) failed on the
-lfm25 unit before it said them; the pi and omp levels on the two Liquid AI lanes are held by a test; the LFM3 template
-test skips, on a machine without the checkpoint cached, under the reason the CI lists. The lanes bring their own
-suites: `tests/test_lfm25_lane.py`, `tests/test_lfm3_lane.py`, `tests/test_transcribe_lane.py`,
+wait for the three lanes. `dashboard/tests/test_benches_close_side_lanes.py` asks every bench that closes one side
+lane's COCKPIT_ address to close them all (the benches written on v1.52 closed the image ones only, and COCKPIT_VIDEO
+and COCKPIT_TRANSCRIBE stayed open). The two SGLang-start tests (a health route that generates nothing, a rendezvous
+by file) failed on the lfm25 unit before it said them; the pi and omp levels on the two Liquid AI lanes are held by a
+test; the LFM3 template test skips, on a machine without the checkpoint cached, under the reason the CI lists. The
+lanes bring their own suites: `tests/test_lfm25_lane.py`, `tests/test_lfm3_lane.py`, `tests/test_transcribe_lane.py`,
 `dashboard/tests/test_transcribe_cockpit.py`, `test_lfm25_cockpit.py`, `test_lfm3_cockpit.py`, the cockpit's guard of
-every on-demand lane in `test_cockpit_collectors.py` (each of the registry's lanes, present and absent), and the proxy's
-`test_proxy_lfm25.py` and `test_proxy_lfm3.py`.
+every on-demand lane in `test_cockpit_collectors.py` (each of the registry's lanes, present and absent), and the
+proxy's `test_proxy_lfm25.py` and `test_proxy_lfm3.py`.
 
 **A known limit, said as it is: opencode on the LFM2.5 lane.** In the matrix below, one try of five succeeded: the
 model asks to read the test file at an invented absolute path in the home directory, outside opencode's working
