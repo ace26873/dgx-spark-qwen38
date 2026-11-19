@@ -23,7 +23,7 @@ const TR_MAX_AUDIO = 64 * 1024 * 1024;
 // that converts it, and nothing is converted on the server.
 const TR_EXT_OK = /\.(wav|mp3|flac)$/i;
 const TR_MIME_OK = /audio\/(wav|x-wav|wave|mpeg|mp3|flac|x-flac)|application\/(x-)?flac/i;
-const TRS = {audio: null, inflight: null, busy: false, available: false, watching: null,
+const TRS = {audio: null, inflight: null, busy: false, available: false,
              port: 30036, host: '127.0.0.1', result: null, touched: false};
 
 const trVal = id => ($(id) ? $(id).value : '');
@@ -200,7 +200,9 @@ async function trRecordStop(){
   try{
     const blob = await rec.done;
     const actx = new AudioContext();
-    const decoded = await actx.decodeAudioData(await blob.arrayBuffer());
+    let decoded;
+    try{ decoded = await actx.decodeAudioData(await blob.arrayBuffer()); }
+    finally{ actx.close(); }     // Chrome caps the open AudioContexts (about 6): close it here
     const rate = 16000;                       // the recipe's sampling rate, mono
     const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
     const src = off.createBufferSource(); src.buffer = decoded; src.connect(off.destination); src.start();

@@ -112,9 +112,11 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
   context (HTTPS or localhost), and the recording is decoded and encoded as WAV (16 kHz mono
   PCM16) in the browser, since MediaRecorder gives webm or ogg, which the lane refuses. The
   language is detected by default or chosen in a short list (French, English, and the other
-  languages NVIDIA's model card puts at its "Leading" level). The transcript shows with the same
-  Copy button as the other fields, a `.txt` download, and the same call as a curl with the key read
-  on the box, never printed. The lane loads on demand like the others: the card in the view says
+  languages NVIDIA's model card puts at its "Leading" level). The transcript shows in a live
+  region (`role="status"`, `aria-live="polite"`, since a transcription can take minutes), with the
+  same Copy button as the other fields, a `.txt` download, and the same call as a curl with the key
+  read on the box, never printed. Each recording's decode `AudioContext` is closed once the decode
+  is done (Chrome caps the open ones), on success as on failure. The lane loads on demand like the others: the card in the view says
   whether it serves and offers the same Load journey as the Lanes view when it does not, and the
   lane's bay in Now opens the tab once it serves.
 - **Tests.** The relay's guards over HTTP in `dashboard/tests/test_cockpit_http.py` (auth, CSRF,

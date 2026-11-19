@@ -3400,6 +3400,47 @@ class TheTranscriptionTab(unittest.TestCase):
                          [0, 16383, -16384, 32767, -32768, 32767])   # setInt16 truncates; 2 clamps to 1
         self.assertEqual(r["decoded"], "RIFF")
 
+    def test_the_decode_context_is_closed_after_each_recording(self):
+        # Chrome caps the open AudioContexts (about 6): each recording's decode context must be
+        # closed, on success as on failure, or a few recordings later the creation throws
+        r = run(self, self.LANE_UP + r"""
+        let closed = 0, fail = false;
+        window.AudioContext = class {
+          decodeAudioData(buf){ return fail ? Promise.reject(new Error('undecodable'))
+                                            : Promise.resolve({duration: 1, sampleRate: 48000}); }
+          close(){ closed++; return Promise.resolve(); }
+        };
+        window.MediaRecorder = class { constructor(s){ this.mimeType = 'audio/webm'; } start(){} stop(){ this.onstop(); } };
+        navigator.mediaDevices = {getUserMedia: async () => ({getTracks: () => [{stop(){}}]})};
+        window.Blob = class { arrayBuffer(){ return Promise.resolve(new Uint8Array([1, 2, 3, 4]).buffer); } };
+        window.OfflineAudioContext = class {
+          createBufferSource(){ return {connect(){}, start(){}}; }
+          render(){ return Promise.resolve({getChannelData: () => new Float32Array(16).fill(0.1)}); }
+        };
+        await trRecordStart(); await __settle();
+        $('tcr-rec-stop').click(); await __settle(); await __advance(50);
+        const afterOk = closed;
+        fail = true;
+        await trRecordStart(); await __settle();
+        $('tcr-rec-stop').click(); await __settle(); await __advance(50);
+        report({afterOk, afterFail: closed, audio: !!TRS.audio, toast: toastText()});
+        """)
+        self.assertEqual(r["afterOk"], 1, "the AudioContext was not closed after a recording")
+        self.assertEqual(r["afterFail"], 2, "the AudioContext was not closed after a failed decode")
+        self.assertTrue(r["audio"])
+        self.assertIn("could not be encoded", r["toast"])
+
+    def test_the_transcript_screen_announces_its_changes_and_the_dead_field_is_gone(self):
+        # a transcript can take minutes: the screen is a live region, and TRS.watching (never
+        # read nor written) is gone
+        r = run(self, r"""
+        report({role: $('tcr-screen').getAttribute('role'), live: $('tcr-screen').getAttribute('aria-live'),
+                watching: 'watching' in TRS});
+        """)
+        self.assertEqual(r["role"], "status")
+        self.assertEqual(r["live"], "polite")
+        self.assertFalse(r["watching"], "TRS.watching is still declared, never used")
+
     def test_the_whole_record_flow_ends_in_a_wav_file_ready_to_send(self):
         r = run(self, self.LANE_UP + r"""
         // the browser's own pieces, faked: getUserMedia, MediaRecorder (webm, what Chrome gives),
@@ -3413,7 +3454,8 @@ class TheTranscriptionTab(unittest.TestCase):
         };
         window.Blob = class { constructor(parts){ this.parts = parts; this.size = 4; }
           arrayBuffer(){ return Promise.resolve(new Uint8Array([1, 2, 3, 4]).buffer); } };
-        window.AudioContext = class { decodeAudioData(buf){ return Promise.resolve({duration: 2.5, sampleRate: 48000}); } };
+        window.AudioContext = class { decodeAudioData(buf){ return Promise.resolve({duration: 2.5, sampleRate: 48000}); }
+          close(){ return Promise.resolve(); } };
         window.OfflineAudioContext = class {
           constructor(ch, len, rate){ this.len = len; }
           createBufferSource(){ return {connect(){}, start(){}}; }
