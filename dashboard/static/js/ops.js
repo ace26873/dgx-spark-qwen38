@@ -727,8 +727,20 @@ on('agent', d => { const o = $('log-opt-agent'); if (o) o.hidden = !d.enabled; }
 on('opencode', d => {
   const bad = d.real.error ? 'unknown: the config does not parse' : null;
   const lim = l => bad || (l && l.context ? `${fmtN(l.context)} context, ${fmtN(l.output || 0)} out` : 'not declared');
-  setText('oc-lim27', lim(d.real.limits['qwen38/qwen3.8-27b'])); setText('oc-limflash', lim(d.real.limits['flashnext/qwen3.8-flash-next']));
+  setText('oc-lim27', lim((d.real.limits || {})['qwen38/qwen3.8-27b'])); setText('oc-limflash', lim((d.real.limits || {})['flashnext/qwen3.8-flash-next']));
+  // the default model's own limits as a first row, when they are not one of the two above: after a
+  // Load of Kolibri, LFM3 or another lane, the two rows named lanes that do not serve (review of
+  // v1.53.0, 2026-11-19)
+  const defKey = d.real.default || '';
+  const defLim = defKey ? (d.real.limits || {})[defKey] : null;
+  const showDef = !!defLim && defKey !== 'qwen38/qwen3.8-27b' && defKey !== 'flashnext/qwen3.8-flash-next';
+  show('oc-limdef-k', showDef); show('oc-limdef', showDef);
+  if (showDef){
+    setText('oc-limdef-k', `Limits, ${defKey.includes('/') ? defKey.split('/').slice(1).join('/') : defKey}`);
+    setText('oc-limdef', lim(defLim));
+  }
   if (!d.enabled){
+    show('oc-limdef-k', false); show('oc-limdef', false);
     cap('oc-cap', 'off', ''); setText('oc-state', 'off (installed with --no-opencode)' + (d.off_note ? `, ${d.off_note}` : ''));
     setText('oc-default', d.real.present ? (bad || d.real.default || 'none') + ' (your own config, never touched)' : 'no opencode config on this box');
     setText('oc-launcher', d.launcher.present ? (d.launcher.ours ? 'this repo’s oc is still there (stale)' : 'a foreign oc') : 'none');

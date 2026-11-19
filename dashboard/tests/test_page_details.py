@@ -522,6 +522,39 @@ class TheRecipesPanelSaysWhatItCovers(unittest.TestCase):
 
 
 
+class TheDefaultModelsLimitsAreShown(unittest.TestCase):
+    """The opencode panel showed only the 27B's and flash's limits, so after a Load of Kolibri,
+    LFM2.5 or LFM3 the two rows named lanes that do not serve (review of v1.53.0, 2026-11-19,
+    finding 5): the default model's limits now get their own first row."""
+
+    OC = r"""
+    const oc = {enabled: true, real: {present: true, default: %s, limits: %s},
+                launcher: {present: true, ours: true, cap: 200000}, follows: true, why: '', fit: null};
+    feed({config: CONFIG, units: UNITS, opencode: oc});
+    report({hidden: $('oc-limdef').hidden, key: txt('oc-limdef-k'), lim: txt('oc-limdef'),
+            lim27: txt('oc-lim27'), limflash: txt('oc-limflash')});
+    """
+
+    def test_a_kolibri_default_gets_its_own_row(self):
+        r = run(self, self.OC % ("'kolibri/kolibri-1'",
+                "{'kolibri/kolibri-1': {context: 262144, output: 8192}, 'qwen38/qwen3.8-27b': {context: 1000000, output: 32000}}"))
+        self.assertFalse(r["hidden"], r)
+        self.assertEqual(r["key"], "Limits, kolibri-1")
+        self.assertEqual(r["lim"], "262,144 context, 8,192 out")
+        self.assertEqual(r["lim27"], "1,000,000 context, 32,000 out")
+
+    def test_the_27b_default_keeps_the_two_rows_alone(self):
+        r = run(self, self.OC % ("'qwen38/qwen3.8-27b'",
+                "{'qwen38/qwen3.8-27b': {context: 1000000, output: 32000}}"))
+        self.assertTrue(r["hidden"], r)
+        self.assertEqual(r["lim27"], "1,000,000 context, 32,000 out")
+
+    def test_no_default_no_row(self):
+        r = run(self, self.OC % ("null", "{}"))
+        self.assertTrue(r["hidden"], r)
+
+
+
 class AnUnreadableOpencodeConfigSaysSo(unittest.TestCase):
     """U31: a config that does not parse read like an empty one: "none" for the default
     model, "not declared" for the limits."""

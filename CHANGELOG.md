@@ -136,6 +136,7 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
 - Cockpit, UX review of v1.53.0: Settings' "Fit the limits to this engine" is disabled with its reason before the click on the lanes whose opencode limits are their own, as the actions menu already did.
 - Cockpit, UX review of v1.53.0: an update that waits for a lane's Load is an orange banner naming the lane, not only the Lanes tab's badge; a stale wait (dropped, not applied) gets none.
 - Cockpit, UX review of v1.53.0: the Logs source list disables the containers and journals of lanes this box does not have, with the reason as the title, instead of offering them to fail on read.
+- Cockpit, UX review of v1.53.0: Settings' opencode panel shows the default model's own limits as a first row when they are not the 27B's or flash's, instead of naming only those two lanes whatever serves.
 
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 
