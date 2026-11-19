@@ -3562,6 +3562,33 @@ def collect_pending_targets():
             or (unit == "qwen38-flash.service" and (PENDING_DIR / "launch-flash.sh").is_file())}
 
 
+def patch_waiting_checkpoint(unit: str, src: Path):
+    """lanes.sh's patch_served_checkpoint for the checkpoint the unit that waited serves (YaRN for the
+    window that unit serves, Arete's fp8 KV declaration, the chat template regenerated from its own
+    snapshot), everything read from the waiting file itself. apply_pending runs it once the unit is IN
+    PLACE: run in the prepare, while the unit previously in place still serves the same snapshot with
+    another window, the patch would leave a 1M lane that no longer loads if it restarts before the
+    pose (seventh pass of the v1.52.0 reviews, 2026-11-19)."""
+    lane = "27b" if unit == "qwen38-sglang.service" else "flash"
+    target = pending_target(unit) or ("stock" if lane == "27b" else "flash")
+    try:
+        text = src.read_text(errors="replace")
+    except OSError:
+        text = ""
+    if "--model-path" not in text:
+        return subprocess.CompletedProcess(["bash"], 0, "", "")   # names no checkpoint: nothing to patch
+    return subprocess.run(
+        ["bash", "-c",
+         'set -u; die(){ printf "ERROR: %s\\n" "$*" >&2; exit 1; }; . "$1/lanes.sh"; src="$2"; '
+         'repo="$(grep -m1 -oE -- \'--model-path [^ ]+\' "$src" | head -1 | cut -d" " -f2)"; '
+         'rev="$(grep -m1 -oE -- \'--revision [^ ]+\' "$src" | head -1 | cut -d" " -f2)"; '
+         'hf="$(unit_hf_cache "$src")"; hf="${hf:-${HF_CACHE:-$HOME/.cache/huggingface}}"; '
+         'patch_served_checkpoint "$3" "$4" "$src" "$hf" "$repo" "${rev:-main}"',
+         "x", str(REPO_DIR), str(src), lane, target],
+        capture_output=True, text=True, timeout=300,
+        env={**os.environ, "CONFIG_DIR": str(CONFIG_DIR)})
+
+
 def job_apply_pending(job: Job):
     """Put a lane's waiting unit in place, once the box has all it reads (lanes.sh's unit_needs, asked again now):
     through the fixed staging path its exact sudoers line allows, then a daemon-reload. The lane's restart is the
@@ -3606,7 +3633,17 @@ def job_apply_pending(job: Job):
             shutil.copyfile(launch, tmp)
             os.chmod(tmp, 0o755)
             os.replace(tmp, CONFIG_DIR / "launch-flash.sh")
+            # the checkpoint the new launcher serves is patched now that it is in place, never in the
+            # prepare while the launcher previously in place still serves the same snapshot
+            pr = patch_waiting_checkpoint(unit, launch)
             launch.unlink()
+            if pr.returncode != 0:
+                for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
+                    f.unlink(missing_ok=True)
+                audit({"kind": "pending_applied", "unit": unit})
+                return False, [f"{unit}: its new launch script is in place, but its checkpoint could not be "
+                               f"patched for it: {(pr.stderr.strip() or pr.stdout.strip())[-300:]} (the lane serves "
+                               "what it loaded until its next restart; ./install.sh patches it)"], {"ok": False}
         for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
             f.unlink(missing_ok=True)
         audit({"kind": "pending_applied", "unit": unit})
@@ -3622,9 +3659,16 @@ def job_apply_pending(job: Job):
     # wait whose .base names the unit before, read as stale at the retry and dropped with a false "switch"
     # message (fifth review of v1.52.0, 2026-11-19, GLM 5.3)
     stage.unlink(missing_ok=True)
+    # the checkpoint the new unit serves is patched now that the unit is in place, never in the prepare
+    # while the unit previously in place still serves the same snapshot with another window
+    pr = patch_waiting_checkpoint(unit, src)
     for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
         f.unlink(missing_ok=True)
     audit({"kind": "pending_applied", "unit": unit})
+    if pr.returncode != 0:
+        return False, lines + [f"{unit} is in place, but its checkpoint could not be patched for it: "
+                               f"{(pr.stderr.strip() or pr.stdout.strip())[-300:]} (the lane serves what it loaded "
+                               "until its next restart; ./install.sh patches it)"], {"ok": False}
     out = run(["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"], timeout=60, merge_err=True)
     if not answered(out):
         # a restart alone keeps systemd's old reading of the unit (it only warns that the file changed on disk):

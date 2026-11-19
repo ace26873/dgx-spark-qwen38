@@ -5,6 +5,7 @@ Load prepares it first, and apply_pending puts the waiting unit in place once th
 unit_needs, asked again), through the fixed staging path its exact sudoers line allows. The cockpit runs live here,
 on a config folder of the test's own, its sudo and unit_needs stubbed."""
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -297,6 +298,118 @@ class ApplyPending(unittest.TestCase):
         self.assertNotIn(flash, self.cp.pending_units(), "the incoherent wait is cleared")
         self.assertFalse((self.pdir / flash).exists())
         self.assertFalse((self.pdir / (flash + ".needs")).exists())
+
+class TheApplyPendingPatchesTheWaitingCheckpointAfterThePose(unittest.TestCase):
+    """Seventh pass of the v1.52.0 reviews (2026-11-19): apply_pending puts the waiting unit in place and
+    THEN runs lanes.sh's patch_served_checkpoint on the checkpoint that unit serves (the config patched
+    for the window that unit serves, the chat template regenerated from its own snapshot). Run in the
+    prepare, the patch touched the config the unit previously in place still served when the wait serves
+    the same snapshot with another window: a restart before the pose left a 1M lane that no longer
+    loads. The cockpit runs live here, on a config folder and a cache of the test's own; only the
+    unit_needs probe and sudo are stubbed, the patch scripts are the repo's own."""
+
+    REV = "3" * 40
+    IMG = "lmsysorg/sglang@sha256:" + "c" * 64
+    REPO_MODEL = "RadixArk/Qwen3.8-27B-NVFP4"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="cockpit-apply-patch-"))
+        (cls.tmp / "config").mkdir()
+        (cls.tmp / "config" / "api-key").write_text("k\n")
+        closed = "http://127.0.0.1:1"
+        os.environ.update(HOME=str(cls.tmp), COCKPIT_DRY_RUN="0", COCKPIT_CONFIG_DIR=str(cls.tmp / "config"),
+                          COCKPIT_REPO_DIR=str(REPO), COCKPIT_PORT="0", COCKPIT_AGENT_PORT="0",
+                          COCKPIT_AUTOHEAL="0", COCKPIT_ENGINE=closed, COCKPIT_PROXY=closed, COCKPIT_IMAGE=closed,
+                          COCKPIT_IMAGE_H3=closed, COCKPIT_UNIT_DIR=str(cls.tmp / "units"))
+        spec = importlib.util.spec_from_file_location("cockpit_apply_patch_under_test", DASH / "cockpit.py")
+        cls.cp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.cp)
+        units = cls.tmp / "units"
+        units.mkdir()
+        for name, value in list(vars(cls.cp).items()):
+            if name.endswith("_UNIT_PATH") and isinstance(value, Path):
+                setattr(cls.cp, name, units / value.name)
+        cls.cp.UNIT_PATHS = {k: units / k for k in cls.cp.UNIT_PATHS}
+        cls.cp.UNIT_DIR = units
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def setUp(self):
+        cp = self.cp
+        self.pdir = cp.PENDING_DIR
+        shutil.rmtree(self.pdir, ignore_errors=True)
+        self.pdir.mkdir(parents=True)
+        # a fabricated cache holding the waiting revision's snapshot, as if the Load's prepare had
+        # just fetched it; the waiting unit is a 1M one mounting that cache
+        self.hf = self.tmp / "hf"
+        shutil.rmtree(self.hf, ignore_errors=True)
+        snap = self.hf / "hub" / ("models--" + self.REPO_MODEL.replace("/", "--")) / "snapshots" / self.REV
+        snap.mkdir(parents=True)
+        (snap / "config.json").write_text('{"text_config": {"max_position_embeddings": 262144, '
+                                          '"rope_scaling": {"type": "linear"}}}\n')
+        spec = importlib.util.spec_from_file_location("pt_anchors", REPO / "patch-template.py")
+        pt = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pt)
+        (snap / "chat_template.jinja").write_text(
+            "\n".join((pt.EFFORT_ANCHOR, pt.LEAN_ANCHOR, pt.MSG_ANCHOR, pt.SYSTEM_ANCHOR,
+                       pt.TOOL_REF_ANCHOR, pt.TOOL_REF_RAISE)) + "\n")
+        self.snap = snap
+        (self.pdir / UNIT).write_text(
+            "[Service]\nExecStart=/usr/bin/docker run --rm "
+            f"-v {self.hf}:/root/.cache/huggingface {self.IMG} \\\n"
+            f"  python3 -m sglang.launch_server --model-path {self.REPO_MODEL} --revision {self.REV} "
+            "--context-length 1010000 --port 30000\n")
+        (self.pdir / (UNIT + ".needs")).write_text("image " + self.IMG + "\n")
+        self.in_place = cp.UNIT_DIR / UNIT
+        self.in_place.write_text("[Service]\nExecStart=old\n")
+        import hashlib
+        (self.pdir / (UNIT + ".base")).write_text(hashlib.sha256(self.in_place.read_bytes()).hexdigest() + "\n")
+        self.calls = []
+        real_sp = subprocess.run
+
+        def fake_sp(argv, **kw):
+            if argv[:2] == ["bash", "-c"] and "unit_needs" in argv[2]:
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            return real_sp(argv, **kw)
+        cp.subprocess.run = fake_sp
+        self.addCleanup(setattr, cp.subprocess, "run", real_sp)
+
+        def fake_run(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[0] == "sudo":
+                self.calls.append(argv)
+            return Ran("")
+        cp.run = fake_run
+
+    def act(self):
+        code, body = self.cp.start_action("apply_pending", {"unit": UNIT})
+        self.assertEqual(code, 202, body)
+        job = self.cp.JOBS[body["job"]]
+        for _ in range(200):
+            if job.status != "running":
+                break
+            time.sleep(0.05)
+        return job
+
+    def test_the_posed_units_checkpoint_is_patched_once_the_unit_is_in_place(self):
+        job = self.act()
+        self.assertEqual(job.status, "done", job.lines)
+        cfg = json.loads((self.snap / "config.json").read_text())
+        self.assertEqual(cfg["text_config"]["max_position_embeddings"], 1010000,
+                         "the 1M unit that was put in place got its YaRN patch, after the pose")
+        self.assertEqual(cfg["text_config"].get("rope_parameters", {}).get("rope_type"), "yarn")
+        tpl = self.cp.CONFIG_DIR / "chat-template-sglang.jinja"
+        self.assertTrue(tpl.is_file(), job.lines)
+        self.assertIn("'max', 'high'", tpl.read_text(), "the template regenerated from the waiting revision")
+        self.assertEqual(self.cp.pending_units(), {})
+
+    def test_a_wait_that_names_no_checkpoint_is_posed_without_a_patch(self):
+        (self.pdir / UNIT).write_text("[Service]\nExecStart=new\n")
+        job = self.act()
+        self.assertEqual(job.status, "done", job.lines)
+
 
 if __name__ == "__main__":
     unittest.main()

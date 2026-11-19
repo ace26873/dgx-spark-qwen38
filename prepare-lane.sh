@@ -151,14 +151,12 @@ prepare_flash(){
   # waiting unit's cache, the two text lanes did not). MODEL_REV carries the revision read above:
   # the waiting launcher's own when an update waits, the pin's otherwise (seventh pass, 2026-11-19).
   MODEL_REV="$rev" HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
-  # An update waits for this Load and this Load loads its target: the switch's steps after the
-  # fetch run here too, against the launcher that waits (the switch reads the one in place, not
-  # yet put): the new revision's chat template regenerated from its own snapshot (sixth review
-  # of v1.52.0, 2026-11-19, GLM 5.3: the --fetch stopped right after the download, and the lane
-  # restarted on the template of the revision before).
-  if [ -n "$pend" ]; then
-    patch_served_checkpoint flash "$target" "$launch" "$hf" "$model" "$rev"
-  fi
+  # The switch's steps after the fetch (the new revision's chat template, its config patched for the
+  # window the waiting launcher serves) are NOT run here: they run when the waiting launcher is put in
+  # place (the cockpit's apply_pending, lanes.sh's patch_served_checkpoint), never now, while the
+  # launcher in place still serves the same snapshot with another window (seventh pass of the v1.52.0
+  # reviews, 2026-11-19: a patch here left a 1M lane that no longer loads if it restarts before the
+  # pose).
   # The PLE table its launcher writes at every boot, 47.7 GiB in PLE_DIR, needs its room there,
   # counted after the checkpoint when the two share a disk (install.sh asks for both at once).
   if [ -n "$ple" ] && ! ls "$ple"/ple_table_*.bin >/dev/null 2>&1; then
@@ -265,15 +263,12 @@ prepare_27b(){
   # unit's cache, the two text lanes did not). MODEL_REV carries the revision read above: the
   # waiting unit's own when an update waits, the pin's otherwise (seventh pass, 2026-11-19).
   MODEL_REV="$trev" HF_CACHE="$hf" bash "$HERE/switch-model.sh" "$target" --fetch
-  # An update waits for this Load and this Load loads its target: the switch's steps after the
-  # fetch run here too, against the unit that waits (the switch reads the one in place, not yet
-  # put): the new revision's config patched for the window that unit serves (YaRN in 1M, its
-  # restore in native), Arete's fp8 KV cache declaration, the chat template regenerated from its
-  # own snapshot (sixth review of v1.52.0, 2026-11-19, GLM 5.3: the --fetch stopped right after
-  # the download, and a 1M lane restarted on an unpatched config, which does not load).
-  if [ -n "$pend" ]; then
-    patch_served_checkpoint 27b "$target" "$unit" "$hf" "$trepo" "$trev"
-  fi
+  # The switch's steps after the fetch (the new revision's config patched for the window the waiting
+  # unit serves, Arete's KV declaration, the chat template from its own snapshot) are NOT run here:
+  # they run when the waiting unit is put in place (the cockpit's apply_pending, lanes.sh's
+  # patch_served_checkpoint), never now, while the unit in place still serves the same snapshot with
+  # another window (seventh pass of the v1.52.0 reviews, 2026-11-19: a patch here left a 1M lane
+  # that no longer loads if it restarts before the pose).
   printf '\n\033[1;32m── Done: the 27B lane is prepared; its Load switches to it and starts it\033[0m\n'
 }
 

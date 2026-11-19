@@ -5,21 +5,21 @@ lanes, on a fabricated cache.
 Sixth review of v1.52.0 (2026-11-19, GLM 5.3), two defects of the Load's prepare:
 1. its `switch-model.sh <target> --fetch` stopped right after the download, so the switch's steps
    after the fetch never ran on the Load's short path (the lane serves the target the update
-   waits for: prepare, apply_pending, restart, no switch): the new revision's config.json was
-   never YaRN-patched for a 1M unit (which does not load), never restored for a native one,
-   Arete's fp8 KV cache was never declared, and the chat template was never regenerated from the
-   new revision. prepare-lane.sh now runs those steps itself, against the unit that waits, when
-   an update waits for this Load and this Load loads its target (lanes.sh's patch_served_checkpoint,
-   the same function the switch calls with the unit in place).
+   waits for: prepare, apply_pending, restart, no switch). Those steps now run in apply_pending,
+   once the unit is in place (cockpit.py's patch_waiting_checkpoint -> lanes.sh's
+   patch_served_checkpoint): not in the prepare, where they touched the config the unit in place
+   still serves when the wait serves the same snapshot with another window (seventh pass, 2026-11-19).
 2. that fetch went into the cache of the unit in place (the switch reads it from the invocation
    when no HF_CACHE is passed), while prepare read the waiting unit's: with an HF_CACHE moved by
    a re-run of install, the Load downloaded into the old cache and looped. The fetch now passes
    the waiting unit's cache.
 
+Seventh pass (2026-11-19): the prepare also fetched the PIN's revision instead of the one the
+waiting unit names; it now reads --revision in the waiting file and passes it as MODEL_REV=.
+
 The prepare runs as written in a HOME of the test's own, against a docker that records its calls
 and knows the pin image is there, a df with room, and a switch-model.sh stub that records its
-argv and the HF_CACHE it was given; the patch scripts are the repo's own, run on a fabricated
-cache that holds the new revision's snapshot, as if the fetch had just brought it.
+argv and the HF_CACHE and MODEL_REV it was given.
 """
 import importlib.util
 import json
@@ -173,50 +173,42 @@ class TheLoadsFetchGoesIntoTheWaitingUnitsCache(unittest.TestCase):
         self.assertEqual(hfenv, [str(b.hf_wait)], out)
 
 
-class TheLoadPatchesTheWaitingUnitsCheckpoint(unittest.TestCase):
-    """Defect 1: when an update waits for this Load and this Load loads its target, the switch's
-    steps after the fetch run in the prepare too, against the unit that waits: the new revision's
-    config.json patched for the window that unit serves, Arete's KV declaration, the chat template
-    regenerated from its own snapshot."""
+class ThePrepareLeavesThePatchToThePose(unittest.TestCase):
+    """Seventh pass of the v1.52.0 reviews (2026-11-19): the prepare used to run the switch's steps after
+    the fetch (patch_served_checkpoint) itself, against the unit that waits, BEFORE apply_pending put it
+    in place. When the waiting unit serves the same snapshot as the one in place with another window
+    (an update whose image moved, with CONTEXT_MODE changed at the same run), that patch touched the
+    config the serving lane still reads: a restart of the lane before the pose left a 1M lane that no
+    longer loads. The patch now runs in apply_pending, once the unit is in place (cockpit.py's
+    patch_waiting_checkpoint), so the prepare leaves the cached checkpoint exactly as the fetch left it."""
 
-    def test_a_1m_wait_patches_the_new_revisions_config_and_template(self):
+    def test_a_1m_wait_leaves_the_config_and_template_to_the_pose(self):
         b = Box("27b", "stock", window="1m")
         rc, out, calls, _ = b.run("27b", "stock")
         self.assertEqual(rc, 0, out)
-        cfg = b.config()
-        tc = cfg.get("text_config", cfg)
-        self.assertEqual(tc["max_position_embeddings"], 1010000, out)
-        self.assertEqual(tc.get("rope_parameters", {}).get("rope_type"), "yarn", out)
-        tpl = b.cfg / "chat-template-sglang.jinja"
-        self.assertTrue(tpl.is_file(), out)
-        self.assertIn("'max', 'high'", tpl.read_text(), "the template is the patched one, from the new revision")
+        tc = b.config().get("text_config", {})
+        self.assertEqual(tc.get("max_position_embeddings"), 262144, out)   # not patched here anymore
+        self.assertFalse((b.cfg / "chat-template-sglang.jinja").exists(), out)
 
-    def test_a_native_wait_restores_the_new_revisions_config(self):
+    def test_a_native_wait_leaves_the_yarned_config_untouched(self):
         b = Box("27b", "stock", window="native", quant="yarned")
         rc, out, _, _ = b.run("27b", "stock")
         self.assertEqual(rc, 0, out)
         tc = b.config().get("text_config", {})
-        self.assertEqual(tc.get("max_position_embeddings"), 262144, out)
-        self.assertFalse((b.snap / "config.json.pre-yarn").exists(), "the restore consumed its backup")
+        self.assertEqual(tc.get("max_position_embeddings"), 1010000, out)  # still yarned: the pose restores it
+        self.assertTrue((b.snap / "config.json.pre-yarn").exists(), "the restore did not run in the prepare")
 
-    def test_an_arete_wait_gets_the_fp8_kv_declaration(self):
+    def test_an_arete_wait_leaves_the_kv_declaration_to_the_pose(self):
         b = Box("27b", "arete", window="1m", model=PINS["ARETE_REPO"], quant="arete")
         rc, out, _, _ = b.run("27b", "arete")
         self.assertEqual(rc, 0, out)
-        cfg = b.config()
-        self.assertEqual(cfg["quantization_config"].get("kv_cache_scheme"),
-                         {"dynamic": False, "num_bits": 8, "type": "float"}, out)
-        hfq = json.loads((b.snap / "hf_quant_config.json").read_text())
-        self.assertEqual(hfq["quantization"].get("kv_cache_quant_algo"), "FP8", out)
+        self.assertNotIn("kv_cache_scheme", b.config().get("quantization_config", {}), out)
 
-    def test_a_flash_wait_regenerates_its_own_template(self):
+    def test_a_flash_wait_leaves_its_template_to_the_pose(self):
         b = Box("flash", "flash")
         rc, out, _, _ = b.run("flash", "flash")
         self.assertEqual(rc, 0, out)
-        tpl = b.cfg / "chat-template-flashnext.jinja"
-        self.assertTrue(tpl.is_file(), out)
-        self.assertIn("'max', 'high'", tpl.read_text())
-        self.assertFalse((b.cfg / "chat-template-sglang.jinja").exists(), out)
+        self.assertFalse((b.cfg / "chat-template-flashnext.jinja").exists(), out)
 
     def test_without_a_wait_the_prepare_patches_nothing(self):
         # no update waits: the switch step of the journey runs the steps, against the unit in place
@@ -239,14 +231,15 @@ class ThePrepareFetchesTheRevisionTheWaitingUnitNames(unittest.TestCase):
 
     OLD, NEW = "1" * 40, "2" * 40   # the revision the waiting unit names, the pin's (moved) one
 
-    def test_27b_the_waiting_units_revision_is_fetched_and_patched(self):
+    def test_27b_the_waiting_units_revision_is_fetched(self):
         b = Box("27b", "stock", window="1m", pend_rev=self.OLD, pin_rev=self.NEW)
         rc, out, calls, hfenv = b.run("27b", "stock")
         self.assertEqual(rc, 0, out)
         self.assertEqual(b.modrev, [self.OLD], "the fetch was given the waiting unit's revision, not the pin's")
         self.assertIn("switch-model.sh stock --fetch", calls)
         tc = b.config().get("text_config", {})
-        self.assertEqual(tc["max_position_embeddings"], 1010000, out)   # patched at the waiting revision
+        self.assertEqual(tc.get("max_position_embeddings"), 262144, out)
+        # the config is left as the fetch left it: the patch runs at the pose (apply_pending), not here
 
     def test_flash_the_waiting_launchers_revision_is_fetched(self):
         b = Box("flash", "flash", pend_rev=self.OLD, pin_rev=self.NEW)
