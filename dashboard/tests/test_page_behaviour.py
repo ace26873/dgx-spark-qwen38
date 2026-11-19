@@ -3247,6 +3247,90 @@ class TheTranscriptionTab(unittest.TestCase):
         """)
         self.assertEqual(r, {"view": "transcribe", "act": "Open transcription"})
 
+    LANE_UP = r"""
+    __fetch = async (url, init) => url === '/api/csrf' ? __response(200, {token: 't'})
+      : url === '/api/transcribe' && init && init.method === 'POST' ? (window.__sent = JSON.parse(init.body), __response(200, {text: 'bonjour le monde', usage: {total_tokens: 43}, seconds: 1.4}))
+      : url === '/api/transcribe' ? __response(200, {unit: 'qwen38-transcribe.service', installed: true, port: 30036, host: '127.0.0.1', state: 'ready', available: true})
+      : new Promise(() => {});
+    feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+    showView('transcribe'); await __settle();
+    window.FileReader = class { readAsDataURL(f){ this.result = f.dataUrl; queueMicrotask(() => this.onload && this.onload()); } };
+    """
+
+    def test_a_picked_file_is_sent_and_the_transcript_shown_with_copy_and_txt(self):
+        r = run(self, self.LANE_UP + r"""
+        trPickFiles([{name: 'meeting.wav', size: 100, type: 'audio/wav', dataUrl: 'data:audio/wav;base64,' + btoa('RIFF....WAVE')}]);
+        await __settle();
+        $('tcr-lang').value = 'fr';
+        await trRun(); await __settle();
+        report({sent: window.__sent, screen: txt('tcr-screen'), time: txt('tcr-time'),
+                copyHidden: $('tcr-copy').hidden, dlHidden: $('tcr-dl').hidden,
+                curl: txt('tcr-curl'), info: txt('tcr-audio-info'), name: trDownloadName(), url: trDownloadUrl().slice(0, 30)});
+        """)
+        sent = r["sent"]
+        self.assertEqual(sent["filename"], "meeting.wav")
+        self.assertEqual(sent["language"], "fr")
+        self.assertTrue(sent["audio"].startswith("data:audio/wav;base64,"))
+        self.assertIn("csrf", sent)
+        self.assertIn("bonjour le monde", r["screen"])
+        self.assertEqual(r["time"], "1.4 s")
+        self.assertFalse(r["copyHidden"])
+        self.assertFalse(r["dlHidden"])
+        self.assertIn("30036", r["curl"])
+        self.assertIn("file=@'meeting.wav'", r["curl"])
+        self.assertIn("language=fr", r["curl"])
+        self.assertNotIn("api-key)", r["curl"].replace("head -1 ~/.config/qwen38/api-key", ""))  # the key is read, never printed
+        self.assertIn("meeting.wav", r["info"])
+        self.assertEqual(r["name"], "meeting.txt")
+        self.assertTrue(r["url"].startswith("data:text/plain;charset=utf-8,"), r["url"])
+
+    def test_a_file_the_lane_cannot_read_is_refused_before_it_is_sent(self):
+        r = run(self, self.LANE_UP + r"""
+        trPickFiles([{name: 'call.m4a', size: 100, type: 'audio/mp4', dataUrl: 'data:audio/mp4;base64,AAAA'}]);
+        await __settle();
+        report({toast: toastText(), audio: !!TRS.audio, sent: !!window.__sent, runDisabled: $('tcr-run').disabled});
+        """)
+        self.assertIn("wav, mp3", r["toast"])
+        self.assertFalse(r["audio"])
+        self.assertFalse(r["sent"])
+        self.assertTrue(r["runDisabled"])
+
+    def test_a_file_past_the_cap_is_refused_with_the_number(self):
+        r = run(self, self.LANE_UP + r"""
+        trPickFiles([{name: 'long.wav', size: TR_MAX_AUDIO + 1, type: 'audio/wav', dataUrl: 'data:audio/wav;base64,AAAA'}]);
+        await __settle();
+        report({toast: toastText(), audio: !!TRS.audio, sent: !!window.__sent});
+        """)
+        self.assertIn("64", r["toast"])
+        self.assertFalse(r["audio"])
+        self.assertFalse(r["sent"])
+
+    def test_a_busy_lane_is_said_and_a_refusal_is_shown(self):
+        r = run(self, r"""
+        __fetch = async (url, init) => url === '/api/csrf' ? __response(200, {token: 't'})
+          : url === '/api/transcribe' && init && init.method === 'POST' ? __response(409, {error: 'this lane transcribes one file at a time'})
+          : url === '/api/transcribe' ? __response(200, {unit: 'qwen38-transcribe.service', installed: true, port: 30036, host: '127.0.0.1', state: 'ready', available: true})
+          : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+        showView('transcribe'); await __settle();
+        window.FileReader = class { readAsDataURL(f){ this.result = f.dataUrl; queueMicrotask(() => this.onload && this.onload()); } };
+        trPickFiles([{name: 'a.wav', size: 10, type: 'audio/wav', dataUrl: 'data:audio/wav;base64,AAAA'}]);
+        await __settle();
+        await trRun(); await __settle();
+        report(toastText());
+        """)
+        self.assertIn("one file at a time", r)
+
+    def test_the_copy_button_copies_the_transcript(self):
+        r = run(self, self.LANE_UP + r"""
+        trPickFiles([{name: 'a.wav', size: 10, type: 'audio/wav', dataUrl: 'data:audio/wav;base64,AAAA'}]);
+        await __settle();
+        await trRun(); await __settle();
+        $('tcr-copy').click(); await __settle();
+        report(toastText());
+        """)
+        self.assertIn("Copied", r)
+
 
 if __name__ == "__main__":
     unittest.main()
