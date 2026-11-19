@@ -176,13 +176,16 @@ right of the value. The glyph is a second reading, never the only one.
   scale, in the same green to red bands.
 - GPU temperature: a thermometer filled from the bottom on a 0 to 100 °C
   scale, green under 75 °C, amber from 75, orange from 80, red from 85.
-- Disk free: the Lucide database filled from the bottom by free bytes over
+- Disk free: a disk drawn as a cylinder, filled from the bottom by free bytes over
   total bytes. The card warns under the smaller of 60 GiB and a fifth of the
   volume, and the glyph turns red under the smaller of 30 GiB and a tenth.
-- Swap: the Lucide memory stick filled by swap in use over swap total, with
+- Swap: a memory stick filled by swap in use over swap total, with
   the same green, amber, orange, red bands.
-- Driver refusals: the Lucide alert triangle, filled in levels for none, 1 to
+- Driver refusals: an alert triangle, filled in levels for none, 1 to
   10, 11 to 50, 51 to 200, and more than 200 refusals.
+
+Every glyph is drawn here, as the copy and check marks and the sign-out door are: none
+is taken from an icon set, whose paths would bring its licence and notice with them.
 
 A collector that has not answered leaves the glyph as an empty grey outline.
 The values keep their existing `n/a` and `…` words, so a silent nvidia-smi or

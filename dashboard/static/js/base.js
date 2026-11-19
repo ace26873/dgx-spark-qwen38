@@ -559,13 +559,13 @@ function copyGlyph(){
   const NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg');
   s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true');
   const rect = document.createElementNS(NS, 'rect');
-  rect.setAttribute('class', 'g-copy'); rect.setAttribute('x', '9'); rect.setAttribute('y', '9');
-  rect.setAttribute('width', '12'); rect.setAttribute('height', '12'); rect.setAttribute('rx', '2');
+  rect.setAttribute('class', 'g-copy'); rect.setAttribute('x', '8.5'); rect.setAttribute('y', '8.5');
+  rect.setAttribute('width', '12.5'); rect.setAttribute('height', '12.5'); rect.setAttribute('rx', '2.5');
   const back = document.createElementNS(NS, 'path');
   back.setAttribute('class', 'g-copy');
-  back.setAttribute('d', 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1');
+  back.setAttribute('d', 'M15.5 8.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8.5a2 2 0 0 0 2 2h3.5');
   const check = document.createElementNS(NS, 'path');
-  check.setAttribute('class', 'g-check'); check.setAttribute('d', 'M20 6 9 17l-5-5');
+  check.setAttribute('class', 'g-check'); check.setAttribute('d', 'M4.5 12.5 9.5 17.5 19.5 7');
   s.append(rect, back, check);
   return s;
 }
