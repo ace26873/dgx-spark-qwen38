@@ -436,8 +436,9 @@ class TheTranscribeLaneOnNow(unittest.TestCase):
     def test_connect_a_client_offers_its_own_address_routes_and_a_copyable_test(self):
         r = run(self, self.SERVES + r"""
         let copied = null; navigator.clipboard.writeText = async t => { copied = t; };
-        const labels = [...$('api-copy').querySelectorAll('button')].map(b => b.textContent);
-        const b = [...$('api-copy').querySelectorAll('button')].find(x => x.textContent === 'Copy a transcribe test');
+        const icons = [...$('api-facts').querySelectorAll('.copy-icon')];
+        const labels = icons.map(b => b.getAttribute('aria-label'));
+        const b = icons.find(x => x.getAttribute('aria-label') === 'Copy a transcribe test');
         b.click(); await __settle();
         report({facts: txt('api-facts'), labels, copied});
         """)
@@ -458,25 +459,27 @@ class TheTranscribeLaneOnNow(unittest.TestCase):
                     key_file: '/home/u/.config/qwen38/box.key', addresses: [],
                     transcribe: {installed: true, base: 'http://127.0.0.1:30036', port: 30036}},
               engine_info: {served_target: 'stock', info: {served_model_name: 'qwen3.8-27b'}}});
-        report({facts: txt('api-facts'), labels: [...$('api-copy').querySelectorAll('button')].map(b => b.textContent)});
+        const labels = [...$('api-facts').querySelectorAll('.copy-icon')].map(b => b.getAttribute('aria-label'));
+        report({facts: txt('api-facts'), labels});
         """)
         self.assertNotIn("30036", r["facts"])
         self.assertNotIn("Copy a transcribe test", r["labels"])
-        self.assertIn("Copy a test", r["labels"])
+        self.assertIn("Copy a test call", r["labels"])
 
     def test_while_the_lane_boots_no_transcribe_test_is_offered(self):
         """"Copy a transcribe test" was offered as soon as the lane was not stopped, so during its boot
         the copied curl failed, connection refused on its port: it is offered only at ready or degraded,
         like the capsule (second review of v1.53.0, 2026-11-19)."""
         r = run(self, self.BOOT + r"""
-        report({facts: txt('api-facts'), labels: [...$('api-copy').querySelectorAll('button')].map(b => b.textContent)});
+        const labels = [...$('api-facts').querySelectorAll('.copy-icon')].map(b => b.getAttribute('aria-label'));
+        report({facts: txt('api-facts'), labels});
         """)
         self.assertNotIn("Copy a transcribe test", r["labels"])
         self.assertNotIn("30036", r["facts"])
 
     def test_at_degraded_the_transcribe_test_is_offered(self):
         r = run(self, self.DEGRADED + r"""
-        report([...$('api-copy').querySelectorAll('button')].map(b => b.textContent));
+        report([...$('api-facts').querySelectorAll('.copy-icon')].map(b => b.getAttribute('aria-label')));
         """)
         self.assertIn("Copy a transcribe test", r)
 
@@ -513,7 +516,7 @@ class CopyATestIsOfferedOnlyWhenAModelIsKnown(unittest.TestCase):
     API = r"""
     const api = {known: true, port: 30001, bind: '127.0.0.1', tls: false, client_keys: false,
                  key_file: '/home/u/.config/qwen38/api-key', addresses: []};
-    const buttons = () => [...$('api-copy').querySelectorAll('button')].map(b => b.textContent);
+    const buttons = () => [...$('api-facts').querySelectorAll('.copy-icon')].map(b => b.getAttribute('aria-label'));
     let copied = null; navigator.clipboard.writeText = async t => { copied = t; };
     """
 
@@ -522,18 +525,19 @@ class CopyATestIsOfferedOnlyWhenAModelIsKnown(unittest.TestCase):
         feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('stopped')}), api: api});
         report(buttons());
         """)
-        self.assertNotIn("Copy a test", r)
-        self.assertIn("Copy the address", r)
+        self.assertNotIn("Copy a test call", r)
+        self.assertIn("Copy the OpenAI API address", r)
 
     def test_a_text_lane_serving_the_test_names_its_model(self):
         r = run(self, self.API + r"""
         feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready', {target: 'stock'})}),
               engine_info: {served_target: 'stock', info: {served_model_name: 'qwen3.8-27b'}}, api: api});
-        const b = [...$('api-copy').querySelectorAll('button')].find(b => b.textContent === 'Copy a test');
+        const labels = buttons();
+        const b = [...$('api-facts').querySelectorAll('.copy-icon')].find(b => b.getAttribute('aria-label') === 'Copy a test call');
         b.click(); await __settle();
-        report({labels: buttons(), copied});
+        report({labels, copied});
         """)
-        self.assertIn("Copy a test", r["labels"])
+        self.assertIn("Copy a test call", r["labels"])
         self.assertIn('"model":"qwen3.8-27b"', r["copied"])
         self.assertNotIn("MODEL", r["copied"])
         self.assertIn("$(cat /home/u/.config/qwen38/api-key)", r["copied"])
