@@ -153,7 +153,9 @@ function renderRack(){
     // installed on demand: a lane whose runtime is not built yet says its first Load builds it
     const unbuilt = has && SIDE_LANE[unit] && (F.lanesReady || {})[SIDE_LANE[unit]] === false;
     setText(b.note, !has ? (laneFits(unit) ? LANE_INSTALL[unit] : NEEDS_128) : unbuilt ? 'built at its first Load' : en === 'enabled' ? 'starts at boot' : en === '?' ? '' : 'manual start');
-    setText(b.act, !has ? 'Not installed' : seated ? (st === 'ready' || st === 'degraded' ? (LANE_META[unit].view === 'lanes' ? 'Details' : `Open ${LANE_META[unit].view === 'agent' ? 'the agent' : LANE_META[unit].view}`) : 'Details') : 'Load this lane');
+    // the view's name as the button says it: "Open the agent", "Open transcription"
+    const viewOpen = v => ({agent: 'the agent', transcribe: 'transcription'})[v] || v;
+    setText(b.act, !has ? 'Not installed' : seated ? (st === 'ready' || st === 'degraded' ? (LANE_META[unit].view === 'lanes' ? 'Details' : `Open ${viewOpen(LANE_META[unit].view)}`) : 'Details') : 'Load this lane');
     b.root.setAttribute('aria-label', `${LANE_META[unit].title}: ${!has ? 'not installed' : stateLabel(e)}. ${b.act.textContent}.`);
   });
   soonBay();

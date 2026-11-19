@@ -41,7 +41,7 @@ const checks = [];
 const ok = (name, cond, detail = '') => { checks.push({ name, ok: !!cond, detail: String(detail).slice(0, 400) }); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const VIEWS = ['now', 'lanes', 'traffic', 'machine', 'agent', 'decide', 'image', 'video', 'library', 'logs', 'settings'];
+const VIEWS = ['now', 'lanes', 'traffic', 'machine', 'agent', 'decide', 'image', 'video', 'transcribe', 'library', 'logs', 'settings'];
 const PHONES = [
   { name: 'iPhone SE', w: 375, h: 667, dpr: 2 },
   { name: 'iPhone 15', w: 393, h: 852, dpr: 3 },

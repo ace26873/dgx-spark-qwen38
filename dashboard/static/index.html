@@ -69,6 +69,7 @@
       <button class="nav" data-view="decide" aria-label="Decide"><svg viewBox="0 0 24 24"><path d="M12 3v18M6 21h12M5 7h14M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z"/></svg><span class="lab">Decide</span><span class="bdg" id="bdg-decide"></span></button>
       <button class="nav" data-view="image" aria-label="Image"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5-6 6-3-3-4 4"/></svg><span class="lab">Image</span><span class="bdg" id="bdg-image"></span></button>
       <button class="nav" data-view="video" aria-label="Video"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg><span class="lab">Video</span><span class="bdg" id="bdg-video"></span></button>
+      <button class="nav" data-view="transcribe" aria-label="Transcription"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg><span class="lab">Transcription</span><span class="bdg" id="bdg-transcribe"></span></button>
     </div>
     <div class="grp">
       <h2>Maintain</h2>
@@ -599,6 +600,56 @@
       </div>
     </section>
 
+    <!-- ══ TRANSCRIPTION ══════════════════════════════════════════════════ -->
+    <section class="view" id="view-transcribe" aria-labelledby="h-transcribe">
+      <div class="vhead">
+        <div class="vhead-title"><h1 id="h-transcribe">Transcription</h1><p>NVIDIA Nemotron Transcribe on this box: drop an audio file or record one, and read what it heard. The file reaches the lane through this cockpit, with the box's key; nothing leaves the machine.</p></div>
+        <div class="side"><span class="cap" id="tcr-cap">…</span></div>
+      </div>
+      <div id="tcr-lane"></div>
+      <div class="studio">
+        <div class="composer panel">
+          <div class="group">
+            <div class="field"><span class="lbl">Audio</span>
+              <label class="dropzone" id="tcr-drop"><span id="tcr-drop-label">Drop an audio file, or pick one: wav, mp3, flac</span><input type="file" id="tcr-file" accept="audio/*,.wav,.mp3,.flac" hidden></label>
+            </div>
+            <div class="btn-row">
+              <button class="btn" id="tcr-rec" type="button">Record from the microphone</button>
+              <button class="btn danger" id="tcr-rec-stop" type="button" hidden>Stop recording</button>
+            </div>
+            <p class="help" id="tcr-rec-note" hidden></p>
+            <p class="help" id="tcr-audio-info" hidden></p>
+          </div>
+          <div class="group">
+            <div class="field"><label for="tcr-lang">Language <span class="hint" id="tcr-lang-hint">empty detects it</span></label>
+              <select class="input" id="tcr-lang"></select></div>
+          </div>
+          <div class="group">
+            <p class="err" id="tcr-problem" hidden style="color:var(--bad-hi); font-size:var(--t-13)"></p>
+            <div class="btn-row">
+              <button class="btn primary lg" id="tcr-run" type="button" style="flex:1">Transcribe</button>
+              <button class="btn ghost" id="tcr-reset" type="button">Reset</button>
+            </div>
+            <p class="why-off" id="tcr-why" hidden></p>
+            <p class="help">The lane answers text only, no timestamps: there is no .srt to download.</p>
+          </div>
+        </div>
+        <div class="stagebox">
+          <section class="panel">
+            <header><h2>Transcript</h2><span class="tag" id="tcr-time"></span></header>
+            <div class="screen" id="tcr-screen" style="min-height:180px"><div class="empty"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg><b>Your transcript appears here</b><span>Drop an audio file or record one, then transcribe.</span></div></div>
+            <div class="btn-row" id="tcr-meta" style="margin-top:var(--s-4)">
+              <button class="btn sm" id="tcr-copy" type="button">Copy</button>
+              <button class="btn sm" id="tcr-dl" type="button">Download .txt</button>
+            </div>
+          </section>
+          <details class="why"><summary>The same call from a terminal</summary>
+            <div><pre class="cmd" id="tcr-curl"></pre><div class="btn-row"><button class="btn sm" id="tcr-curl-copy" type="button">Copy</button></div></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
     <!-- ══ LIBRARY ══════════════════════════════════════════════════════════ -->
     <section class="view" id="view-library" aria-labelledby="h-library">
       <div class="vhead">
@@ -807,6 +858,7 @@
 <script src="/static/js/decide.js" defer></script>
 <script src="/static/js/image.js" defer></script>
 <script src="/static/js/video.js" defer></script>
+<script src="/static/js/transcribe.js" defer></script>
 <script src="/static/js/boot.js" defer></script>
 </body>
 </html>

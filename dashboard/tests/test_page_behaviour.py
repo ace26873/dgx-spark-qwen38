@@ -3185,5 +3185,68 @@ class EachLaneSaysItsEngine(unittest.TestCase):
         self.assertEqual(r["pinned"], "lmsysorg/sglang@e3a4f06001a2…")
 
 
+class TheTranscriptionTab(unittest.TestCase):
+    """The Transcription tab (v1.54): the rail, the section and the router carry it together
+    (test_cockpit_code.TabsAgree sweeps the three lists), the lane card in the tab offers the
+    same Load journey as the Lanes view's card when the lane is not serving, and the lane's bay
+    in Now opens the tab once the lane serves."""
+
+    def test_the_rail_the_section_and_the_router_carry_the_tab(self):
+        r = run(self, r"""
+        showView('transcribe');
+        report({view: activeView, active: $('view-transcribe').classList.contains('active'),
+                nav: !!document.querySelector('.rail .nav[data-view="transcribe"]'),
+                label: (document.querySelector('.rail .nav[data-view="transcribe"] .lab') || {}).textContent,
+                inViews: VIEWS.includes('transcribe')});
+        """)
+        self.assertEqual(r, {"view": "transcribe", "active": True, "nav": True,
+                             "label": "Transcription", "inViews": True})
+
+    def test_the_lane_card_offers_load_when_the_lane_is_not_serving(self):
+        r = run(self, r"""
+        __fetch = async url => url === '/api/transcribe'
+          ? __response(200, {unit: 'qwen38-transcribe.service', installed: true, port: 30036,
+                             host: '127.0.0.1', state: 'stopped', available: false})
+          : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready', {target: 'stock'}),
+                                                            'qwen38-transcribe.service': eng('stopped', {target: 'transcribe'})})});
+        showView('transcribe'); await __settle();
+        const btns = [...$('tcr-lane').querySelectorAll('button')].map(b => b.textContent);
+        report({cap: txt('tcr-cap'), btns, box: txt('tcr-lane'), runDisabled: $('tcr-run').disabled, why: txt('tcr-why')});
+        """)
+        self.assertEqual(r["btns"], ["Load NVIDIA Nemotron Transcribe"], r)
+        self.assertIn("stopped", r["cap"])
+        self.assertIn("holds the box", r["box"])
+        self.assertTrue(r["runDisabled"])
+        self.assertIn("not serving", r["why"])
+
+    def test_the_lane_card_is_quiet_while_it_serves_and_the_run_needs_audio(self):
+        r = run(self, r"""
+        __fetch = async url => url === '/api/transcribe'
+          ? __response(200, {unit: 'qwen38-transcribe.service', installed: true, port: 30036,
+                             host: '127.0.0.1', state: 'ready', available: true})
+          : new Promise(() => {});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+        showView('transcribe'); await __settle();
+        report({cap: txt('tcr-cap'), box: txt('tcr-lane'), runDisabled: $('tcr-run').disabled, why: txt('tcr-why'),
+                langs: [...$('tcr-lang').options].map(o => o.value)});
+        """)
+        self.assertEqual(r["cap"], "ready")
+        self.assertEqual(r["box"], "")
+        self.assertTrue(r["runDisabled"])
+        self.assertIn("Drop an audio file", r["why"])
+        self.assertEqual(r["langs"][0], "")
+        self.assertIn("fr", r["langs"])
+        self.assertIn("en", r["langs"])
+
+    def test_the_bay_in_now_opens_the_tab_once_the_lane_serves(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-transcribe.service': eng('ready', {target: 'transcribe'})})});
+        BAYS.get('qwen38-transcribe.service').root.click();
+        report({view: activeView, act: BAYS.get('qwen38-transcribe.service').act.textContent});
+        """)
+        self.assertEqual(r, {"view": "transcribe", "act": "Open transcription"})
+
+
 if __name__ == "__main__":
     unittest.main()

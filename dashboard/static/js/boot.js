@@ -6,5 +6,6 @@ wireAgent();
 wireDecide();
 wireImage();
 wireVideo();
+wireTranscribe();
 showView(location.hash.slice(1) || 'now', false);
 startTransport();

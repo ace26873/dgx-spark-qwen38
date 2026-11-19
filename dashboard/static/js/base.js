@@ -143,8 +143,8 @@ const LANE_META = {
   [IMAGE_UNIT]: {title: 'Qwen-Image 2.1', kind: 'Images', desc: 'Create, edit with up to ten references, cut out with a real alpha channel.', view: 'image', lane: 'image', maker: 'qwen'},
   [IMAGE_H3_UNIT]: {title: 'MiniMax-H3-Image', kind: 'Images, up to 16.9 megapixels', desc: 'MiniMax’s image model in six steps: create, or edit with up to ten references, at 2K in about 16 s and 4K in about 82 s. Its licence is not granted in the EU, the UK, South Korea or the US.', view: 'image', lane: 'image-h3', maker: 'minimax'},
   [VIDEO_UNIT]: {title: 'MiniMax-H3', kind: 'Video with sound', desc: 'Video and audio made together, from a prompt or from keyframes.', view: 'video', lane: 'video', maker: 'minimax'},
-  // no view of its own: programs ask it on its port with the box's key, and its card in Lanes is where it is followed
-  [TRANSCRIBE_UNIT]: {title: 'NVIDIA Nemotron Transcribe', kind: 'Speech to text, on its own port', desc: 'NVIDIA’s speech recognizer, 30B with 4B active, in GGUF Q8_0, served by llama.cpp on port 30036 with the box’s key: /v1/audio/transcriptions and /v1/realtime. Measured on this box: French WER 2.76 %, English 0.40 %, about ten times faster than real time.', view: 'lanes', lane: 'transcribe', maker: 'nvidia'}};
+  // its own view since v1.54: the Transcription tab drives it through the cockpit's relay; programs still ask it on its port with the box's key
+  [TRANSCRIBE_UNIT]: {title: 'NVIDIA Nemotron Transcribe', kind: 'Speech to text, on its own port', desc: 'NVIDIA’s speech recognizer, 30B with 4B active, in GGUF Q8_0, served by llama.cpp on port 30036 with the box’s key: /v1/audio/transcriptions and /v1/realtime. Measured on this box: French WER 2.76 %, English 0.40 %, about ten times faster than real time.', view: 'transcribe', lane: 'transcribe', maker: 'nvidia'}};
 // a lane's maker's mark, as an image the stylesheet sizes (the marks belong to their owners, img/logos/NOTICE.md)
 function makerMark(unit, cls = 'mark'){
   const box = el('span', cls); box.setAttribute('aria-hidden', 'true');
@@ -472,7 +472,7 @@ async function postJSON(path, body){
 }
 
 // ── router: views, the rail, the phone menu ───────────────────────────────────
-const VIEWS = ['now', 'lanes', 'traffic', 'machine', 'agent', 'decide', 'image', 'video', 'library', 'logs', 'settings'];
+const VIEWS = ['now', 'lanes', 'traffic', 'machine', 'agent', 'decide', 'image', 'video', 'transcribe', 'library', 'logs', 'settings'];
 // the old tab names still land: links in the docs and bookmarks say #agent, #engines
 const ALIAS = {overview: 'now', engines: 'lanes', requests: 'traffic', systemone: 'decide', models: 'library', setup: 'settings'};
 const ON_SHOW = {};

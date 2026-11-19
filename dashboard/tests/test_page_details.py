@@ -486,7 +486,7 @@ class TheRailsButtonsHaveNames(unittest.TestCase):
 
     def test_every_nav_button_is_labelled(self):
         navs = re.findall(r'<button class="nav" ([^>]*)>.*?<span class="lab">([^<]+)</span>', PAGE)
-        self.assertEqual(len(navs), 11)
+        self.assertEqual(len(navs), 12)
         for attrs, lab in navs:
             with self.subTest(lab=lab):
                 self.assertIn(f'aria-label="{lab}"', attrs)
