@@ -182,7 +182,9 @@ if [ "$MODE" = prepare ]; then
 fi
 
 step "3/5 Checkpoint ($MODEL @ ${MODEL_REV:0:12}, resumable)"
-vlane_fetch "$MODEL" "$MODEL_REV"
+# Pinned as refs/main: the unit runs with HF_HUB_OFFLINE=1 and vLLM can read the tokenizer
+# without its revision, by name, through refs/main, which a download by commit never writes.
+vlane_fetch "$MODEL" "$MODEL_REV" pin
 
 install_service
 

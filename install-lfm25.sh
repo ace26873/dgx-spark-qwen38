@@ -137,10 +137,12 @@ install_service(){
   echo "  a terminal : ./switch-model.sh lfm25, then the commands it prints"
 }
 
-# The checkpoint and its draft, in the lane's image (vllm-lane.sh's fetch, ckpt-fetch.py).
+# The checkpoint and its draft, in the lane's image (vllm-lane.sh's fetch, ckpt-fetch.py). Both pinned
+# as refs/main: the unit runs with HF_HUB_OFFLINE=1 and SGLang's speculative hook reads the draft's
+# config by its name, through refs/main, which a download by commit never writes.
 fetch_files(){
-  vlane_fetch "$LFM25_REPO" "$LFM25_REV"
-  vlane_fetch "$LFM25_DRAFT_REPO" "$LFM25_DRAFT_REV"
+  vlane_fetch "$LFM25_REPO" "$LFM25_REV" pin
+  vlane_fetch "$LFM25_DRAFT_REPO" "$LFM25_DRAFT_REV" pin
 }
 
 # --stage: the unit for this box, for switch-model.sh, with no sudo, its cache folder made first (docker would make

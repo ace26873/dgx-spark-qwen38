@@ -141,6 +141,14 @@ class TheRoomItTakes(unittest.TestCase):
         self.assertEqual(int(m.group(3)), math.ceil(gib * 1.02) + 1)
 
 
+class TheFetch(unittest.TestCase):
+    def test_the_checkpoint_is_pinned_as_refs_main(self):
+        """The unit runs with HF_HUB_OFFLINE=1 and vLLM can read the tokenizer without its revision, by name,
+        through refs/main, which a download by commit never writes: without the pin a fresh box's lane can die
+        at startup the way the LFM2.5 one did (v1.53.0's proof campaign, 2026-11-19)."""
+        self.assertIn('vlane_fetch "$MODEL" "$MODEL_REV" pin', TEXT)
+
+
 class TheUninstall(unittest.TestCase):
     """Its unit, its container, its local tag and its caches go; the image, the checkpoint, the key's yaml and, while
     another vLLM lane is installed, the middleware stay."""

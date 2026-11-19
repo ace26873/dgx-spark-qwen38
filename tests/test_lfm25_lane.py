@@ -143,6 +143,15 @@ class TheRoomItsFetchAsks(unittest.TestCase):
                              "base.js's note says another size")
 
 
+class TheFetch(unittest.TestCase):
+    def test_both_repositories_are_pinned_as_refs_main(self):
+        """The unit runs with HF_HUB_OFFLINE=1 and SGLang's speculative hook reads the draft's config by its name,
+        through refs/main, which a download by commit never writes: without the pin the lane dies at startup on a
+        fresh box (LocalEntryNotFoundError, v1.53.0's proof campaign, 2026-11-19)."""
+        self.assertIn('vlane_fetch "$LFM25_REPO" "$LFM25_REV" pin', TEXT)
+        self.assertIn('vlane_fetch "$LFM25_DRAFT_REPO" "$LFM25_DRAFT_REV" pin', TEXT)
+
+
 class TheUninstall(unittest.TestCase):
     """Its unit, its container, its local tag on the 27B lane's image, its compile cache and its opencode provider go;
     the image, the key's yaml (the 27B lane's unit reads it too), the vLLM lanes' middleware and the checkpoints stay."""
