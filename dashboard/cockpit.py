@@ -1441,74 +1441,78 @@ def transcribe_call(payload: dict) -> tuple[int, dict]:
     """One transcription, relayed to the lane on its port with the box's key. This process is the
     gate: the route checked the session and the CSRF token before the body was read, and the body's
     cap was checked before that."""
-    ref = payload.get("audio")
-    if not isinstance(ref, str) or not ref.startswith("data:"):
-        return 400, {"error": "audio must be a base64 data URL of an audio file (data:audio/wav;base64,...)"}
-    head, _, b64 = ref.partition(",")
-    if ";base64" not in head or not b64:
-        return 400, {"error": "the audio data URL must carry base64 after its comma"}
-    mime = head[len("data:"):].split(";", 1)[0].strip().lower()
-    if mime not in TRANSCRIBE_MIME_OK:
-        return 400, {"error": f"the lane reads wav, mp3 and flac only, not {mime!r}; convert the file "
-                              "first (ffmpeg -i in.m4a -ar 16000 -ac 1 out.wav)"}
-    try:
-        raw = base64.b64decode(b64, validate=True)
-    except Exception:                               # noqa: BLE001
-        return 400, {"error": "the audio data URL is not valid base64"}
-    if not raw:
-        return 400, {"error": "the audio file is empty"}
-    if len(raw) > TRANSCRIBE_MAX_AUDIO:
-        return 400, {"error": f"the audio file is {len(raw)} bytes ({len(raw) / 1e6:.1f} MB) and the cap is "
-                              f"{TRANSCRIBE_MAX_AUDIO} bytes ({TRANSCRIBE_MAX_AUDIO / 1e6:.0f} MB, about 33 minutes "
-                              "at the 16 kHz mono the page records); cut it or convert it first, "
-                              "the lane reads wav, mp3 and flac"}
-    language = payload.get("language", "")
-    if language is None:
-        language = ""
-    if not isinstance(language, str) or (language and not TRANSCRIBE_LANGUAGE_RE.fullmatch(language)):
-        return 400, {"error": "language is a two or three letter code (fr, en, ...), or empty to detect it"}
-    filename = _transcribe_filename(payload.get("filename"))
-    # Only these fields reach the lane: response_format json is the only one it accepts at b12316
-    # (anything else is refused by its own server), and the browser chooses nothing else.
-    fields = {"response_format": "json"}
-    if language:
-        fields["language"] = language
-    boundary = "----cockpit" + secrets.token_hex(16)
-    out = bytearray()
-    for k, v in fields.items():
-        out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").encode()
-    out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
-            f"Content-Type: {mime}\r\n\r\n").encode()
-    out += raw + b"\r\n"
-    out += f"--{boundary}--\r\n".encode()
-    body = bytes(out)
-    # The key goes in this header only: never in the URL (it would land in logs), never in a form
-    # field (the test asserts it is in neither).
-    key = api_key()
-    req = urllib.request.Request(transcribe_base() + "/v1/audio/transcriptions", body,
-                                 {"Content-Type": f"multipart/form-data; boundary={boundary}",
-                                  "Authorization": f"Bearer {key}"})
+    # The lock comes first, before the base64 is decoded or the multipart built: a second request is
+    # refused at once, and never holds the decoded audio (up to 64 MB) plus the body (up to about
+    # 90 MB) on the unified memory this process shares with the lane.
     if not TRANSCRIBE_LOCK.acquire(blocking=False):
         return 409, {"error": "this lane transcribes one file at a time, and one is already running. "
                               "Wait for it to finish."}
-    t0 = time.time()
     try:
-        with urllib.request.urlopen(req, timeout=TRANSCRIBE_TIMEOUT) as r:
-            answer = json.loads(r.read().decode())
-        return 200, {"text": answer.get("text", ""), "usage": answer.get("usage"),
-                     "seconds": round(time.time() - t0, 2)}
-    except urllib.error.HTTPError as e:
-        raw_err = e.read()
+        ref = payload.get("audio")
+        if not isinstance(ref, str) or not ref.startswith("data:"):
+            return 400, {"error": "audio must be a base64 data URL of an audio file (data:audio/wav;base64,...)"}
+        head, _, b64 = ref.partition(",")
+        if ";base64" not in head or not b64:
+            return 400, {"error": "the audio data URL must carry base64 after its comma"}
+        mime = head[len("data:"):].split(";", 1)[0].strip().lower()
+        if mime not in TRANSCRIBE_MIME_OK:
+            return 400, {"error": f"the lane reads wav, mp3 and flac only, not {mime!r}; convert the file "
+                                  "first (ffmpeg -i in.m4a -ar 16000 -ac 1 out.wav)"}
         try:
-            detail = json.loads(raw_err.decode())
+            raw = base64.b64decode(b64, validate=True)
         except Exception:                           # noqa: BLE001
-            detail = raw_err[:400].decode("utf-8", "replace")
-        return e.code, {"refused": detail, "seconds": round(time.time() - t0, 2)}
-    except Exception as e:                          # noqa: BLE001 (isolated route)
-        return 502, {"error": f"the transcribe lane did not answer ({type(e).__name__}). Load NVIDIA "
-                              f"Nemotron Transcribe from the Lanes view to start it (or "
-                              f"./switch-model.sh transcribe)",
-                     "seconds": round(time.time() - t0, 2)}
+            return 400, {"error": "the audio data URL is not valid base64"}
+        if not raw:
+            return 400, {"error": "the audio file is empty"}
+        if len(raw) > TRANSCRIBE_MAX_AUDIO:
+            return 400, {"error": f"the audio file is {len(raw)} bytes ({len(raw) / 1e6:.1f} MB) and the cap is "
+                                  f"{TRANSCRIBE_MAX_AUDIO} bytes ({TRANSCRIBE_MAX_AUDIO / 1e6:.0f} MB, about 33 minutes "
+                                  "at the 16 kHz mono the page records); cut it or convert it first, "
+                                  "the lane reads wav, mp3 and flac"}
+        language = payload.get("language", "")
+        if language is None:
+            language = ""
+        if not isinstance(language, str) or (language and not TRANSCRIBE_LANGUAGE_RE.fullmatch(language)):
+            return 400, {"error": "language is a two or three letter code (fr, en, ...), or empty to detect it"}
+        filename = _transcribe_filename(payload.get("filename"))
+        # Only these fields reach the lane: response_format json is the only one it accepts at b12316
+        # (anything else is refused by its own server), and the browser chooses nothing else.
+        fields = {"response_format": "json"}
+        if language:
+            fields["language"] = language
+        boundary = "----cockpit" + secrets.token_hex(16)
+        out = bytearray()
+        for k, v in fields.items():
+            out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").encode()
+        out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+                f"Content-Type: {mime}\r\n\r\n").encode()
+        out += raw + b"\r\n"
+        out += f"--{boundary}--\r\n".encode()
+        body = bytes(out)
+        # The key goes in this header only: never in the URL (it would land in logs), never in a form
+        # field (the test asserts it is in neither).
+        key = api_key()
+        req = urllib.request.Request(transcribe_base() + "/v1/audio/transcriptions", body,
+                                     {"Content-Type": f"multipart/form-data; boundary={boundary}",
+                                      "Authorization": f"Bearer {key}"})
+        t0 = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=TRANSCRIBE_TIMEOUT) as r:
+                answer = json.loads(r.read().decode())
+            return 200, {"text": answer.get("text", ""), "usage": answer.get("usage"),
+                         "seconds": round(time.time() - t0, 2)}
+        except urllib.error.HTTPError as e:
+            raw_err = e.read()
+            try:
+                detail = json.loads(raw_err.decode())
+            except Exception:                       # noqa: BLE001
+                detail = raw_err[:400].decode("utf-8", "replace")
+            return e.code, {"refused": detail, "seconds": round(time.time() - t0, 2)}
+        except Exception as e:                      # noqa: BLE001 (isolated route)
+            return 502, {"error": f"the transcribe lane did not answer ({type(e).__name__}). Load NVIDIA "
+                                  f"Nemotron Transcribe from the Lanes view to start it (or "
+                                  f"./switch-model.sh transcribe)",
+                         "seconds": round(time.time() - t0, 2)}
     finally:
         TRANSCRIBE_LOCK.release()
 

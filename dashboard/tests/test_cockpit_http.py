@@ -1489,6 +1489,28 @@ class TheTranscribeRelay(Base):
         self.assertEqual(st, 409)
         self.assertEqual(lane.seen, [])
 
+    def test_the_lock_is_taken_before_anything_is_decoded(self):
+        # while the lane is busy, a second request is refused at once: its base64 is not even
+        # decoded (up to 64 MB would be held on the unified memory this process shares with the
+        # lane), nor the multipart body built (up to about 90 MB more)
+        cookie = self.login()
+        lane = FakeLane()
+        self.with_lane(lane)
+        real = self.cp.base64.b64decode
+        def forbidden(*a, **k):
+            raise AssertionError("base64 was decoded while the lane was busy")
+        self.cp.base64.b64decode = forbidden
+        self.addCleanup(setattr, self.cp.base64, "b64decode", real)
+        self.cp.TRANSCRIBE_LOCK.acquire()
+        try:
+            st, _, data = self.post_tr({"audio": self.AUDIO}, cookie)
+            self.assertEqual(st, 409, data)
+            st, _, data = self.post_tr({"audio": "data:audio/wav;base64,!!!not base64!!!"}, cookie)
+            self.assertEqual(st, 409, f"an invalid payload was decoded before the lock: {data}")
+        finally:
+            self.cp.TRANSCRIBE_LOCK.release()
+        self.assertEqual(lane.seen, [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

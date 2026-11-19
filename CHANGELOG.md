@@ -87,8 +87,9 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
   session cookie and same CSRF token as every mutating POST. The body is capped at 90 MB and the
   decoded audio at 64 MB, both checked before anything is read (about 33 minutes at the 16 kHz mono
   the page records, and the cockpit process shares the box's unified memory with the lane), and one
-  transcription runs at a time under a lock, as the lane serves one request at a time (its unit
-  passes no `-np`). `GET /api/transcribe` reports the lane for the view's card. The language is a
+  transcription runs at a time under a lock taken before anything is decoded, so a second request is
+  refused at once and never holds the decoded audio in memory, as the lane serves one request at a
+  time (its unit passes no `-np`). `GET /api/transcribe` reports the lane for the view's card. The language is a
   two or three letter code or empty to detect it, since the lane's server puts it in its prompt.
   The data URL's MIME is checked against the list the lane reads (wav, mp3, flac, the same list the
   page has) before anything is forwarded, so a CRLF in it cannot inject headers into the multipart
