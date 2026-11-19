@@ -26,7 +26,9 @@ _m = SWITCH.index('  eval "NEM_DRAFT=', _s)
 _e = SWITCH.index("\n", _m) + 1
 SWITCH_PICK = SWITCH[_s:_e]
 _r = SWITCH.index('  NEM_CUR="$(grep -m1', _e)
-_re = SWITCH.index("    NEM_REWRITTEN=1\n  fi\n", _r) + len("    NEM_REWRITTEN=1\n  fi\n")
+# the block through the pose and the rewrite, up to the next lane's: since ea39cb40 the pose
+# branch ends with "NEM_REWRITTEN=1\n  fi" too, so that marker no longer ends the rewrite
+_re = SWITCH.index("  # Which lane this box served at boot", _r)
 SWITCH_REWRITE = SWITCH[_r:_re]
 LANES = {"nemotron": ("install-nemotron.sh", "NEMOTRON_BOLT", NEM, "qwen38-nemotron"),
          "nemotron-super": ("install-nemotron-super.sh", "NEMOTRON_SUPER", SUPER, "qwen38-nemotron-super")}

@@ -60,7 +60,11 @@ overwrite the `.prev` with it. Each new test fails on the code before.
 `tests/test_update_waits_for_load.py` wrote a debug file in `/tmp` on every run, outside the test's own tmpdir;
 removed, with a test that fails if any test of `tests/` writes one there again. The comment above
 `patch_served_checkpoint` (lanes.sh, switch-model.sh) still said a Load's prepare calls it, which v1.52.1
-removed; it now names `apply_pending`, the caller since, once the waiting unit is in place.
+removed; it now names `apply_pending`, the caller since, once the waiting unit is in place. And
+`tests/test_nemotron_pins_one_place.py` cut the switch's block at the first `NEM_REWRITTEN=1`, which the pose
+branch ends with since ea39cb40, so the extracted block was the pose, not the rewrite, and the module was red
+(three failures, nothing rewritten): the extraction now runs to the end of the Nemotron block, and the module is
+green, on the code of before the pose as well (the code was true, the marker was not).
 
 **A TLS refusal that does not happen no longer leaks a process.** `tests/test_proxy_tls.py`'s
 `test_unusable_cert_refuses_to_start` waited `proc.wait(timeout=10)` and, when the proxy did not refuse,
