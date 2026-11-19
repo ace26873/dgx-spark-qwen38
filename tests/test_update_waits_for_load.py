@@ -159,7 +159,7 @@ class SideInstall(unittest.TestCase):
         self.assertEqual(direct, [])
 
     def run_side(self, lane="kolibri", mode="--no-smoke", named=0, pending_put=1, waits=False, lacks=False,
-                 runtime_moves=False, already_waiting=False):
+                 unknown=False, runtime_moves=False, already_waiting=False):
         d = pathlib.Path(tempfile.mkdtemp(prefix="side-install-"))
         repo, cfg, etc = d / "repo", d / "config", d / "etc"
         for x in (repo, cfg, etc):
@@ -182,9 +182,10 @@ class SideInstall(unittest.TestCase):
                         f'rm -f "{cfg}/pending/qwen38-{lane}.service" "{cfg}/pending/qwen38-{lane}.service.needs"; fi ;; esac\nexit 0\n')
         inst.chmod(0o755)
         (etc / f"qwen38-{lane}.service").write_text("[Service]\nExecStart=old\n")
+        needs_stub = 'echo "unknown cache /mnt/hf"' if unknown else ('echo checkpoint gone' if lacks else 'true')
         script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"; PENDING_PUT={pending_put}; ALL_WEIGHTS=0\n'
                   f'lane_title(){{ echo "$1"; }}\nunit_pending_says(){{ cat "$CONFIG_DIR/pending/qwen38-$1.service.needs" 2>/dev/null || echo "image x"; }}\n'
-                  f'unit_needs(){{ {"echo checkpoint gone" if lacks else "true"}; }}\n'
+                  f'unit_needs(){{ {needs_stub}; }}\n'
                   + self.FNS.replace("/etc/systemd/system/", f"{etc}/")
                   # the runtime's own verdict is tested above: here it moves or not, as asked
                   + ('side_runtime_waits(){ echo "runtime x"; }\n' if runtime_moves else 'side_runtime_waits(){ :; }\n')
@@ -257,6 +258,20 @@ class SideInstall(unittest.TestCase):
         calls, out, pend, needs = self.run_side(lacks=True)
         self.assertEqual(calls, ["install-kolibri.sh --units-only force=0"])
         self.assertIn("its units only, and its next Load prepares it", out)
+
+    def test_an_unknown_line_is_never_a_lack(self):
+        # docker muet ou cache illisible pendant la mise à jour : la lane sert toujours ce qu'elle sert, et le
+        # reste de sa mise à jour suit, comme lanes.sh's unit_put_waits lit la même ligne (sixth review of v1.52.0,
+        # 2026-11-19, GLM 5.3: la ligne « unknown » était lue comme un manque, la branche sautait le reste de la
+        # mise à jour avec un message faux, et aucun Load ne pouvait préparer un « unknown »)
+        for lane in ("kolibri", "image", "video", "image-h3", "nemotron", "nemotron-super",
+                     "flash-local", "ornith-122b", "flash-unsloth"):
+            with self.subTest(lane=lane):
+                calls, out, pend, _ = self.run_side(lane=lane, unknown=True)
+                self.assertEqual(calls, [f"install-{lane}.sh --units-only force=0",
+                                         f"install-{lane}.sh --no-smoke force=0"], out)
+                self.assertNotIn("its units only", out)
+                self.assertNotIn(f"WAITED= {lane}", out)
 
     def test_nothing_waits_nothing_lacks_the_rest_follows(self):
         calls, _, pend, _ = self.run_side()

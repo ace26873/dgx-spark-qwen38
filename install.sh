@@ -1679,7 +1679,7 @@ side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<la
     # waits too (PENDING_FORCE, lanes.sh's unit_put), so it never runs on the old venv at the lane's next boot, and
     # the Load that clears the wait applies the moved pin too (review of v1.52.0, 2026-11-19, GLM 5.3: the unit kept
     # waiting was the one in place, and the Load applied the old pin, losing the new one in silence)
-    local runtime_lacks="" force=0 p="$CONFIG_DIR/pending/qwen38-$1.service"
+    local runtime_lacks="" force=0 p="$CONFIG_DIR/pending/qwen38-$1.service" _lacks
     runtime_lacks="$(side_runtime_waits "$1")"
     [ -n "$runtime_lacks" ] && force=1
     # every update renders its lane's NEW unit, and lanes.sh's unit_put decides alone between in place and
@@ -1698,10 +1698,15 @@ side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<la
       return 0
     fi
     # a lane whose unit lacks what it reads (a checkpoint deleted from Library) cannot serve as it is: its units only,
-    # and its Load prepares it; the rest of its update downloaded it all again (code review of v1.52.0)
-    if [ -n "$(unit_needs "$unit")" ]; then
+    # and its Load prepares it; the rest of its update downloaded it all again (code review of v1.52.0).
+    # An "unknown" line is never a lack, read the same way as lanes.sh's unit_put_waits: docker did not answer or the
+    # cache cannot be read, and the lane keeps serving what it served, the rest of its update follows (sixth review
+    # of v1.52.0, 2026-11-19, GLM 5.3: the line read as a lack, the run skipped the rest of the update with a false
+    # "its units only" message, and no Load could prepare an "unknown")
+    _lacks="$(unit_needs "$unit" | grep -v '^unknown ' || true)"
+    if [ -n "$_lacks" ]; then
       SIDE_WAITED="$SIDE_WAITED$1 "
-      echo "NOTE: the $(lane_title "$1") lane lacks what its unit reads ($(unit_needs "$unit" | paste -sd ';' | sed 's/;/; /g')): its units only, and its next Load prepares it."
+      echo "NOTE: the $(lane_title "$1") lane lacks what its unit reads ($(printf '%s' "$_lacks" | paste -sd ';' | sed 's/;/; /g')): its units only, and its next Load prepares it."
       return 0
     fi
   fi
