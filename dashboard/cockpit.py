@@ -1661,7 +1661,14 @@ def collect_engine_fast():
             add_event("mem_floor", f"memory floor: {reason}; abort failed: {str(e)[:240]}")
     # a prompt being computed: how far it has got, and a floor of the time left (issue #61)
     lc.prompt_read(PROMPT_STATE, now, (load or [None])[0])
-    return {"node_id": "local", "load": load, "healthy": healthy,
+    # the cockpit's own canary is a real request to the engine (a two-token generation every
+    # 90 s) and num_reqs carries it while it runs: say when one is in flight, so the page takes
+    # it out of the engine's count and the Traffic view never names the cockpit as a direct
+    # client (review 2026-11-19, D2). A begin older than a minute is a lost end, not a flight
+    # (its request gives up at 25 s).
+    with METRICS_LOCK:
+        canary_inflight = METRICS.inflight is not None and now - METRICS.inflight < 60
+    return {"node_id": "local", "load": load, "healthy": healthy, "canary_inflight": canary_inflight,
             "prompt": lc.prompt_progress(PROMPT_STATE, now),
             "mem_floor": {"gib": MEM_FLOOR_GIB, "avail_gib": avail, "aborts": MEM_FLOOR["aborts"],
                           "last_abort": MEM_FLOOR["last_abort"], "via": MEM_FLOOR["last_via"],
@@ -1947,8 +1954,9 @@ def collect_canary():
                                  {"Content-Type": "application/json",
                                   "Authorization": f"Bearer {api_key()}"})
     # the engine counts this request like a client's: its counters read on either side of
-    # it are how the Traffic view takes it out (engine_metrics.py), and the window drops any
-    # read of its own that ran while this was in flight
+    # it are how the metrics windows take it out (engine_metrics.py), and the window drops any
+    # read of its own that ran while this was in flight; the fast collector says the same to
+    # the page (canary_inflight), so the Traffic view's engine count takes it out too
     key = serving_text_key()
     if key:
         with METRICS_LOCK:

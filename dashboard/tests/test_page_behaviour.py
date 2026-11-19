@@ -2032,6 +2032,34 @@ class TheEngineCountsWhatTheProxyDidNotRelay(unittest.TestCase):
         self.assertIn("2 requests are running on the engine, sent to :30000 directly, not through the proxy", r["empty"])
         self.assertEqual(r["badge"], "2", r)
 
+    def test_the_cockpits_own_canary_is_not_said_direct(self):
+        """The canary is a real two-token request to :30000 every 90 s, counted by the engine
+        like a client's; the server says when one is in flight (canary_inflight) and the page
+        takes it out of the engine's count (review 2026-11-19, D2)."""
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        feed({feed: {rows: []}});
+        feed({engine_fast: {load: [{num_reqs: 1, num_waiting_reqs: 0}], canary_inflight: true}});
+        feed({engine_fast: {load: [{num_reqs: 1, num_waiting_reqs: 0}], canary_inflight: true}});
+        feed({feed: {rows: []}});
+        report({empty: txt('feed-empty'), note: txt('feed-note'), badge: txt('bdg-traffic')});
+        """)
+        self.assertNotIn("directly", r["empty"], r)
+        self.assertEqual(r["note"], "", r)
+        self.assertEqual(r["badge"], "", "the canary is the cockpit's own probe, not traffic")
+
+    def test_a_real_direct_request_beside_the_canary_is_still_said(self):
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});
+        feed({feed: {rows: []}});
+        feed({engine_fast: {load: [{num_reqs: 2, num_waiting_reqs: 0}], canary_inflight: true}});
+        feed({engine_fast: {load: [{num_reqs: 2, num_waiting_reqs: 0}], canary_inflight: true}});
+        feed({feed: {rows: []}});
+        report({empty: txt('feed-empty'), badge: txt('bdg-traffic')});
+        """)
+        self.assertIn("1 request is running on the engine, sent to :30000 directly, not through the proxy", r["empty"])
+        self.assertEqual(r["badge"], "1", r)
+
     def test_an_engine_that_said_nothing_keeps_the_old_message_and_a_dark_badge(self):
         r = run(self, r"""
         feed({config: CONFIG, units: UNITS, lifecycle: life({'qwen38-sglang.service': eng('ready')})});

@@ -1505,7 +1505,7 @@ on('engine_info', d => {
   if (i.context_length) F.window = i.context_length;
   if (i.max_running_requests) F.maxRun = i.max_running_requests;
 });
-on('engine_fast', d => { F.load = (d.load || [])[0] || {}; F.noEngine = !d.load; F.memFloor = d.mem_floor || F.memFloor; F.prompt = d.prompt || null; });
+on('engine_fast', d => { F.load = (d.load || [])[0] || {}; F.noEngine = !d.load; F.memFloor = d.mem_floor || F.memFloor; F.prompt = d.prompt || null; F.canary = !!d.canary_inflight; });
 on('machine', d => { F.machine = d; });
 on('gpu', d => { F.gpu = d; });
 on('opencode', d => { F.ocfit = d.fit || null; });

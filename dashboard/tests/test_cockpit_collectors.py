@@ -1544,6 +1544,44 @@ class TheCockpitsOwnProbeIsNotAClient(Base):
         self.assertEqual(canary["fails"], 1, "the probe went to the closed port and failed there")
 
 
+class TheCanaryIsSaidInflightToThePage(Base):
+    """collect_engine_fast reads num_reqs raw, and the cockpit's own canary, a real two-token
+    request to :30000 every 90 s, is in it while it runs: the payload now says when one is in
+    flight (canary_inflight), so the Traffic view takes it out of the engine's count and never
+    names the cockpit itself as a direct client (review 2026-11-19, D2)."""
+
+    def setUp(self):
+        self.saved = (self.cp.DRY_RUN, self.cp.engine_load, self.cp.METRICS)
+        with self.cp.LIFE_LOCK:
+            self.cp.LIFE["states"] = {"qwen38-sglang.service": "ready"}
+        self.cp.DRY_RUN = True
+        self.cp.engine_load = lambda timeout=3.0: [{"num_reqs": 1, "num_waiting_reqs": 0}]
+        self.cp.METRICS = self.cp.em.Window(300.0)
+
+    def tearDown(self):
+        self.cp.DRY_RUN, self.cp.engine_load, self.cp.METRICS = self.saved
+        with self.cp.LIFE_LOCK:
+            self.cp.LIFE["states"] = {}
+
+    def test_a_canary_in_flight_is_said_so_the_page_takes_it_out(self):
+        with self.cp.METRICS_LOCK:
+            self.cp.METRICS.inflight = time.time()
+        out = self.cp.collect_engine_fast()
+        self.assertEqual(out["load"][0]["num_reqs"], 1, "the raw count still carries the canary")
+        self.assertTrue(out["canary_inflight"], out)
+
+    def test_no_canary_in_flight_is_said_so(self):
+        out = self.cp.collect_engine_fast()
+        self.assertFalse(out["canary_inflight"], out)
+
+    def test_a_canary_begun_over_a_minute_ago_is_over(self):
+        # its request gives up at 25 s: a begin older than a minute is a lost end, not a flight
+        with self.cp.METRICS_LOCK:
+            self.cp.METRICS.inflight = time.time() - 61
+        out = self.cp.collect_engine_fast()
+        self.assertFalse(out["canary_inflight"], out)
+
+
 class AnOrphanContainerHoldsTheBox(Base):
     """The same stop timeout with the container still up: systemd killed the docker client,
     the daemon kept the container and its pool. The lifecycle said "failed", which no gate

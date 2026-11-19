@@ -141,8 +141,11 @@ const feedTime = ts => {
 // engine reads, and "direct" is said only once a journal read landed with the gap already there
 // and did not absorb it, over several engine reads, with the journal source fresh.
 let gapReads = 0, gapOutlivedFeed = false;
+// the engine's count of the requests in flight, minus the cockpit's own canary when one is in
+// flight (the server says so, canary_inflight): a probe of the box is not a client of it
+// (review 2026-11-19, D2)
 const engineCount = () => !F.noEngine && F.load && F.load.num_reqs != null
-  ? runningReqs(F.load) + waitingReqs(F.load) : null;
+  ? Math.max(0, runningReqs(F.load) + waitingReqs(F.load) - (F.canary ? 1 : 0)) : null;
 on('engine_fast', () => {
   const eng = engineCount();
   const inflight = (F.feedRows || []).filter(r => r.outcome === 'in flight').length;
