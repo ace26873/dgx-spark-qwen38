@@ -19,7 +19,7 @@ REV, DREV = "1" * 40, "d" * 40
 
 class UpdateWaits(unittest.TestCase):
     def run_block(self, unit=True, prepared=True, image=True, ckpt=True, draft=True, all_weights=0, named=0,
-                  no_service=0, verbatim=0, units_only=0, lane="27b"):
+                  no_service=0, verbatim=0, units_only=0, lane="27b", side_unit=None):
         d = pathlib.Path(tempfile.mkdtemp(prefix="update-waits-"))
         hf = d / "hf"
         if draft:
@@ -31,12 +31,17 @@ class UpdateWaits(unittest.TestCase):
         etc.mkdir()
         if unit:
             (etc / "qwen38-sglang.service").write_text("x")
+        if side_unit:
+            (etc / side_unit).write_text("x")
         script = f"""
 set -euo pipefail
 CONFIG_DIR={d}; . "{REPO}/lanes.sh"
 LANE={lane}; UNIT_NAME=qwen38-sglang.service; ALL_WEIGHTS={all_weights}; UNITS_ONLY={units_only}; NO_SERVICE={no_service}
 TEXT_NAMED={named}; KEEP_MODEL_VERBATIM={verbatim}; IMAGE={IMAGE}; FLASH_IMAGE={IMAGE}; HF_CACHE={hf}
 MODEL_REPO=RadixArk/Qwen3.8-27B-NVFP4; MODEL_REV={REV}; DRAFT2_REPO=maurienne-ai/Draft; DRAFT2_REV={DREV}
+KOLIBRI_UNIT_PATH=qwen38-kolibri.service; NEMOTRON_UNIT_PATH=qwen38-nemotron.service
+NEMOTRON_SUPER_UNIT_PATH=qwen38-nemotron-super.service; FLASH_LOCAL_UNIT_PATH=qwen38-flash-local.service
+ORNITH_122B_UNIT_PATH=qwen38-ornith-122b.service; FLASH_UNSLOTH_UNIT_PATH=qwen38-flash-unsloth.service
 text_lane_prepared(){{ return {0 if prepared else 1}; }}
 docker(){{ [ "$1" = info ] && return 0; return {0 if image else 1}; }}   # info answers: the daemon is up, only the image is missing
 ckpt_cached(){{ return {0 if ckpt else 1}; }}
@@ -62,6 +67,17 @@ echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ON
                 self.assertIn("WAITS_LOAD=0 UNITS_ONLY=0", self.run_block(image=False, **kw))
         self.assertIn("STATE PENDING_PUT=0 WAITS_LOAD=0 UNITS_ONLY=0", self.run_block(image=False, all_weights=1))
         self.assertIn("STATE PENDING_PUT=0 WAITS_LOAD=0 UNITS_ONLY=0", self.run_block(image=False, unit=False))
+
+    def test_a_box_with_only_a_lane_beside_arms_the_wait_too(self):
+        # side lanes installed alone (their own installer, no text lane unit on the box): an update of one
+        # of them waits for its Load there too, instead of re-downloading what the Load would have fetched
+        # (review of v1.52.0, 2026-11-19, GLM 5.3: only the run's text lane armed PENDING_PUT, so side_install
+        # called the installer whole, 34 GB for the image lane's checkpoint)
+        for side in ("qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service",
+                     "qwen38-flash-local.service", "qwen38-image-h3.service"):
+            with self.subTest(side=side):
+                self.assertIn("STATE PENDING_PUT=1 WAITS_LOAD=0 UNITS_ONLY=0",
+                              self.run_block(unit=False, prepared=False, image=False, side_unit=side))
 
     def test_a_lane_that_cannot_serve_as_it_is_is_not_this_case(self):
         # emptied or never loaded: the paths before say what it gets (left out, not prepared), not this one

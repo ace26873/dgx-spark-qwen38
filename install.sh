@@ -1899,7 +1899,19 @@ fi
 # too), its update waiting for its Load. --with-<lane> and --all-weights download now, as asked; a new box downloads its
 # lane (1410).
 PENDING_PUT=0; WAITS_LOAD=0; WAITS_WHAT=""
-if [ -f "/etc/systemd/system/$UNIT_NAME" ] && [ "$ALL_WEIGHTS" -eq 0 ]; then PENDING_PUT=1; fi
+# armed when any lane this run may update is in place: the run's text lane, the other one, or a lane beside it
+# (a box can hold side lanes alone, installed by their own installer; review of v1.52.0, 2026-11-19, GLM 5.3:
+# only the run's text lane armed it, and on a box without that unit an update re-downloaded what a Load of a
+# side lane would have fetched)
+if [ "$ALL_WEIGHTS" -eq 0 ]; then
+  for _u in "$UNIT_NAME" qwen38-sglang.service qwen38-flash.service \
+            qwen38-image.service qwen38-video.service qwen38-image-h3.service "$KOLIBRI_UNIT_PATH" \
+            "$NEMOTRON_UNIT_PATH" "$NEMOTRON_SUPER_UNIT_PATH" "$FLASH_LOCAL_UNIT_PATH" "$ORNITH_122B_UNIT_PATH" \
+            "$FLASH_UNSLOTH_UNIT_PATH"; do
+    [ -f "/etc/systemd/system/$_u" ] && { PENDING_PUT=1; break; }
+  done
+  unset _u
+fi
 export PENDING_PUT
 if [ "$PENDING_PUT" -eq 1 ] && [ "$UNITS_ONLY" -eq 0 ] && [ "$NO_SERVICE" -eq 0 ] && [ "$TEXT_NAMED" -eq 0 ] \
    && [ "$KEEP_MODEL_VERBATIM" -eq 0 ] && text_lane_prepared "$LANE"; then
