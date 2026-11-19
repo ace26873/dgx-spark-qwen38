@@ -3726,6 +3726,8 @@ def patch_waiting_checkpoint(unit: str, src: Path):
     PLACE: run in the prepare, while the unit previously in place still serves the same snapshot with
     another window, the patch would leave a 1M lane that no longer loads if it restarts before the
     pose (seventh pass of the v1.52.0 reviews, 2026-11-19)."""
+    if unit not in PENDING_UNITS:
+        return subprocess.CompletedProcess(["bash"], 0, "", "")   # not a unit apply_pending takes: nothing to patch
     lane = "27b" if unit == "qwen38-sglang.service" else "flash"
     target = pending_target(unit) or ("stock" if lane == "27b" else "flash")
     try:

@@ -421,6 +421,28 @@ class TheApplyPendingPatchesTheWaitingCheckpointAfterThePose(unittest.TestCase):
         job = self.act()
         self.assertEqual(job.status, "done", job.lines)
 
+    def test_a_unit_apply_pending_does_not_take_gets_no_patch(self):
+        # blind review of v1.53.1 (2026-11-19, GLM 5.3), latent defect (g): patch_waiting_checkpoint
+        # treated every unit other than the 27B's as the flash lane. The apply_pending API takes only
+        # PENDING_UNITS (its enum is closed), so a unit outside them is nothing to patch: the guard
+        # returns before any bash runs, exactly as the "--model-path not read" case does.
+        foreign = "qwen38-transcribe.service"
+        src = self.pdir / foreign
+        src.write_text("[Service]\nExecStart=docker run x --model-path R/Q --revision " + self.REV + "\n")
+        calls = []
+        real_sp = self.cp.subprocess.run
+
+        def rec(argv, **kw):
+            if argv[:2] == ["bash", "-c"]:
+                calls.append(argv)
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            return real_sp(argv, **kw)
+        self.cp.subprocess.run = rec
+        self.addCleanup(setattr, self.cp.subprocess, "run", real_sp)
+        pr = self.cp.patch_waiting_checkpoint(foreign, src)
+        self.assertEqual(pr.returncode, 0)
+        self.assertEqual(calls, [], "a unit outside PENDING_UNITS runs no patch: no bash call at all")
+
     def fail_patch(self):
         real = self.cp.patch_waiting_checkpoint
         self.cp.patch_waiting_checkpoint = (
