@@ -44,7 +44,7 @@ SMI_TIMEOUT_S="${QWEN38_PREFLIGHT_SMI_TIMEOUT_S:-10}"
 # the tests: each lane the registry calls llamacpp, its unit's name without ".service".
 # QWEN38_PREFLIGHT_LLAMACPP_CONTAINER overrides both with one container, for a test.
 llamacpp_containers(){
-  local dir reg u out
+  local reg u out
   if [ -n "${QWEN38_PREFLIGHT_LLAMACPP_CONTAINER:-}" ]; then
     printf '%s\n' "$QWEN38_PREFLIGHT_LLAMACPP_CONTAINER"; return 0
   fi
