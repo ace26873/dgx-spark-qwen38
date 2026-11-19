@@ -377,10 +377,12 @@ unit_pending_clear(){  # $1 where a unit goes: it is in place, nothing waits for
         "${CONFIG_DIR:-$HOME/.config/qwen38}/pending/$(basename "$1").base"
 }
 
-# The switch's steps 2, 2a and 2b after its fetch, as one function the switch and a Load's prepare
-# both call, so a checkpoint the Load fetched is patched the same way whichever of the two runs
-# them: switch-model.sh calls it with the unit in place, prepare-lane.sh with the unit that waits
-# (the one the Load will put in place), each with the cache that unit mounts. The patches are
+# The switch's steps 2, 2a and 2b after its fetch, as one function the switch and the cockpit's
+# apply_pending both call, so a checkpoint the Load fetched is patched the same way whichever of
+# the two runs them: switch-model.sh calls it with the unit in place, apply_pending
+# (patch_waiting_checkpoint) with the unit that waited, once that unit is in place, each with the
+# cache that unit mounts. A Load's prepare (prepare-lane.sh) does not call it since v1.52.1. The
+# patches are
 # idempotent (patch-yarn.py, patch-kv.py and patch-template.py all say so), so a run of both on
 # the same checkpoint, as a Load toward another target than the one that served does, changes
 # nothing twice.

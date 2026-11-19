@@ -129,7 +129,6 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
                 os.environ[k] = v
                 self.addCleanup(os.environ.pop, k, None)
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
-        pathlib.Path("/tmp/dbg-inst.sh").write_text((repo / f"install-{lane}.sh").read_text())
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout, (cfg / "pending").exists()
 
@@ -416,6 +415,31 @@ echo "STATE WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ONLY WAITS_WHAT=$WAITS_WHAT
                 out = self.run_probe(lane, self.PIN if lane == "27b" else self.OTHER_PIN)
                 self.assertIn("STATE WAITS_LOAD=1 UNITS_ONLY=1", out)
                 self.assertIn("image " + (self.PIN if lane == "27b" else self.OTHER_PIN), out)
+
+
+class NoDebugLeftovers(unittest.TestCase):
+    """Blind review of v1.52.1 (2026-11-19, GLM 5.3): a debug leftover wrote a debug file in /tmp on
+    every run of ARuntimeThatMovesWaitsToo.run_fn, outside the test's own tmpdir, and the comment above
+    patch_served_checkpoint still said a Load's prepare calls it, which v1.52.1 removed (the cockpit's
+    apply_pending calls it, once the waiting unit is in place)."""
+
+    def test_no_test_writes_a_debug_file_in_tmp(self):
+        # built in two parts: this test's own source must not hold the marker
+        marker = "/tmp/" + "dbg"
+        for f in sorted((REPO / "tests").glob("test_*.py")):
+            self.assertNotIn(marker, f.read_text(), f"{f.name} writes a debug file outside its tmpdir")
+
+    def test_the_patch_served_checkpoint_comments_do_not_name_the_prepare_as_a_caller(self):
+        lanes = (REPO / "lanes.sh").read_text()
+        head = lanes[:lanes.index("patch_served_checkpoint(){")]
+        comment = head[head.rindex("# The switch's steps 2, 2a and 2b"):]
+        self.assertNotIn("prepare-lane.sh with the unit that waits", comment)
+        self.assertIn("apply_pending", comment)
+        sw = (REPO / "switch-model.sh").read_text()
+        i = sw.index("# 2, 2a, 2b) the fetched checkpoint's own files")
+        comment2 = sw[i:sw.index('patch_served_checkpoint "$TARGET_LANE"', i)]
+        self.assertNotIn("prepare-lane.sh) calls too", comment2)
+        self.assertIn("apply_pending", comment2)
 
 
 if __name__ == "__main__":

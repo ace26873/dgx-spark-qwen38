@@ -55,6 +55,12 @@ disk carries the new, unpatched one; and the job's message names the `<unit>.pre
 beside the pose, instead of saying the lane serves what it loaded. A retry reposes the same file and does not
 overwrite the `.prev` with it. Each new test fails on the code before.
 
+**Review leftovers cleaned (blind review of v1.52.1, 2026-11-19, GLM 5.3).** A debug leftover in
+`tests/test_update_waits_for_load.py` wrote a debug file in `/tmp` on every run, outside the test's own tmpdir;
+removed, with a test that fails if any test of `tests/` writes one there again. The comment above
+`patch_served_checkpoint` (lanes.sh, switch-model.sh) still said a Load's prepare calls it, which v1.52.1
+removed; it now names `apply_pending`, the caller since, once the waiting unit is in place.
+
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 
 **The NVIDIA Nemotron Transcribe lane (`transcribe`): speech to text on the GPU, on a port of its own.** NVIDIA's
