@@ -18,6 +18,7 @@ fetches the lane whole at once, and was tested only up to that rule: a step 2 th
 passed every test. The boot a side lane's uninstall gives back goes only to a text lane that can
 start (test_text_lane.py).
 """
+import json
 import os
 import pathlib
 import re
@@ -41,10 +42,15 @@ LAUNCHER = ("docker run --rm --network host -v {hf}:/root/.cache/huggingface img
             "--revision 7b719225242aacd3dbd3f9407468c2ee9a9d2594 --host 127.0.0.1 --port {port} "
             "--max-running-requests 8 --context-length 262144\n")
 FLASH_UNIT = "[Service]\nExecStart=/bin/bash /x/launch-flash.sh\n"
+# the 27B's DFlash2 draft, at the pins install.sh renders its unit with (read there, as the image pins are below)
+DRAFT2_REPO_PIN = re.search(r'^DRAFT2_REPO="\$\{DRAFT2_REPO:-([^}]+)\}"', (REPO / "install.sh").read_text(), re.M).group(1)
+DRAFT2_REV_PIN = re.search(r'^DRAFT2_REV="\$\{DRAFT2_REV:-([^}]+)\}"', (REPO / "install.sh").read_text(), re.M).group(1)
 SGL_UNIT = ("[Service]\nExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --name qwen38-sglang "
             "-v {hf}:/root/.cache/huggingface lmsysorg/sglang@sha256:" + "a" * 64 +
             " python3 -m sglang.launch_server --model-path RadixArk/Qwen3.8-27B-NVFP4 "
-            "--revision 52d1adc5f38aa5ebf099c29ed7025ba34cfbb854 --context-length {ctx} --host 127.0.0.1 --port {port}'\n")
+            "--revision 52d1adc5f38aa5ebf099c29ed7025ba34cfbb854 "
+            f"--speculative-draft-model-path {DRAFT2_REPO_PIN} --speculative-draft-model-revision {DRAFT2_REV_PIN} "
+            "--context-length {ctx} --host 127.0.0.1 --port {port}'\n")
 KEEPALIVE = "[Service]\nEnvironment=PROXY_BIND={pbind}\nEnvironment=UPSTREAM=http://127.0.0.1:{port}\n"
 FP4 = "qwen38-flash-local.service"
 
@@ -54,8 +60,9 @@ def box_run(record, units=("flash", "27b"), off=(), args=(), boot=FP4, port=3100
     """(rc, out): install.sh up to the wall, on a box booting `boot` whose text-lane record says `record`,
     with the text units of `units`, the markers of `off` (an older release's), the flash launcher and the
     keepalive unit carrying the box's own port, cache and proxy bind. No PORT, HF_CACHE or bind in the
-    environment: what the run keeps, it reads. prepared: both text lanes' checkpoints are in a cache of
-    the test's own (their images are, as docker answers here), which makes each lane prepared."""
+    environment: what the run keeps, it reads. prepared: both text lanes' checkpoints whole at their
+    revisions (index and shards) and the 27B's DFlash2 draft at its pin are in a cache of the test's own
+    (their images are, as docker answers here), which makes each lane prepared."""
     box = box_for_step_1(docker_err="", docker_rc=0, member=True, in_session=True)
     if prepared:
         hf = str(wall._tmp("left-out-hf-"))
@@ -63,7 +70,17 @@ def box_run(record, units=("flash", "27b"), off=(), args=(), boot=FP4, port=3100
                           ("RadixArk--Qwen3.8-27B-NVFP4", "52d1adc5f38aa5ebf099c29ed7025ba34cfbb854")):
             snap = pathlib.Path(hf) / "hub" / f"models--{repo}" / "snapshots" / rev
             snap.mkdir(parents=True)
-            (snap / "model.safetensors").write_text("")
+            shards = ("model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors")
+            (snap / "model.safetensors.index.json").write_text(json.dumps(
+                {"weight_map": {f"layers.{i}": s for i, s in enumerate(shards)}}))
+            for s in shards:
+                (snap / s).write_text("")
+        # the 27B's DFlash2 draft, as a box prepared at these pins holds it: the unit an update renders reads it
+        # (install.sh's WAITS_LOAD test), and a box without it gets its units only and waits for its Load
+        draft = pathlib.Path(hf) / "hub" / f"models--{DRAFT2_REPO_PIN.replace('/', '--')}" / "snapshots" / DRAFT2_REV_PIN
+        draft.mkdir(parents=True)
+        (draft / "config.json").write_text("{}")
+        (draft / "model.safetensors").write_text("")
     unit_dir = wall._tmp("left-out-units-")
     (unit_dir / FP4).write_text("[Service]\n")
     (unit_dir / "qwen38-keepalive.service").write_text(KEEPALIVE.format(pbind=pbind, port=port))
@@ -148,6 +165,8 @@ class ALaneLeftOutGetsItsUnitsOnly(unittest.TestCase):
                 self.assertNotIn("ERROR", out)
 
     def test_a_lane_prepared_is_brought_up_to_date_whole_as_before(self):
+        # v1.52.0 brings a prepared lane up to date whole when its new unit reads what the box has: the prepared
+        # decor holds the 27B's DFlash2 draft too, as a box prepared at these pins does
         for record, lane in (("qwen38-flash.service", "flash"), ("qwen38-sglang.service", "27b")):
             with self.subTest(record):
                 rc, out = box_run(record, prepared=True)
