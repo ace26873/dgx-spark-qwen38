@@ -3632,8 +3632,11 @@ def job_apply_pending(job: Job):
             tmp = CONFIG_DIR / "launch-flash.sh.pending-tmp"
             shutil.copyfile(launch, tmp)
             # the launcher in place is kept beside the pose, as the unit's is below: launch-flash.sh.prev
+            # (only when it differs: a retry after a failed patch reposes the same launcher and must
+            # not overwrite the previous one with the one already in place)
             try:
-                shutil.copyfile(CONFIG_DIR / "launch-flash.sh", CONFIG_DIR / "launch-flash.sh.prev")
+                if (CONFIG_DIR / "launch-flash.sh").read_bytes() != launch.read_bytes():
+                    shutil.copyfile(CONFIG_DIR / "launch-flash.sh", CONFIG_DIR / "launch-flash.sh.prev")
             except OSError:
                 pass
             os.chmod(tmp, 0o755)
@@ -3641,14 +3644,19 @@ def job_apply_pending(job: Job):
             # the checkpoint the new launcher serves is patched now that it is in place, never in the
             # prepare while the launcher previously in place still serves the same snapshot
             pr = patch_waiting_checkpoint(unit, launch)
-            launch.unlink()
             if pr.returncode != 0:
-                for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
-                    f.unlink(missing_ok=True)
+                # the launcher is in place but its checkpoint is not patched for it: the wait is KEPT
+                # (the launcher included), its .base naming the launcher in place now, so the next
+                # Load retries the patch instead of dropping the wait as stale; the previous
+                # launcher stays at launch-flash.sh.prev
+                (PENDING_DIR / (unit + ".base")).write_text(
+                    hashlib.sha256((CONFIG_DIR / "launch-flash.sh").read_bytes()).hexdigest() + "\n")
                 audit({"kind": "pending_applied", "unit": unit})
-                return False, [f"{unit}: its new launch script is in place, but its checkpoint could not be "
-                               f"patched for it: {(pr.stderr.strip() or pr.stdout.strip())[-300:]} (the lane serves "
-                               "what it loaded until its next restart; ./install.sh patches it)"], {"ok": False}
+                return False, [f"{unit}: its new launch script is in place (the previous one is kept at "
+                               f"launch-flash.sh.prev), but its checkpoint could not be patched for it: "
+                               f"{(pr.stderr.strip() or pr.stdout.strip())[-300:]}; the wait is kept, the lane's "
+                               "next Load retries the patch; ./install.sh patches it now"], {"ok": False}
+            launch.unlink()
         for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
             f.unlink(missing_ok=True)
         audit({"kind": "pending_applied", "unit": unit})
@@ -3657,9 +3665,11 @@ def job_apply_pending(job: Job):
     shutil.copyfile(src, stage)
     # the unit in place is kept beside the pose, as <unit>.prev: a new one that does not start leaves
     # the one that served to put back by hand (fifth review of v1.52.0, 2026-11-19: nothing kept it,
-    # the lane was down until a ./install.sh)
+    # the lane was down until a ./install.sh). Only when it differs: a retry after a failed patch
+    # reposes the same unit and must not overwrite the previous one with the one already in place.
     try:
-        shutil.copyfile(UNIT_DIR / unit, CONFIG_DIR / f"{unit}.prev")
+        if (UNIT_DIR / unit).read_bytes() != src.read_bytes():
+            shutil.copyfile(UNIT_DIR / unit, CONFIG_DIR / f"{unit}.prev")
     except OSError:
         pass
     out = run(["sudo", "-n", "/usr/bin/install", "-m", "644", str(stage), f"/etc/systemd/system/{unit}"],
@@ -3667,22 +3677,34 @@ def job_apply_pending(job: Job):
     if not answered(out):
         stage.unlink(missing_ok=True)
         return False, lines + [f"install failed: {str(out).strip()[:200]}"], {"ok": False}
-    # the unit is in place: the wait is cleared however the reload goes. A reload that fails must not leave a
-    # wait whose .base names the unit before, read as stale at the retry and dropped with a false "switch"
-    # message (fifth review of v1.52.0, 2026-11-19, GLM 5.3)
     stage.unlink(missing_ok=True)
+    # the unit is in place: systemd reloads it whatever the patch below does, so a later reload
+    # (needrestart, another Load, a reboot) never serves the unpatched unit from disk while
+    # systemd still held the previous one
+    out = run(["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"], timeout=60, merge_err=True)
+    reloaded = answered(out)
     # the checkpoint the new unit serves is patched now that the unit is in place, never in the prepare
     # while the unit previously in place still serves the same snapshot with another window
     pr = patch_waiting_checkpoint(unit, src)
+    if pr.returncode != 0:
+        # the unit is in place and reloaded, but its checkpoint is not patched for it: the wait is
+        # KEPT, its .base naming the unit in place now, so the next Load retries the patch instead
+        # of dropping the wait as stale; the previous unit stays at <unit>.prev
+        (PENDING_DIR / (unit + ".base")).write_text(
+            hashlib.sha256((UNIT_DIR / unit).read_bytes()).hexdigest() + "\n")
+        audit({"kind": "pending_applied", "unit": unit})
+        lines = lines + [f"{unit} is in place and reloaded, but its checkpoint could not be patched for it: "
+                         f"{(pr.stderr.strip() or pr.stdout.strip())[-300:]} (the previous unit is kept at "
+                         f"{unit}.prev; the wait is kept, the lane's next Load retries the patch; ./install.sh "
+                         "patches it now)"]
+        if not reloaded:
+            lines.append(f"{unit}: systemd did not reload it: sudo systemctl daemon-reload, then its "
+                         f"restart, applies it ({str(out).strip()[:200]})")
+        return False, lines, {"ok": False}
     for f in (src, PENDING_DIR / (unit + ".needs"), PENDING_DIR / (unit + ".base")):
         f.unlink(missing_ok=True)
     audit({"kind": "pending_applied", "unit": unit})
-    if pr.returncode != 0:
-        return False, lines + [f"{unit} is in place, but its checkpoint could not be patched for it: "
-                               f"{(pr.stderr.strip() or pr.stdout.strip())[-300:]} (the lane serves what it loaded "
-                               "until its next restart; ./install.sh patches it)"], {"ok": False}
-    out = run(["sudo", "-n", "/usr/bin/systemctl", "daemon-reload"], timeout=60, merge_err=True)
-    if not answered(out):
+    if not reloaded:
         # a restart alone keeps systemd's old reading of the unit (it only warns that the file changed on disk):
         # the reload comes first
         return False, lines + [f"{unit}: the unit is in place, systemd did not reload it: sudo systemctl "

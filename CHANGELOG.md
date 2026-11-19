@@ -44,6 +44,14 @@ nothing kept it, so a new unit that crashed at start left the lane down until a 
 flash launcher) in place is copied to `~/.config/qwen38/<unit>.prev` (or `launch-flash.sh.prev`) before the pose.
 The new tests fail on the code before.
 
+**A failed patch at the pose leaves a true state.** When `patch_waiting_checkpoint` fails once the unit (or the
+flash launcher) is in place, the wait is now kept, with its `.base` naming what is in place now, so the lane's
+next Load retries the patch instead of reading the wait as changed since it was rendered and dropping it; the
+27B's `daemon-reload` runs whatever the patch does, so systemd never holds the previous unit in memory while the
+disk carries the new, unpatched one; and the job's message names the `<unit>.prev` (or `launch-flash.sh.prev`) kept
+beside the pose, instead of saying the lane serves what it loaded. A retry reposes the same file and does not
+overwrite the `.prev` with it. Each new test fails on the code before.
+
 ## v1.53.0 (2026-11-19): three new lanes on demand: Nemotron Transcribe, speech to text on the GPU, and Liquid AI's LFM2.5 24B-A2B (SGLang) and LFM3 1.7B (vLLM) as text lanes
 
 **The NVIDIA Nemotron Transcribe lane (`transcribe`): speech to text on the GPU, on a port of its own.** NVIDIA's

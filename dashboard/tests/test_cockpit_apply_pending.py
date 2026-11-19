@@ -394,8 +394,8 @@ class TheApplyPendingPatchesTheWaitingCheckpointAfterThePose(unittest.TestCase):
             return Ran("")
         cp.run = fake_run
 
-    def act(self):
-        code, body = self.cp.start_action("apply_pending", {"unit": UNIT})
+    def act(self, unit=UNIT):
+        code, body = self.cp.start_action("apply_pending", {"unit": unit})
         self.assertEqual(code, 202, body)
         job = self.cp.JOBS[body["job"]]
         for _ in range(200):
@@ -420,6 +420,84 @@ class TheApplyPendingPatchesTheWaitingCheckpointAfterThePose(unittest.TestCase):
         (self.pdir / UNIT).write_text("[Service]\nExecStart=new\n")
         job = self.act()
         self.assertEqual(job.status, "done", job.lines)
+
+    def fail_patch(self):
+        real = self.cp.patch_waiting_checkpoint
+        self.cp.patch_waiting_checkpoint = (
+            lambda unit, src: subprocess.CompletedProcess([], 1, "", "boom: patch failed"))
+        self.addCleanup(setattr, self.cp, "patch_waiting_checkpoint", real)
+        return real
+
+    def pose_for_real(self):
+        def posing_run(argv, timeout=5.0, merge_err=False, errors="strict"):
+            if argv[0] == "sudo":
+                self.calls.append(argv)
+                if len(argv) > 5 and argv[2] == "/usr/bin/install":
+                    shutil.copyfile(argv[5], self.cp.UNIT_DIR / UNIT)
+                return Ran("")
+            return Ran("")
+        self.cp.run = posing_run
+
+    def test_a_patch_that_fails_at_the_pose_keeps_the_wait_and_still_reloads(self):
+        # 27B branch (blind review of v1.52.1, 2026-11-19, GLM 5.3): before, a failed patch cleared the
+        # wait, skipped the daemon-reload and said "the lane serves what it loaded": systemd kept the
+        # old unit while the disk carried the new unpatched one, and nothing ever retried the patch.
+        # Now the unit is posed, systemd reloads it whatever the patch does, the wait is KEPT with its
+        # .base naming the unit in place now (the next Load retries, not drops as stale), and the message
+        # names the .prev
+        import hashlib
+        real_patch = self.fail_patch()
+        self.pose_for_real()
+        old = self.in_place.read_text()
+        job = self.act()
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertEqual([c[2] for c in self.calls], ["/usr/bin/install", "/usr/bin/systemctl"],
+                         "the daemon-reload runs even when the patch fails")
+        self.assertTrue((self.pdir / UNIT).exists(), "the wait is kept for the next Load")
+        self.assertTrue((self.pdir / (UNIT + ".needs")).exists())
+        base = self.pdir / (UNIT + ".base")
+        self.assertEqual(base.read_text().strip(),
+                         hashlib.sha256((self.cp.UNIT_DIR / UNIT).read_bytes()).hexdigest(),
+                         "the kept wait's .base names the unit in place now")
+        self.assertFalse(self.cp.pending_stale(UNIT), "the next Load does not read the kept wait as stale")
+        self.assertTrue(any("could not be patched" in ln and f"{UNIT}.prev" in ln and "the wait is kept" in ln
+                            for ln in job.lines), job.lines)
+        prev = self.cp.CONFIG_DIR / f"{UNIT}.prev"
+        self.assertEqual(prev.read_text(), old, "the unit that served is kept beside the pose")
+        # the next Load retries the patch and applies the wait; the retry does not overwrite <unit>.prev
+        # with the unit already in place
+        self.cp.patch_waiting_checkpoint = real_patch
+        job2 = self.act()
+        self.assertEqual(job2.status, "done", job2.lines)
+        self.assertEqual(prev.read_text(), old)
+        self.assertEqual(self.cp.pending_units(), {})
+
+    def test_a_flash_patch_that_fails_at_the_pose_keeps_the_wait(self):
+        # flash branch, same review: the launcher is posed, but a failed patch keeps the waiting
+        # launcher (and the wait) with its .base naming the launcher in place now, and says the .prev
+        import hashlib
+        flash = "qwen38-flash.service"
+        new_launch = "#!/bin/bash\n--model-path r/flash --revision " + "4" * 40 + "\n"
+        (self.pdir / flash).write_text("[Service]\nExecStart=launch\n")
+        (self.pdir / "launch-flash.sh").write_text(new_launch)
+        (self.pdir / (flash + ".needs")).write_text("image x\n")
+        launcher = self.cp.CONFIG_DIR / "launch-flash.sh"
+        launcher.write_text("#!/bin/bash\nold\n")
+        (self.pdir / (flash + ".base")).write_text(hashlib.sha256(launcher.read_bytes()).hexdigest() + "\n")
+        self.fail_patch()
+        job = self.act(flash)
+        self.assertEqual(job.status, "failed", job.lines)
+        self.assertEqual(self.calls, [], "no sudo for the user's own launcher")
+        self.assertEqual(launcher.read_text(), new_launch, "the new launcher is in place")
+        self.assertTrue((self.pdir / "launch-flash.sh").exists(), "the waiting launcher is kept for the retry")
+        self.assertTrue((self.pdir / flash).exists() and (self.pdir / (flash + ".needs")).exists())
+        base = self.pdir / (flash + ".base")
+        self.assertEqual(base.read_text().strip(), hashlib.sha256(launcher.read_bytes()).hexdigest(),
+                         "the kept wait's .base names the launcher in place now")
+        self.assertFalse(self.cp.pending_stale(flash))
+        self.assertTrue(any("launch-flash.sh.prev" in ln and "the wait is kept" in ln for ln in job.lines), job.lines)
+        prev = self.cp.CONFIG_DIR / "launch-flash.sh.prev"
+        self.assertEqual(prev.read_text(), "#!/bin/bash\nold\n", "the launcher that served is kept beside the pose")
 
 
 if __name__ == "__main__":
