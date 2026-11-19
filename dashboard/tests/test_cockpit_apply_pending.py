@@ -192,6 +192,15 @@ class ApplyPending(unittest.TestCase):
         self.assertEqual(self.cp.pending_units(), {})
         self.assertFalse(Path(stage).exists())
 
+    def test_the_unit_in_place_is_kept_beside_the_pose(self):
+        # <unit>.prev holds what served before the pose: a new unit that does not start leaves it to
+        # put back by hand (fifth review of v1.52.0, 2026-11-19: nothing kept it)
+        job = self.act()
+        self.assertEqual(job.status, "done", job.lines)
+        prev = self.cp.CONFIG_DIR / f"{UNIT}.prev"
+        self.assertTrue(prev.is_file(), "the unit in place is copied before the install")
+        self.assertEqual(prev.read_text(), "[Service]\nExecStart=old\n")
+
     def test_a_daemon_reload_that_fails_after_an_install_that_worked_leaves_no_wait(self):
         # the unit is in place, so the wait is cleared however the reload goes, and the failure says so:
         # a retry must not read the leftover wait as stale (a switch) and drop it with a false message
@@ -260,6 +269,8 @@ class ApplyPending(unittest.TestCase):
         self.assertTrue(os.access(launcher, os.X_OK))
         self.assertEqual(self.calls, [], "no sudo for the user's own file")
         self.assertNotIn(flash, self.cp.pending_units())
+        prev = self.cp.CONFIG_DIR / "launch-flash.sh.prev"
+        self.assertEqual(prev.read_text(), "#!/bin/bash\nold\n", "the launcher in place is kept beside the pose")
 
 
     def test_a_flash_wait_whose_launcher_is_gone_refuses_and_clears_without_asking_unit_needs(self):

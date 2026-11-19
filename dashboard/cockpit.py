@@ -3631,6 +3631,11 @@ def job_apply_pending(job: Job):
         if launch.is_file():
             tmp = CONFIG_DIR / "launch-flash.sh.pending-tmp"
             shutil.copyfile(launch, tmp)
+            # the launcher in place is kept beside the pose, as the unit's is below: launch-flash.sh.prev
+            try:
+                shutil.copyfile(CONFIG_DIR / "launch-flash.sh", CONFIG_DIR / "launch-flash.sh.prev")
+            except OSError:
+                pass
             os.chmod(tmp, 0o755)
             os.replace(tmp, CONFIG_DIR / "launch-flash.sh")
             # the checkpoint the new launcher serves is patched now that it is in place, never in the
@@ -3650,6 +3655,13 @@ def job_apply_pending(job: Job):
         return True, [f"{unit}: its new launch script is in place; its restart applies it"], {"ok": True}
     stage = CONFIG_DIR / f"{unit}.switch-stage"
     shutil.copyfile(src, stage)
+    # the unit in place is kept beside the pose, as <unit>.prev: a new one that does not start leaves
+    # the one that served to put back by hand (fifth review of v1.52.0, 2026-11-19: nothing kept it,
+    # the lane was down until a ./install.sh)
+    try:
+        shutil.copyfile(UNIT_DIR / unit, CONFIG_DIR / f"{unit}.prev")
+    except OSError:
+        pass
     out = run(["sudo", "-n", "/usr/bin/install", "-m", "644", str(stage), f"/etc/systemd/system/{unit}"],
               timeout=60, merge_err=True)
     if not answered(out):
