@@ -6335,7 +6335,13 @@ def job_delete_image(job: Job):
     lines = []
     for name in plan["names"]:
         lines += [ln for ln in str(run(["docker", "rmi", name], timeout=600, merge_err=True)).splitlines() if ln.strip()]
-    gone = not answered(run(["docker", "image", "inspect", "--format", "{{.Id}}", plan["id"]], timeout=10))
+    check = run(["docker", "image", "inspect", "--format", "{{.Id}}", plan["id"]], timeout=10)
+    if not answered(check) and getattr(check, "rc", None) is None:
+        # docker did not answer (daemon down, a timeout): never read as "the image is gone", and no audit says so
+        # (revue of v1.51.0, 2026-11-19)
+        return False, lines[-12:] + ["docker did not answer after the rmi: the image is not confirmed deleted, "
+                                     "nothing was audited"], {"ok": False}
+    gone = not answered(check)
     after = disk_free(plan["mount"])
     with REGISTRY_LOCK:
         REGISTRY_CACHE.update(ts=0.0, data=None)

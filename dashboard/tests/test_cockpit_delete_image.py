@@ -31,11 +31,13 @@ def tearDownModule():
 
 class Ran(str):
     ok = True
+    rc = 0
 
 
-def ran(text="", ok=True):
+def ran(text="", ok=True, rc=None):
     r = Ran(text)
     r.ok = ok
+    r.rc = (0 if ok else 1) if rc is None else rc
     return r
 
 
@@ -64,6 +66,7 @@ class DeleteImage(unittest.TestCase):
         (self.tmp / "units").mkdir()
         self.names = ["qwen38-pinned:flash-local-03a956544e9f", "qwen38-pinned:ornith-122b-03a956544e9f", DIGEST]
         self.containers, self.active, self.served, self.rmi = [], set(), True, []
+        self.docker_down = False
         self.gone = lambda: not self.names
         for lane in ("flash-local", "ornith-122b"):
             (self.tmp / "units" / f"qwen38-{lane}.service").write_text(f"ExecStart=/usr/bin/docker run --rm {DIGEST}\n")
@@ -74,8 +77,13 @@ class DeleteImage(unittest.TestCase):
 
     def fake_run(self, argv, timeout=5.0, merge_err=False, errors="strict"):
         if argv[:3] == ["docker", "image", "inspect"]:
+            if self.docker_down and self.rmi:
+                # the daemon fell between the rmi and this inspect: it did not answer (no exit code at all)
+                r = ran("", ok=False)
+                r.rc = None
+                return r
             if argv[-1] not in ("a7f76ae9f18c", FULL) or self.gone():
-                return ran("", ok=False)
+                return ran("", ok=False, rc=1)         # docker answered: no such image
             tags = [n for n in self.names if "@" not in n]
             return ran(f"{FULL}|{json.dumps(tags)}|{json.dumps([n for n in self.names if '@' in n])}\n")
         if argv[:2] == ["docker", "ps"]:
@@ -165,6 +173,21 @@ class DeleteImage(unittest.TestCase):
         self.assertEqual(self.rmi, [])
         self.assertTrue(any("not an engine image of this stack" in ln for ln in body["lines"]), body["lines"])
 
+
+    def test_a_docker_that_does_not_answer_after_the_rmi_is_not_an_image_deleted(self):
+        # the daemon fell between the rmi and the inspect: the job says it, confirms nothing, and writes no
+        # image_deleted audit (revue of v1.51.0, 2026-11-19)
+        audits = []
+        real_audit = self.cp.audit
+        self.cp.audit = lambda e: audits.append(e)
+        self.addCleanup(setattr, self.cp, "audit", real_audit)
+        self.docker_down = True
+        code, body = self.act()
+        self.assertEqual(body["status"], "failed", body)
+        self.assertTrue(self.rmi, "the rmi ran while docker answered; only the final inspect did not")
+        self.assertTrue(any("docker did not answer" in ln and "not confirmed deleted" in ln for ln in body["lines"]),
+                        body["lines"])
+        self.assertFalse(any(a.get("kind") == "image_deleted" for a in audits), audits)
 
     def test_what_another_project_keeps_has_no_delete(self):
         keep = self.tmp / "config" / "library-keep"
