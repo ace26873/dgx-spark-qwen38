@@ -58,7 +58,7 @@ System One reads would be the thought's. The checkpoint and the draft are under 
 does not license commercial use by a legal entity with an annual revenue of 10 million US dollars or more.
 
 **The Liquid AI LFM3 lane (`lfm3`): LFM3 1.7B in NVFP4 on vLLM's own nightly.** `LiquidAI/LFM3-1.7B-NVFP4` at
-`cfe4b5ea...` (one file of 1,829,744,600 bytes, about 1.85 GB), served on the text lanes' port 30000 behind the
+`cfe4b5ea...` (one file of 1,829,744,600 bytes, about 1.83 GB), served on the text lanes' port 30000 behind the
 proxy and its key as model `lfm3-1.7b`, at the model's whole window of 262,144 tokens. The engine is vLLM's own
 nightly image of commit 60bd6dd (`vllm/vllm-openai`, vLLM 0.34.0rc1.dev571+g60bd6dd2e, CUDA 13.2.1, arm64, pinned
 by digest, pulled as published, nothing built on the box): LFM3 came to vLLM on 2026-11-06 (vllm#65826) and no
@@ -93,6 +93,13 @@ and `high`, omp `high` and `minimal`; a `reasoning_effort` is turned into the te
 ordering on `/v1/messages`, so Claude Code's per-turn reminders would miss the prefix cache; that warning is not a
 measurement yet. The checkpoint is under the LFM Open License v1.0, same Threshold of 10 million US dollars of
 annual revenue.
+
+**The LFM2.5 and LFM3 fetches pin refs/main at the revision they download.** Their engines read a checkpoint offline
+by its name, through the cache's `refs/main`, which a download by commit never writes: SGLang's speculative hook
+reads the LFM2.5 draft's config by its name, and vLLM reads the LFM3 tokenizer without its revision. So
+`vlane_fetch` takes a third argument, `pin` or `fill`, passed to `ckpt-fetch.py` as `--refs-main`, and both lanes'
+fetches and the Load of `switch-model.sh` pass `pin`, which points `refs/main` at the revision they download. Found
+by the proof campaign: the LFM2.5 lane did not start on a cache downloaded by commit.
 
 **Proxy v6.59 to v6.61.** v6.59: a text client is told the box is transcribing speech while the transcribe lane
 serves (`qwen38-transcribe.service`), and the way back, instead of "It is stopped, restarting or still loading
@@ -167,6 +174,27 @@ suites: `tests/test_lfm25_lane.py`, `tests/test_lfm3_lane.py`, `tests/test_trans
 `dashboard/tests/test_transcribe_cockpit.py`, `test_lfm25_cockpit.py`, `test_lfm3_cockpit.py`, the cockpit's guard of
 every on-demand lane in `test_cockpit_collectors.py` (each of the registry's lanes, present and absent), and the proxy's
 `test_proxy_lfm25.py` and `test_proxy_lfm3.py`.
+
+**A known limit, said as it is: opencode on the LFM2.5 lane.** In the matrix below, one try of five succeeded: the
+model reads an invented absolute path (`/home/hasan/hello.txt`) where the other lanes read a relative one, and
+opencode refuses a read outside its working directory (`external_directory`). The seven other clients were OK on
+the lane, and opencode is OK on every other lane. The lane ships with the limit said in its page
+([docs/lfm25-lane.md](docs/lfm25-lane.md)).
+
+**Proved on the reference box.** Before the push, the release installed from its branch, in the proof campaign of
+2026-11-19 (17:04 to 17:55, the GPU clock capped at 2,000 MHz during the measurements), and the three lanes loaded
+from the cockpit as the page does. Transcribe was ready 22 s after the start with 24 GiB available at its lowest,
+transcribed the repository's test WAV in 0.9 s and four in parallel in 1.4 s, and the box's key was in none of the
+75 lines of its journal. LFM2.5 was ready in 292 s with 22 GiB available at its lowest, served one stream at 102.2
+tokens/s (first token in 0.17 s, 1,024 tokens in, 512 out) and 8 at once 389.2 tokens/s in all (73.4 per stream,
+first token in 1.10 s), answered a tool call right, and served an agent's next turn 94 % from the prefix cache from
+its second turn (prompts of about 35,000 tokens). Its key was in none of the 206 lines of its journal but the one
+`server_args` line SGLang writes at every startup. LFM3 was ready in 133 s with 20 GiB available at its lowest,
+served one stream at 90.7 tokens/s (first token in 0.02 s) and 8 at once 732.2 tokens/s in all (101.1 per stream,
+first token in 0.04 s), answered a tool call right, and served its next turn 99 % from the prefix cache on the
+second turn then 100 %. Its key was in none of the 231 lines of its journal. The matrix then loaded the seven lanes
+and ran the eight clients on each text lane: every case OK but LFM2.5 x opencode, the limit above (1 of 5 tries).
+The box was back on its stock lane at the end.
 
 ## v1.52.0 (2026-11-19): an update downloads nothing large
 
