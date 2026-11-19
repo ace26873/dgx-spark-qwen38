@@ -1675,11 +1675,22 @@ SIDE_WAITED=" "
 side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<lane>): runs its installer
   local unit="/etc/systemd/system/qwen38-$1.service"
   if [ "$2" = --no-smoke ] && [ "${PENDING_PUT:-0}" = 1 ] && [ "$ALL_WEIGHTS" -eq 0 ] && [ "${3:-0}" -eq 0 ]; then
-    # a venv whose SGLang moved waits whole, its unit in place untouched: put first, the new unit ran on the old venv
-    # at the lane's next boot (code review of v1.52.0)
-    side_runtime_waits "$1"
-    [ -f "$CONFIG_DIR/pending/qwen38-$1.service" ] || "$REPO_DIR/install-$1.sh" --units-only || return 1
-    if [ -f "$CONFIG_DIR/pending/qwen38-$1.service" ]; then
+    # a venv whose SGLang moved waits whole, its unit in place untouched: its NEW unit, rendered by --units-only,
+    # waits too (PENDING_FORCE, lanes.sh's unit_put), so it never runs on the old venv at the lane's next boot, and
+    # the Load that clears the wait applies the moved pin too (review of v1.52.0, 2026-11-19, GLM 5.3: the unit kept
+    # waiting was the one in place, and the Load applied the old pin, losing the new one in silence)
+    local runtime_lacks="" force=0 p="$CONFIG_DIR/pending/qwen38-$1.service"
+    runtime_lacks="$(side_runtime_waits "$1")"
+    [ -n "$runtime_lacks" ] && force=1
+    if [ "$force" -eq 1 ] || [ ! -f "$p" ]; then
+      PENDING_FORCE=$force "$REPO_DIR/install-$1.sh" --units-only || return 1
+    fi
+    if [ -f "$p" ]; then
+      if [ -n "$runtime_lacks" ]; then
+        # the runtime lines of what it waits for, made current (an earlier run's wait learns them too)
+        { grep -v '^runtime ' "$p.needs" 2>/dev/null || true; printf '%s\n' "$runtime_lacks"; } > "$p.needs.tmp" \
+          && mv "$p.needs.tmp" "$p.needs"
+      fi
       SIDE_WAITED="$SIDE_WAITED$1 "
       echo "NOTE: the $(lane_title "$1") lane's update waits for its next Load, which downloads what it lacks ($(unit_pending_says "$unit")); it serves the release it served until then (./install.sh --with-$1 downloads it now)."
       return 0
@@ -1697,11 +1708,13 @@ side_install(){  # $1 lane, $2 its mode (side_mode), $3 1 when named (--with-<la
 side_waited(){ case "$SIDE_WAITED" in *" $1 "*) return 0 ;; esac; return 1; }  # $1 lane: its update waits for its Load
 # The image, MiniMax-H3-Image and video lanes run a venv of their own, which their installer builds again when its
 # pinned SGLang wheel or source moved (the notes sglang-wheel and sglang-source in the lane's folder): gigabytes of
-# wheels. Such an update waits for the lane's Load too: its unit in place is noted as waiting (the same file), with the
-# runtime it lacks, and that Load's preparation builds it (its installer's --prepare, whose unit_put clears the wait).
-side_runtime_waits(){  # $1 lane
+# wheels. Such an update waits for the lane's Load too, with its NEW unit (side_install renders it with --units-only
+# and PENDING_FORCE, so it waits however little it reads): what the runtime lacks is printed here, one line each,
+# and side_install adds it to what the waiting unit lacks. (Review of v1.52.0, 2026-11-19, GLM 5.3: this function
+# copied the unit IN PLACE into the wait and skipped the render, so the Load applied the old pin and lost the new
+# one in silence.)
+side_runtime_waits(){  # $1 lane: prints the runtime lines the lane's update lacks (nothing when it moved nowhere)
   local inst="$REPO_DIR/install-$1.sh" dir wheel pin had unit="/etc/systemd/system/qwen38-$1.service" lacks=""
-  local p="$CONFIG_DIR/pending/qwen38-$1.service"
   case "$1" in image|image-h3|video) ;; *) return 0 ;; esac
   [ -f "$unit" ] || return 0
   dir="$(side_lane_dir "$1")"
@@ -1714,15 +1727,7 @@ side_runtime_waits(){  # $1 lane
     lacks="${lacks:+$lacks$'\n'}runtime SGLang source ${pin:0:12}"
   fi
   [ -n "$lacks" ] || return 0
-  mkdir -p "$CONFIG_DIR/pending"
-  # a unit already waiting (an earlier run's) keeps its unit and what it lacks, its runtime lines made current: they
-  # were left out, and the lane's card said less than its Load does (Vibe's blind review of v1.52.0, Mistral Large 4)
-  if [ -f "$p" ]; then
-    { grep -v '^runtime ' "$p.needs" 2>/dev/null || true; printf '%s\n' "$lacks"; } > "$p.needs.tmp" && mv "$p.needs.tmp" "$p.needs"
-    return 0
-  fi
-  cp "$unit" "$p"
-  printf '%s\n' "$lacks" > "$p.needs"
+  printf '%s\n' "$lacks"
 }
 side_mode(){  # $1 lane, $2 --with-<lane> given: the installer's option for this run
   if [ "$ALL_WEIGHTS" -eq 1 ] || [ "$2" -eq 1 ] || side_begun "$1"; then echo --no-smoke; else echo --units-only; fi

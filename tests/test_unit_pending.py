@@ -62,10 +62,13 @@ class Box:
         self.t.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.splitlines()
 
-    def put(self, new, pending=True):
+    def put(self, new, pending=True, force=False):
         f = self.d / "rendered"
         f.write_text(new)
-        r = self.sh(f'P="$(unit_put "{f}" "{self.unit}")"\necho "PUT=$P"', env={"PENDING_PUT": "1"} if pending else {})
+        env = {"PENDING_PUT": "1"} if pending else {}
+        if force:
+            env["PENDING_FORCE"] = "1"
+        r = self.sh(f'P="$(unit_put "{f}" "{self.unit}")"\necho "PUT=$P"', env=env)
         self.t.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.strip().splitlines()[-1]
 
@@ -286,6 +289,25 @@ class UnitPutOnAnUpdate(unittest.TestCase):
     def test_the_same_unit_again_clears_what_waited(self):
         self.assertEqual(self.b.put(self.b.text(img=NEW_IMG)), "PUT=pending")
         self.assertEqual(self.b.put(self.b.text()), "PUT=same")
+        self.assertFalse(self.pending.exists())
+
+    def test_a_forced_unit_waits_even_when_it_reads_nothing_the_box_lacks(self):
+        # PENDING_FORCE (install.sh's side_install, when a side lane's runtime moved): the rendered unit is
+        # identical to the one in place, but it waits, or it would run on the old venv at the lane's next boot
+        # (review of v1.52.0, 2026-11-19, GLM 5.3)
+        self.assertEqual(self.b.put(self.b.text(), force=True), "PUT=pending")
+        self.assertEqual(self.b.unit.read_text(), self.b.text(), "the unit in place is untouched")
+        self.assertEqual(self.pending.read_text(), self.b.text())
+        import hashlib
+        self.assertEqual(pathlib.Path(str(self.pending) + ".base").read_text().strip(),
+                         hashlib.sha256(self.b.unit.read_bytes()).hexdigest())
+
+    def test_a_forced_unit_still_goes_in_place_when_the_lane_cannot_serve_as_it_is(self):
+        # emptied: nothing to keep serving, the new unit goes in place and its Load prepares it
+        self.b.images.write_text("")
+        new = self.b.text(img=NEW_IMG)
+        self.assertEqual(self.b.put(new, force=True), "PUT=new")
+        self.assertEqual(self.b.unit.read_text(), new)
         self.assertFalse(self.pending.exists())
 
 

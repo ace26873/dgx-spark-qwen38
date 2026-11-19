@@ -77,11 +77,11 @@ echo "STATE PENDING_PUT=$PENDING_PUT WAITS_LOAD=$WAITS_LOAD UNITS_ONLY=$UNITS_ON
 
 class ARuntimeThatMovesWaitsToo(unittest.TestCase):
     """The image, MiniMax-H3-Image and video lanes' venv is built again when its pinned SGLang wheel or source moved:
-    gigabytes of wheels, which an update leaves to the lane's Load (side_runtime_waits)."""
+    gigabytes of wheels, which an update leaves to the lane's Load. side_runtime_waits only says what the runtime
+    lacks, one line each (side_install renders the lane's NEW unit and lets it wait, PENDING_FORCE)."""
     FN = TEXT[TEXT.index("side_runtime_waits(){"):TEXT.index("\n}\n", TEXT.index("side_runtime_waits(){")) + 3]
 
-    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True, waiting=False,
-               waiting_needs="image x\n"):
+    def run_fn(self, lane="image", note="0.5.21", source=None, pin_source="e" * 40, venv=True):
         d = pathlib.Path(tempfile.mkdtemp(prefix="runtime-waits-"))
         repo, cfg, lanes, etc = d / "repo", d / "config", d / "lanes", d / "etc"
         for x in (repo, cfg, lanes, etc):
@@ -99,48 +99,31 @@ class ARuntimeThatMovesWaitsToo(unittest.TestCase):
         (ldir / "sglang-wheel").write_text(note + "\n")
         if source:
             (ldir / "sglang-source").write_text(source + "\n")
-        if waiting:
-            (cfg / "pending").mkdir()
-            (cfg / "pending" / f"qwen38-{lane}.service").write_text("newer")
-            (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text(waiting_needs)
         script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"\nside_lane_dir(){{ echo "{lanes}/$1"; }}\n'
                   + self.FN.replace("/etc/systemd/system/", f"{etc}/") + f'\nside_runtime_waits {lane}\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
-        f = cfg / "pending" / f"qwen38-{lane}.service"
-        return (f.read_text(), (cfg / "pending" / f"qwen38-{lane}.service.needs").read_text()) if f.exists() else None
+        return r.stdout, (cfg / "pending").exists()
 
-    def test_a_wheel_that_moved_waits_with_the_unit_in_place(self):
-        unit, needs = self.run_fn()
-        self.assertEqual(unit, "[Service]\nExecStart=old\n")
-        self.assertEqual(needs, "runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n")
+    def test_a_wheel_that_moved_is_said_and_nothing_is_written(self):
+        out, pending = self.run_fn()
+        self.assertEqual(out, "runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n")
+        self.assertFalse(pending, "the function only says: side_install renders the new unit and waits it")
 
-    def test_a_source_that_moved_waits(self):
-        unit, needs = self.run_fn(lane="image-h3", note="0.5.22", source="d" * 40)
-        self.assertEqual(needs, f"runtime SGLang source {'e' * 12}\n")
+    def test_a_source_that_moved_is_said(self):
+        self.assertEqual(self.run_fn(lane="image-h3", note="0.5.22", source="d" * 40)[0],
+                         f"runtime SGLang source {'e' * 12}\n")
 
-    def test_nothing_moved_nothing_waits(self):
-        self.assertIsNone(self.run_fn(note="0.5.22", source="e" * 40))
+    def test_nothing_moved_says_nothing(self):
+        self.assertEqual(self.run_fn(note="0.5.22", source="e" * 40), ("", False))
 
     def test_a_venv_not_built_and_a_text_lane_are_not_this_case(self):
-        self.assertIsNone(self.run_fn(venv=False))
-        self.assertIsNone(self.run_fn(lane="kolibri"))
+        self.assertEqual(self.run_fn(venv=False), ("", False))
+        self.assertEqual(self.run_fn(lane="kolibri"), ("", False))
 
     def test_a_wheel_and_a_source_that_moved_are_one_line_each(self):
-        unit, needs = self.run_fn(lane="image-h3", source="d" * 40)
-        self.assertEqual(needs, f"runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\nruntime SGLang source {'e' * 12}\n")
-
-    def test_a_unit_already_waiting_keeps_its_unit_and_learns_its_runtime(self):
-        # an earlier run's wait: its runtime lines were left out (Vibe's blind review of v1.52.0, Mistral Large 4)
-        self.assertEqual(self.run_fn(waiting=True),
-                         ("newer", "image x\nruntime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n"))
-
-    def test_a_runtime_line_of_an_earlier_run_is_made_current_not_repeated(self):
-        self.assertEqual(self.run_fn(waiting=True, waiting_needs="image x\nruntime sglang[diffusion] 0.5.21 (it runs 0.5.20)\n"),
-                         ("newer", "image x\nruntime sglang[diffusion] 0.5.22 (it runs 0.5.21)\n"))
-
-    def test_a_unit_already_waiting_with_nothing_moved_is_left_as_it_is(self):
-        self.assertEqual(self.run_fn(waiting=True, note="0.5.22"), ("newer", "image x\n"))
+        self.assertEqual(self.run_fn(lane="image-h3", source="d" * 40)[0],
+                         f"runtime sglang[diffusion] 0.5.22 (it runs 0.5.21)\nruntime SGLang source {'e' * 12}\n")
 
 
 class SideInstall(unittest.TestCase):
@@ -154,56 +137,87 @@ class SideInstall(unittest.TestCase):
         self.assertEqual(direct, [])
 
     def run_side(self, lane="kolibri", mode="--no-smoke", named=0, pending_put=1, waits=False, lacks=False,
-                 runtime_moves=False):
+                 runtime_moves=False, already_waiting=False):
         d = pathlib.Path(tempfile.mkdtemp(prefix="side-install-"))
         repo, cfg, etc = d / "repo", d / "config", d / "etc"
         for x in (repo, cfg, etc):
             x.mkdir()
         log = d / "calls"
         log.write_text("")
-        wait = (f'case "$*" in *--units-only*) mkdir -p "{cfg}/pending"; echo new > "{cfg}/pending/qwen38-{lane}.service"; '
-                f'echo "image x" > "{cfg}/pending/qwen38-{lane}.service.needs" ;; esac\n') if waits else ""
+        if already_waiting:
+            (cfg / "pending").mkdir()
+            (cfg / "pending" / f"qwen38-{lane}.service").write_text("waiting unit\n")
+            (cfg / "pending" / f"qwen38-{lane}.service.needs").write_text("checkpoint gone\n")
+        # the installer's unit_put, as lanes.sh's: --units-only renders the NEW unit; it waits (pending) when
+        # PENDING_FORCE=1 or when it lacks what it reads, and goes in place otherwise
         inst = repo / f"install-{lane}.sh"
-        inst.write_text(f'#!/bin/bash\necho "install-{lane}.sh $*" >> "{log}"\n' + wait + "exit 0\n")
+        inst.write_text(f'#!/bin/bash\necho "install-{lane}.sh $* force=${{PENDING_FORCE:-0}}" >> "{log}"\n'
+                        f'case " $* " in *" --units-only "*) '
+                        f'if [ "${{PENDING_FORCE:-0}}" = 1 ] || {"true" if waits else "false"}; then '
+                        f'mkdir -p "{cfg}/pending"; echo "new unit" > "{cfg}/pending/qwen38-{lane}.service"; '
+                        f'echo "checkpoint gone" > "{cfg}/pending/qwen38-{lane}.service.needs"; '
+                        f'else echo "new unit" > "{etc}/qwen38-{lane}.service"; fi ;; esac\nexit 0\n')
         inst.chmod(0o755)
         (etc / f"qwen38-{lane}.service").write_text("[Service]\nExecStart=old\n")
         script = (f'set -euo pipefail\nREPO_DIR="{repo}"; CONFIG_DIR="{cfg}"; PENDING_PUT={pending_put}; ALL_WEIGHTS=0\n'
-                  f'lane_title(){{ echo "$1"; }}\nunit_pending_says(){{ echo "image x"; }}\n'
+                  f'lane_title(){{ echo "$1"; }}\nunit_pending_says(){{ cat "$CONFIG_DIR/pending/qwen38-$1.service.needs" 2>/dev/null || echo "image x"; }}\n'
                   f'unit_needs(){{ {"echo checkpoint gone" if lacks else "true"}; }}\n'
                   + self.FNS.replace("/etc/systemd/system/", f"{etc}/")
-                  # the runtime's own verdict is tested above: here it waits or not, as asked
-                  + ('side_runtime_waits(){ mkdir -p "$CONFIG_DIR/pending"; cp "' + str(etc) + '/qwen38-$1.service" '
-                     '"$CONFIG_DIR/pending/qwen38-$1.service"; echo "runtime x" > "$CONFIG_DIR/pending/qwen38-$1.service.needs"; }\n'
-                     if runtime_moves else 'side_runtime_waits(){ :; }\n')
+                  # the runtime's own verdict is tested above: here it moves or not, as asked
+                  + ('side_runtime_waits(){ echo "runtime x"; }\n' if runtime_moves else 'side_runtime_waits(){ :; }\n')
                   + f'side_install {lane} {mode} {named}\necho "WAITED=$SIDE_WAITED"\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
-        return log.read_text().splitlines(), r.stdout
+        pend = cfg / "pending" / f"qwen38-{lane}.service"
+        needs = (cfg / "pending" / f"qwen38-{lane}.service.needs").read_text() if (cfg / "pending" / f"qwen38-{lane}.service.needs").exists() else ""
+        return log.read_text().splitlines(), r.stdout, (pend.read_text() if pend.exists() else None), needs
 
     def test_its_new_unit_waits_and_nothing_more_runs(self):
-        calls, out = self.run_side(waits=True)
-        self.assertEqual(calls, ["install-kolibri.sh --units-only"])
+        calls, out, pend, needs = self.run_side(waits=True)
+        self.assertEqual(calls, ["install-kolibri.sh --units-only force=0"])
+        self.assertEqual(pend, "new unit\n")
         self.assertIn("WAITED= kolibri ", out)
         self.assertIn("the kolibri lane's update waits for its next Load", out)
 
-    def test_a_runtime_that_moves_waits_with_its_unit_untouched(self):
-        calls, out = self.run_side(lane="image", runtime_moves=True)
-        self.assertEqual(calls, [], "not even its units: the new unit would run on the old venv at the next boot")
+    def test_a_runtime_that_moves_waits_with_the_new_unit_rendered(self):
+        # the unit kept waiting is the NEW one the installer rendered, never the one in place: a Load that
+        # clears the wait then applies the moved pin too (review of v1.52.0, 2026-11-19, GLM 5.3: the old unit
+        # was the one kept, and the Load applied the old pin, losing the new one in silence)
+        calls, out, pend, needs = self.run_side(lane="image", runtime_moves=True)
+        self.assertEqual(calls, ["install-image.sh --units-only force=1"],
+                         "its new unit is rendered and waits, never run on the old venv at the next boot")
+        self.assertEqual(pend, "new unit\n")
+        self.assertEqual(needs, "checkpoint gone\nruntime x\n")
         self.assertIn("WAITED= image ", out)
 
+    def test_a_runtime_that_moves_with_a_wait_already_there_rerenders_it(self):
+        # an earlier run's wait is re-rendered (self-healing), with its runtime lines made current
+        calls, out, pend, needs = self.run_side(lane="image", runtime_moves=True, already_waiting=True)
+        self.assertEqual(calls, ["install-image.sh --units-only force=1"])
+        self.assertEqual(pend, "new unit\n")
+        self.assertEqual(needs, "checkpoint gone\nruntime x\n")
+
+    def test_a_wait_already_there_with_nothing_moved_is_kept_as_it_is(self):
+        calls, out, pend, needs = self.run_side(already_waiting=True)
+        self.assertEqual(calls, [], "its unit and what it lacks are kept, nothing is re-rendered")
+        self.assertEqual(pend, "waiting unit\n")
+        self.assertEqual(needs, "checkpoint gone\n")
+        self.assertIn("WAITED= kolibri ", out)
+
     def test_a_lane_that_lacks_what_its_unit_reads_gets_its_units_only(self):
-        calls, out = self.run_side(lacks=True)
-        self.assertEqual(calls, ["install-kolibri.sh --units-only"])
+        calls, out, pend, needs = self.run_side(lacks=True)
+        self.assertEqual(calls, ["install-kolibri.sh --units-only force=0"])
         self.assertIn("its units only, and its next Load prepares it", out)
 
     def test_nothing_waits_nothing_lacks_the_rest_follows(self):
-        calls, _ = self.run_side()
-        self.assertEqual(calls, ["install-kolibri.sh --units-only", "install-kolibri.sh --no-smoke"])
+        calls, _, pend, _ = self.run_side()
+        self.assertEqual(calls, ["install-kolibri.sh --units-only force=0", "install-kolibri.sh --no-smoke force=0"])
+        self.assertIsNone(pend)
 
     def test_named_or_on_demand_or_a_new_box_as_before(self):
-        self.assertEqual(self.run_side(named=1, waits=True)[0], ["install-kolibri.sh --no-smoke"])
-        self.assertEqual(self.run_side(mode="--units-only")[0], ["install-kolibri.sh --units-only"])
-        self.assertEqual(self.run_side(pending_put=0, waits=True)[0], ["install-kolibri.sh --no-smoke"])
+        self.assertEqual(self.run_side(named=1, waits=True)[0], ["install-kolibri.sh --no-smoke force=0"])
+        self.assertEqual(self.run_side(mode="--units-only")[0], ["install-kolibri.sh --units-only force=0"])
+        self.assertEqual(self.run_side(pending_put=0, waits=True)[0], ["install-kolibri.sh --no-smoke force=0"])
 
 if __name__ == "__main__":
     unittest.main()

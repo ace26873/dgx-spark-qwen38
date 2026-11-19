@@ -193,19 +193,25 @@ UNIT_DEP_KEYS='^(Description|Documentation|Wants|Requires|Requisite|BindsTo|Part
 # A unit in place that already lacks what it reads (a lane never loaded, or emptied) has nothing to keep: the new one
 # goes in place, and the lane's Load prepares it, as before. Nor when unit_needs cannot conclude on the unit in place
 # (docker did not answer, the cache cannot be read: an "unknown" line): it keeps serving what it served, the new one
-# waits, never the reverse (review of v1.52.0, 2026-11-19).
+# waits, never the reverse (review of v1.52.0, 2026-11-19). PENDING_FORCE=1 waits the new unit even when it reads
+# nothing the box lacks (install.sh's side_install, when a side lane's runtime moved: the new unit must not run on
+# the old venv at the lane's next boot).
 unit_put(){  # $1 the rendered unit, $2 where it goes (root's: read and written with sudo)
   # Each step returns on its failure: a function run in $(...) does not stop at one under set -e,
   # and the caller, which assigns what it prints, stops on that return.
+  # PENDING_FORCE=1 (install.sh's side_install, when a side lane's runtime moved): the rendered unit waits
+  # even when it reads nothing the box lacks and is identical to the one in place, or it would run on the old
+  # venv at the lane's next boot (review of v1.52.0, 2026-11-19, GLM 5.3).
   local old new_needs old_needs
-  if [ -f "$2" ] && sudo cmp -s "$1" "$2"; then unit_pending_clear "$2"; echo same; return 0; fi
+  if [ "${PENDING_FORCE:-0}" != 1 ] && [ -f "$2" ] && sudo cmp -s "$1" "$2"; then unit_pending_clear "$2"; echo same; return 0; fi
   if [ "${PENDING_PUT:-0}" = 1 ] && [ -f "$2" ]; then
     new_needs="$(unit_needs "$1")"; old_needs="$(unit_needs "$2")"
     # an "unknown" line on the unit in place: unit_needs could not conclude on it (docker did not answer, the
     # cache cannot be read), so it keeps serving what it served and the new unit waits for its Load, never the
     # reverse (review of v1.52.0, 2026-11-19: a docker down during the update made the unit in place look
     # emptied, and the new unit, whose checkpoint was not there, went in place)
-    if [ -n "$new_needs" ] && { [ -z "$old_needs" ] || ! printf '%s\n' "$old_needs" | grep -qv '^unknown '; }; then
+    if { [ -z "$old_needs" ] || ! printf '%s\n' "$old_needs" | grep -qv '^unknown '; } \
+       && { [ -n "$new_needs" ] || [ "${PENDING_FORCE:-0}" = 1 ]; }; then
       unit_pending_put "$1" "$2" || return 1
       echo pending; return 0
     fi
