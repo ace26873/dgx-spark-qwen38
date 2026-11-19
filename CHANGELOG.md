@@ -44,6 +44,20 @@ which can be shared with other work: it removes only what the installer put ther
 that maps a checkpoint (mmap keeps no file open) reads it. Only the configs the installers write read as rewritten
 here. An image's names go one `docker rmi` each. The registry's scan no longer walks the venvs for a Delete's plan.
 
+**What a blind review found, fixed with tests.** A blind review of this release (GLM 5.3, on the 19th) found six
+defects, each read in the code again and fixed with a test that fails on the code before:
+- a repository's Delete is refused while the scan that planned it is partial: a pin it could not read would have let
+  the part a lane loads alone (MiniMax-H3's `text_encoder/`) go;
+- its readers are read again just before anything goes, after the Hub's verdicts (up to 20 s a batch of four);
+- a docker that does not answer after the `docker rmi` is never read as an image deleted, and nothing is audited;
+- a repository's plan counts the snapshot's real files the deletion removes (a config an installer rewrote, its
+  `.pre-yarn`), in blocks as the disks line counts them;
+- a disk whose `statvfs` fails is in no total freed;
+- a runtime's Delete is refused while a running container, another project's too, mounts what it would remove.
+
+And a docker that runs to no end (a hung daemon) keeps what a Delete would remove, as whether a container reads it
+is then not known.
+
 **What this release does not do yet.** An update still fetches the new weights and images of a lane already on the
 box: decisions 1408 to 1410 (an update writes code, units and configs, and everything large waits for a Load or a
 Download, the lane that serves included) are v1.52.0's.
