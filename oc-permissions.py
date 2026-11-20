@@ -1,7 +1,7 @@
 """The OpenCode 2 permission matcher, as its server applies it.
 
-Measured on the box's 2.3.0 binary and read in its bundle on 2026-11-15 (the case table in
-~/qa-tools/wildcard-measure-report.md): backslashes read as slashes on both sides, "*" matches any
+Measured on the box's 2.3.0 binary and read in its bundle on 2026-11-15 (a case table measured on the
+reference box): backslashes read as slashes on both sides, "*" matches any
 run, "?" matches EXACTLY one character, everything else is itself, the dot and the brackets
 included (a deny for "*co[nm]*" therefore matches only a command that writes those brackets), and
 the pattern must cover the whole command text (a bare "aliyuncs.com" matches nothing longer).

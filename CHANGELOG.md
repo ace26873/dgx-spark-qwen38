@@ -42,13 +42,12 @@ GitHub is reachable to install the pin.
   oversized, cut) with a 502, classifies a path only after normalizing it (`/api//config`,
   `/foo/../api/config`), answers 401 without the session cookie, and drops `accept-encoding` only on
   those secret routes.
-- **Measured on 2.3.2.** the 2.x facts were first measured on 2.3.0 (2026-11-13 to 15,
-  `~/qa-tools/opencode-v2-migration/reprise-20261114/MESURES.md`); the delta to 2.3.2 was re-measured
-  in a sandbox before the pin moved (`~/qa-tools/opencode-v2/plan-20261120/sorties-232`).
-- **Proven on the reference box (2026-11-20, 09:05 to 09:14, rc=0,
-  `~/qa-tools/preuves/ocv2/preuve.log`).** `./install.sh --opencode 2` from the branch (38f0ad96, the
-  commit the journal names) ran rc=0 (09:05:47 to 09:07:20), 249 Mo received, the Hugging Face cache
-  +0 Mo (568.98 Go), opencode 2.3.2 in place with the marker at 2, the unit serving "opencode v2.3.2"
+- **Measured on 2.3.2.** the 2.x facts were first measured on 2.3.0 in a sandbox on the reference box (2026-11-13 to 15); the delta to 2.3.2 was
+  re-measured in a sandbox before the pin moved.
+- **Proven on the reference box (2026-11-20, 09:05 to 09:14, rc=0 in the proof's
+  journal).** `./install.sh --opencode 2` from the branch (38f0ad96, the
+  commit the journal names) ran rc=0 (09:05:47 to 09:07:20), 249 MB received, the Hugging Face cache
+  +0 MB (568.98 GB), opencode 2.3.2 in place with the marker at 2, the unit serving "opencode v2.3.2"
   on 127.0.0.1:4096, loopback only, the 27B untouched (still revision
   52d1adc5f38aa5ebf099c29ed7025ba34cfbb854 of RadixArk/Qwen3.8-27B-NVFP4). The relay on :30091
   answered 401 without the cookie and `/api/info` 200 JSON version 2.3.2; seven GET routes answered
@@ -61,11 +60,11 @@ GitHub is reachable to install the pin.
   and 0 once those 2 entries were removed from a copy of that config. A 4-turn v2 session through
   the relay took 5.8 s, 5.6 s, 3.5 s and 3.5 s per turn, the prefix-cache share of each prompt
   0.9971, 0.9953, 0.9982 and 0.9955 (verdict `part_cache_tours_2a4` [0.9953, 0.9982, 0.9955]).
-  `./install.sh --opencode 1` ran rc=0 (09:09:10 to 09:10:38), 164 Mo received, cache +0 Mo
-  (568.98 Go), back on 1.19.6 with the marker gone and no v2 key left in either config, `compaction`
+  `./install.sh --opencode 1` ran rc=0 (09:09:10 to 09:10:38), 164 MB received, cache +0 MB
+  (568.98 GB), back on 1.19.6 with the marker gone and no v2 key left in either config, `compaction`
   back to `{"preserve_recent_tokens": 135000, "prune": false}`, and the live client check answered
   7351 (rc=0, 17 s). Reinstalling from the published clone (stable, tag v1.55.0) ran rc=0 (09:11:56
-  to 09:13:22), 1 Mo received, cache +0 Mo (568.98 Go), the sha256 of the units and configs identical
+  to 09:13:22), 1 MB received, cache +0 MB (568.98 GB), the sha256 of the units and configs identical
   to before (44 entries compared, empty diff), no banner; the box ended on 1.19.6, marker absent,
   the 27B stock.
 - **The tests.** the opencode v2 suites run green the way the CI runs them, each file on its own with
@@ -77,7 +76,7 @@ GitHub is reachable to install the pin.
   scripts `test_oc_jsonc_edits.py`, `test_oc_fit_compaction.py`, `test_oc_merge_limits.py`, and in
   `dashboard/tests/` `test_agent_relay.py` (62), `test_agent_relay_session.py` (3),
   `test_cockpit_agent_collector.py` (7), `test_cockpit_opencode_config.py` (3): 316 tests plus 3
-  scripts, 0 failure, 0 skipped (`~/qa-tools/logs/ocv2-v155-516ffddc.log`). Each defect the review of
+  scripts, 0 failure, 0 skipped (the test journal of 516ffddc). Each defect the review of
   this branch found (D1 to D7) has a test that fails on the code before its fix, shown with its output
   in that journal; the suites that read this CHANGELOG were re-run on this release's tree, in the gate
   journal of this commit.

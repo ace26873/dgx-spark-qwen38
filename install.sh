@@ -525,8 +525,7 @@ OPENCODE_PIN="${OPENCODE_PIN:-1}"
 # of 2026-10-22: prove it as an option first). From v2.2.0 GitHub publishes release assets
 # again (checked on the API the 2026-11-14), so the same recipe pins it: the arm64 asset
 # opencode-linux-arm64.tar.gz by its GitHub digest. Four things were read out of the 2.3.0
-# binary and the sandbox of 2026-11-14 (/home/hasan/qa-tools/opencode-v2-migration/
-# reprise-20261114/MESURES.md): serve refuses --log-level in capitals and dies at boot
+# binary and a sandbox on the reference box (2026-11-14): serve refuses --log-level in capitals and dies at boot
 # (lowercase passes); OPENCODE_PERMISSION and OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX are
 # gone (the answer is the ordered "permissions" array and OPENCODE_CONFIG_CONTENT, merged
 # last), the health probe must be GET /api/info (every unknown path, /global/health

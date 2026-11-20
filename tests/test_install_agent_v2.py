@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """install-agent.sh renders a unit for OpenCode 2 that can actually start and answer.
 
-The 13/11-14/11 measurements on 2.3.0 (/home/hasan/qa-tools/opencode-v2-migration/
-reprise-20261114/MESURES.md) settled four facts this file pins down as tests:
+The 13/11-14/11 measurements on 2.3.0, in a sandbox on the reference box, settled four facts this file pins down as tests:
 serve refuses --log-level in capitals (the 1.x unit line would never boot), reads neither
 OPENCODE_PERMISSION nor OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX (dead lines lie to the
 operator), always names its Basic user "opencode" (a box installed in 1.x times must have
