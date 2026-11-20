@@ -597,6 +597,11 @@ PLAN_ONLY=0
 # box gets (Hasan, 2026-10-17). The run for the other text lane and the side lanes' installers
 # read it as QWEN38_RECOMMENDED.
 RECOMMENDED="${QWEN38_RECOMMENDED:-0}"
+# The parser below consumes the arguments (while + shift, so that --opencode takes its
+# value; a for loop let the value fall to the catch-all), and puts them back after: the
+# relaunches of this script (docker_session, docker_grant) hand the original command
+# line over, flags included.
+ORIG_ARGS=("$@")
 while [ $# -gt 0 ]; do
   arg="$1"; shift
   case "$arg" in
@@ -858,6 +863,7 @@ HLP
     *) printf 'Unknown flag: %s (see --help)\n' "$arg" >&2; exit 1 ;;
   esac
 done
+set -- "${ORIG_ARGS[@]}"
 [ "$PLAN_ONLY" -eq 0 ] || [ "$NO_SERVICE" -eq 0 ] \
   || die "--plan lists what a run does to the box's services; --no-service writes none."
 case "$RECOMMENDED" in 0|1) ;; *) die "QWEN38_RECOMMENDED takes 0 or 1 (got: $RECOMMENDED)" ;; esac
