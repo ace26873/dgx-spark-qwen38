@@ -740,5 +740,60 @@ class TheOpencodeMajorFlag(unittest.TestCase):
         self.assertIn("--opencode takes 1 or 2", r.stdout + r.stderr)
 
 
+class TheNoFlagRunIsTheV154Run(unittest.TestCase):
+    """A ./install.sh without --opencode must stay the v1.54 run, answer for answer
+    (decision 445: the v2 choice is opt-in, never the default). The v1.54 opencode block
+    is kept as a fixture and run side by side with today's, same throwaway HOME, same
+    fake curl and tarball: same answers, same files, no marker, no v2 key anywhere."""
+
+    def setUp(self):
+        self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-noflag-"))
+        self.addCleanup(shutil.rmtree, self.t, True)
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {PINNED}\n".encode()
+            info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
+            tf.addfile(info, io.BytesIO(body))
+        self.tarball = self.t / "asset.tar.gz"
+        self.tarball.write_bytes(buf.getvalue())
+        self.sha = hashlib.sha256(buf.getvalue()).hexdigest()
+
+    def run_block(self, body: str, tag: str):
+        home = self.t / f"home-{tag}"
+        home.mkdir()
+        (home / ".bashrc").write_text("# a user's bashrc\n")
+        bin_ = self.t / f"fakebin-{tag}"
+        bin_.mkdir(exist_ok=True)
+        (bin_ / "curl").write_text(FAKE_CURL)
+        (bin_ / "curl").chmod(0o755)
+        log = self.t / f"calls-{tag}.log"
+        script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
+                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{self.sha}"; OPENCODE_PIN="1"\n'
+                  'OPENCODE2_VERSION="2.3.2"; OPENCODE2_SHA256="' + "0" * 64 + '"\n'
+                  '_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
+                  + body + 'echo "CHOICE=${OPENCODE_MAJOR:-1}"\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                           env={"HOME": str(home), "PATH": f"{bin_}:/usr/bin:/bin",
+                                "OC_LOG": str(log), "OC_TARBALL": str(self.tarball)})
+        state = {"bashrc": (home / ".bashrc").read_text(),
+                 "marker": (home / ".config" / "qwen38" / "opencode.major").exists(),
+                 "binary": subprocess.run([str(home / ".opencode" / "bin" / "opencode"), "--version"],
+                                          capture_output=True, text=True).stdout.strip(),
+                 "calls": log.read_text().splitlines() if log.exists() else []}
+        # the two runs answer in two throwaway homes: their paths differ and say nothing
+        return r.returncode, (r.stdout + r.stderr).replace(str(home), "<home>"), state
+
+    def test_no_flag_answers_and_writes_exactly_what_v1_54_did(self):
+        fixture = (REPO / "tests" / "fixtures" / "install-opencode-block-v1.54.txt").read_text()
+        rc_old, out_old, st_old = self.run_block(fixture, "v154")
+        rc_new, out_new, st_new = self.run_block(block(whole=True), "today")
+        self.assertEqual(rc_old, 0, out_old)
+        self.assertEqual(rc_new, 0, out_new)
+        self.assertEqual(out_new, out_old, "a run without --opencode must answer exactly what v1.54 answered")
+        self.assertEqual(st_new, st_old, "a run without --opencode must write exactly what v1.54 wrote")
+        self.assertIn("CHOICE=1", out_new)
+        self.assertFalse(st_new["marker"], "no run without the flag ever opts a box into OpenCode 2")
+
+
 if __name__ == "__main__":
     unittest.main()

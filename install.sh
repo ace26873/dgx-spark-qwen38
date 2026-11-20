@@ -532,11 +532,13 @@ OPENCODE_PIN="${OPENCODE_PIN:-1}"
 # last), the health probe must be GET /api/info (every unknown path, /global/health
 # included, answers the HTML page in 200 - issue #55704); and /api/config, /api/provider
 # and /api/model answer with {file:...} resolved, the key in clear, which the Agent
-# relay scrubs before the browser sees it.
+# relay scrubs before the browser sees it. The pin moved to 2.3.2 (GitHub's digest of its
+# arm64 asset, read on the API the 2026-11-20); the facts above were measured on 2.3.0
+# and the delta 2.3.2 is re-measured before any default change.
 _ENV_OPENCODE2_VERSION="${OPENCODE2_VERSION:-}"
 _ENV_OPENCODE2_SHA256="${OPENCODE2_SHA256:-}"
-OPENCODE2_VERSION="${OPENCODE2_VERSION:-2.3.0}"
-OPENCODE2_SHA256="${OPENCODE2_SHA256:-3207fb5cdec448d479242c0f1a14f4f7bdfcad3a79209b5eb8f9003725e93711}"
+OPENCODE2_VERSION="${OPENCODE2_VERSION:-2.3.2}"
+OPENCODE2_SHA256="${OPENCODE2_SHA256:-9d10185acdb72336e086e699ca363a6065f410fd3c1caed0dc8046e95ac06ccb}"
 PORT="${PORT:-30000}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 CONFIG_DIR="$HOME/.config/qwen38"

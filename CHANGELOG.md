@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased: OpenCode 2 becomes an opt-in choice (`--opencode 2`), pinned at 2.3.2, never the default
+
+`./install.sh --opencode 2` installs the pinned OpenCode **2.3.2** (GitHub's release asset
+`opencode-linux-arm64.tar.gz` with its `OPENCODE2_SHA256`, refused without its checksum like 1.x)
+beside the pinned 1.x, remembers the choice in `~/.config/qwen38/opencode.major`, and wires the
+Agent unit, the `oc` launcher and the generated config to the v2 grammar: the health probe reads
+`/api/info` (every other path answers the HTML page, issue #55704), the approvals ride
+`OPENCODE_CONFIG_CONTENT` (`OPENCODE_PERMISSION` is gone from the 2.x binary), the exfiltration
+denies ride the ordered `permissions` array with the server's own matcher (`oc-permissions.py`),
+and the Agent relay scrubs the key that `/api/config`, `/api/provider`, `/api/model` and
+`/api/credential` answer in clear. `./install.sh --opencode 1` goes back: it takes this repo's
+`permissions` array out of the global config (1.19 refuses to start while one holds it), erases
+the marker and reinstalls the pinned 1.x. A `./install.sh` without the flag changes nothing
+against 1.x. The 2.x facts were measured on 2.3.0 (2026-11-13 to 15,
+`~/qa-tools/opencode-v2-migration/reprise-20261114/MESURES.md`); the delta to 2.3.2 is
+re-measured before anything becomes a default.
 ## v1.55.0 (2026-11-20): the one command installs the stable channel, the latest published release, and --edge follows main
 
 Until now `curl -fsSL https://get.alzeo.ai | bash` reset every box to main's tip: a release when

@@ -9,6 +9,7 @@ that reads denied HERE and wrong THERE cannot survive this file."""
 import importlib.util
 import os
 import pathlib
+import re
 import shutil
 import tempfile
 import unittest
@@ -16,6 +17,9 @@ import unittest
 HERE = pathlib.Path(__file__).resolve()
 DASH = HERE.parents[1]
 REPO = HERE.parents[2]
+INSTALL = REPO / "install.sh"
+PIN_V1 = re.search(r'^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
+PIN_V2 = re.search(r'^OPENCODE2_VERSION="\$\{OPENCODE2_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
 ENV_BEFORE = {}
 
 
@@ -80,10 +84,10 @@ def wire(cp, server, served):
 class TheV2Panel(unittest.TestCase):
     def test_the_served_documents_answer_auto_and_the_guards(self):
         cp = load("panel_v2_ok", UNIT_V2)
-        wire(cp, {"healthy": True, "version": "2.3.0"}, {"/api/config": docs()})
+        wire(cp, {"healthy": True, "version": PIN_V2}, {"/api/config": docs()})
         out = cp.collect_agent()
         self.assertEqual((out["auto"], out["auto_live"], out["guard_ok"]), (True, True, True))
-        self.assertEqual(out["pinned"], "2.3.0", "the panel names the 2.x pin beside a 2.x server")
+        self.assertEqual(out["pinned"], PIN_V2, "the panel names the 2.x pin beside a 2.x server")
 
     def test_a_later_allow_that_the_server_would_honour_is_said_not_in_force(self):
         cp = load("panel_v2_hijack", UNIT_V2)
@@ -124,11 +128,11 @@ class TheV2Panel(unittest.TestCase):
 class TheV1PanelStillWorks(unittest.TestCase):
     def test_the_1_x_branch_reads_its_own_route_and_names_its_own_pin(self):
         cp = load("panel_v1", UNIT_V1)
-        wire(cp, {"healthy": True, "version": "1.19.5"}, {"/config": {"permission": {"*": "allow"}}})
+        wire(cp, {"healthy": True, "version": PIN_V1}, {"/config": {"permission": {"*": "allow"}}})
         out = cp.collect_agent()
         self.assertEqual(out["auto_live"], True)
         self.assertIsNone(out.get("guard_ok"), "the v2 guard check is not done on 1.x")
-        self.assertEqual(out["pinned"], "1.19.5")
+        self.assertEqual(out["pinned"], PIN_V1)
 
     def test_the_version_line_is_read_as_opencode_answers_it(self):
         # 2.x prints "opencode v2.3.0" where 1.x prints the number alone (measured F2): compared raw,
