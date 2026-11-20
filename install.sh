@@ -2872,6 +2872,27 @@ if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OC_SERVE_MAJOR:-1}" != 2 ] && [ "${OC_WAS_
       || echo "NOTE: could not take the v2 compaction keys out of $OC_V2_CFG; remove \"keep\" and \"background\" from its \"compaction\" block by hand"
   done
 fi
+# The auto-continue plugin follows the major when the operator installed one (this repo
+# never puts a plugin in by itself): OpenCode 2 does not run the v1 plugin (module.ts of
+# 2.3.2 requires a default export) and 1.x does not run the v2 one, so a crossing swaps
+# the file. Going back to 1.x is guarded by OC_WAS_2 like the config rollbacks above: a
+# box that never was in 2 has no v2 plugin of ours to take out.
+OC_PLUGIN_DIR="$HOME/.config/opencode/plugins"
+if [ "${OC_SERVE_MAJOR:-1}" = "2" ] && [ -f "$OC_PLUGIN_DIR/auto-continue.js" ]; then
+  if install -m 644 "$REPO_DIR/extras/opencode/auto-continue-v2.js" "$OC_PLUGIN_DIR/auto-continue-v2.js"; then
+    rm -f "$OC_PLUGIN_DIR/auto-continue.js"
+    echo "auto-continue plugin: the OpenCode 2 port is in place ($OC_PLUGIN_DIR/auto-continue-v2.js), the 1.x one removed (2.x does not run it)"
+  else
+    echo "NOTE: could not install the OpenCode 2 auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue-v2.js $OC_PLUGIN_DIR/ && rm -f $OC_PLUGIN_DIR/auto-continue.js"
+  fi
+elif [ "${OC_SERVE_MAJOR:-1}" != "2" ] && [ "${OC_WAS_2:-0}" -eq 1 ] && [ -f "$OC_PLUGIN_DIR/auto-continue-v2.js" ]; then
+  if install -m 644 "$REPO_DIR/extras/opencode/auto-continue.js" "$OC_PLUGIN_DIR/auto-continue.js"; then
+    rm -f "$OC_PLUGIN_DIR/auto-continue-v2.js"
+    echo "auto-continue plugin: back to the 1.x one ($OC_PLUGIN_DIR/auto-continue.js), the v2 one removed (1.x does not run it)"
+  else
+    echo "NOTE: could not restore the 1.x auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue.js $OC_PLUGIN_DIR/ && rm -f $OC_PLUGIN_DIR/auto-continue-v2.js"
+  fi
+fi
 # The rest of this run (the Agent tab's unit, the oc launcher) finds opencode on PATH, and
 # a first install puts it in the shell's PATH the way opencode's own installer does.
 if [ -n "$OC_FOUND" ] && [ "$OC_FOUND" -ef "$OC_HOME_BIN" ]; then
@@ -4785,6 +4806,11 @@ except Exception as e:
         echo "  opencode   : $OC_NOW, the version this repo tests; start it with: $OC_START   (config: $OC_READS)"
       else
         echo "  opencode   : $OC_NOW (this repo tests ${OC_TARGET_VER:-$OPENCODE_VERSION}); start it with: $OC_START   (config: $OC_READS)"
+      fi
+      # A box that served 1.x before this run and serves OpenCode 2 now was moved by the
+      # default (decision 1546): say it plainly, with the way back. The marker now says 2.
+      if [ "${OC_START_MAJOR:-}" = "1" ] && [ "${OC_SERVE_MAJOR:-1}" = "2" ] && [ -n "$OC_NOW" ]; then
+        echo "  opencode   : moved to $OC_NOW; to go back: ./install.sh --opencode 1"
       fi
     else
       # remembered, unlike a lane: an agent that runs commands, which an update must not turn back on;

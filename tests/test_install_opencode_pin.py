@@ -343,12 +343,17 @@ class TheDefaultIsTwo(unittest.TestCase):
     def version_of(self, binary):
         return subprocess.run([str(binary), "--version"], capture_output=True, text=True).stdout.strip()
 
-    def run_home(self, *, want="", marker=None, brew_ver=None, v1_sha=None, v2_sha=None):
+    def run_home(self, *, want="", marker=None, brew_ver=None, v1_sha=None, v2_sha=None, plugins=()):
         if marker is not None:
             self.cfg.mkdir(parents=True, exist_ok=True)
             (self.cfg / "opencode.major").write_text(marker)
         if brew_ver is not None:
             (self.brew / "VERSION").write_text(brew_ver + "\n")
+        plugin_dir = self.home / ".config" / "opencode" / "plugins"
+        if plugins:
+            plugin_dir.mkdir(parents=True, exist_ok=True)
+            for name in plugins:
+                (plugin_dir / name).write_text(f"// the operator's {name}\n")
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
                   f'REPO_DIR="{REPO}"\nCONFIG_DIR="{self.cfg}"\n'
                   f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{v1_sha or self.assets[PINNED][1]}"; OPENCODE_PIN="1"\n'
@@ -365,6 +370,8 @@ class TheDefaultIsTwo(unittest.TestCase):
                                 "OC_TAR_V2": str(self.assets[self.V2][0])})
         marker_file = self.cfg / "opencode.major"
         calls = self.log.read_text().splitlines() if self.log.exists() else []
+        self.plugins_after = (sorted(p.name for p in plugin_dir.iterdir())
+                              if plugin_dir.is_dir() else None)
         return (r.returncode, r.stdout + r.stderr,
                 marker_file.read_text() if marker_file.exists() else None, calls)
 
@@ -440,6 +447,33 @@ class TheDefaultIsTwo(unittest.TestCase):
         self.assertIn("Re-run ./install.sh --opencode 1", out)
         self.assertIsNotNone(marker)
         self.assertEqual(marker.splitlines()[0], "1", "a failed crossing does not touch the marker")
+
+    def test_migrating_to_2_swaps_the_auto_continue_plugin(self):
+        # the operator had the v1 plugin: the v2 port goes in, the v1 file comes out
+        # (OpenCode 2 does not run it: module.ts of 2.3.2 requires a default export)
+        rc, out, marker, calls = self.run_home(brew_ver=PINNED, plugins=("auto-continue.js",))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2 START=1", out)
+        self.assertEqual(self.plugins_after, ["auto-continue-v2.js"])
+        v2 = (self.home / ".config" / "opencode" / "plugins" / "auto-continue-v2.js").read_text()
+        self.assertEqual(v2, (REPO / "extras" / "opencode" / "auto-continue-v2.js").read_text())
+        self.assertIn("auto-continue plugin:", out)
+
+    def test_a_box_that_never_installed_a_plugin_gets_none(self):
+        rc, out, marker, calls = self.run_home(brew_ver=PINNED)
+        self.assertEqual(rc, 0, out)
+        self.assertIsNone(self.plugins_after, "no plugins dir was created")
+        self.assertNotIn("auto-continue plugin:", out)
+
+    def test_going_back_to_1_restores_the_v1_plugin(self):
+        rc, out, marker, calls = self.run_home(want="1", marker="2\n", brew_ver=self.V2,
+                                               plugins=("auto-continue-v2.js",))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=1 SERVE=1", out)
+        self.assertEqual(self.plugins_after, ["auto-continue.js"])
+        v1 = (self.home / ".config" / "opencode" / "plugins" / "auto-continue.js").read_text()
+        self.assertEqual(v1, (REPO / "extras" / "opencode" / "auto-continue.js").read_text())
+        self.assertIn("auto-continue plugin:", out)
 
 
 class TheFailedCrossingServesWhatStands(unittest.TestCase):
@@ -917,6 +951,37 @@ class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
                            capture_output=True, text=True, env={"HOME": str(t), "PATH": path})
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.replace(str(t), "~")
+
+    def summary_full(self, *, start_major="", serve_major="1", oc_version=PINNED, launcher=True):
+        """The installer's whole last opencode block (the served line plus the migration
+        message), rendered in a throwaway HOME."""
+        text = INSTALL.read_text()
+        start = text.index('      OC_NOW="$( { opencode --version')
+        end = text.index("    else\n      # remembered, unlike a lane", start)
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-sumfull-"))
+        (t / "bin").mkdir()
+        (t / ".local" / "bin").mkdir(parents=True)
+        (t / "bin" / "opencode").write_text(f"#!/bin/sh\necho {oc_version}\n")
+        (t / "bin" / "opencode").chmod(0o755)
+        if launcher:
+            (t / ".local" / "bin" / "oc").write_text("#!/bin/bash\n# oc launcher installed by dgx-spark-qwen38\n")
+            (t / ".local" / "bin" / "oc").chmod(0o755)
+        path = f"{t}/bin:{t}/.local/bin:/usr/bin:/bin"
+        prelude = (f'OPENCODE_VERSION={PINNED}; OC_OUT_CAP=200000; CONFIG_DIR="{t}/.config/qwen38"\n'
+                   f'OC_START_MAJOR="{start_major}"; OC_SERVE_MAJOR="{serve_major}"\n')
+        r = subprocess.run(["bash", "-c", "set -euo pipefail\n" + prelude + text[start:end]],
+                           capture_output=True, text=True, env={"HOME": str(t), "PATH": path})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.replace(str(t), "~")
+
+    def test_a_1_x_box_moved_to_2_is_told_with_the_way_back(self):
+        out = self.summary_full(start_major="1", serve_major="2", oc_version="2.3.2")
+        self.assertIn("moved to 2.3.2; to go back: ./install.sh --opencode 1", out)
+
+    def test_no_migration_message_on_a_fresh_box_or_a_box_staying_put(self):
+        self.assertNotIn("moved to", self.summary_full(start_major="", serve_major="2", oc_version="2.3.2"))
+        self.assertNotIn("moved to", self.summary_full(start_major="2", serve_major="2", oc_version="2.3.2"))
+        self.assertNotIn("moved to", self.summary_full(start_major="1", serve_major="1", oc_version=PINNED))
 
     def test_the_last_lines_name_a_command_the_users_shell_can_run(self):
         self.assertIn("the version this repo tests; start it with: oc   (config: ~/.config/opencode/opencode.json)",
