@@ -66,10 +66,10 @@ def rollback() -> str:
 
 
 def major_choice() -> str:
-    """install.sh's own lines that resolve which OpenCode this run serves, and whether the box
-    was in 2 at the start of the run (the marker), from OPENCODE_MAJOR=1 to the export."""
+    """install.sh's own lines that resolve which OpenCode this run serves, and the marker as it
+    stood at the start of the run, from OPENCODE_MAJOR=2 to the export."""
     text = INSTALL.read_text()
-    start = text.index("OPENCODE_MAJOR=1\n# Whether the box was in OpenCode 2 at the START")
+    start = text.index("OPENCODE_MAJOR=2\n# The marker as it stands at the START")
     end = text.index('export OC_MAJOR="$OPENCODE_MAJOR"', start) + len('export OC_MAJOR="$OPENCODE_MAJOR"')
     return text[start:end]
 
@@ -292,67 +292,154 @@ class TheOpencodePin(unittest.TestCase):
                 self.assertIn("needs OPENCODE_SHA256 too", r.stdout)
 
 
-class TheStrayBinaryNeverOptsIn(unittest.TestCase):
-    """A box that chose OpenCode 1 is never switched to 2 by a binary it did not ask for: when the
-    pinned download cannot run (GitHub unreachable, sha mismatch), the choice stands and the marker
-    is not written (independent review of the v2 migration, finding 2)."""
+class TheDefaultIsTwo(unittest.TestCase):
+    """Since v1.56.0 (decision 1546 of 2026-11-20, replacing the opt-in plan of 2026-10-22) a
+    ./install.sh without --opencode serves OpenCode 2: the pinned 2.x asset is downloaded and
+    the marker says 2. --opencode 2 is still accepted. --opencode 1 writes the marker "1", so a
+    later plain run keeps the box on 1.x; the first update of a pre-v1.56.0 1.x box, which has
+    no marker, moves to 2. A stray 2.x on the PATH of a no-marker box is replaced by the pin,
+    and a box marked 1 is never moved to 2 by a binary it did not ask for: a failed 1.x
+    download keeps it serving what stands, marker 1, nothing written for 2."""
+
+    V2 = "2.3.2"
+    # serves the asset whose version the URL names, so a crossing downloads "the right" bytes
+    FAKE_CURL_V = ("#!/bin/sh\n"
+                   "out=\"\"; url=\"\"\n"
+                   "while [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2 ;; -m|--retry) shift 2 ;; -*) shift ;; *) url=\"$1\"; shift ;; esac; done\n"
+                   "echo \"curl $url\" >> \"$OC_LOG\"\n"
+                   "case \"$url\" in *v" + V2 + "*) cp \"$OC_TAR_V2\" \"$out\" ;; *) cp \"$OC_TAR_V1\" \"$out\" ;; esac\n")
 
     def setUp(self):
-        self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-stray-"))
+        self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-def2-"))
         self.addCleanup(shutil.rmtree, self.t, True)
         self.home = self.t / "home"
         self.home.mkdir()
         (self.home / ".bashrc").write_text("# a user's bashrc\n")
+        self.cfg = self.home / ".config" / "qwen38"
         self.bin = self.t / "fakebin"
         self.bin.mkdir()
-        (self.bin / "curl").write_text(FAKE_CURL)
+        (self.bin / "curl").write_text(self.FAKE_CURL_V)
         (self.bin / "curl").chmod(0o755)
         self.log = self.t / "calls.log"
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {PINNED}\n".encode()
-            info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
-            tf.addfile(info, io.BytesIO(body))
-        self.tarball = self.t / "asset.tar.gz"
-        self.tarball.write_bytes(buf.getvalue())
-        self.sha = hashlib.sha256(buf.getvalue()).hexdigest()
+        self.assets = {}
+        for ver in (PINNED, self.V2):
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+                body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {ver}\n".encode()
+                info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
+                tf.addfile(info, io.BytesIO(body))
+            p = self.t / f"asset-{ver}.tar.gz"
+            p.write_bytes(buf.getvalue())
+            self.assets[ver] = (p, hashlib.sha256(buf.getvalue()).hexdigest())
         self.brew = self.t / "brew"
         self.brew.mkdir()
         (self.brew / "opencode").write_text(FAKE_OC)
         (self.brew / "opencode").chmod(0o755)
-        (self.brew / "VERSION").write_text("2.3.0\n")
 
-    def run_home(self, *, sha, major_env=None):
+    @property
+    def home_bin(self):
+        return self.home / ".opencode" / "bin" / "opencode"
+
+    def version_of(self, binary):
+        return subprocess.run([str(binary), "--version"], capture_output=True, text=True).stdout.strip()
+
+    def run_home(self, *, want="", marker=None, brew_ver=None, v1_sha=None, v2_sha=None):
+        if marker is not None:
+            self.cfg.mkdir(parents=True, exist_ok=True)
+            (self.cfg / "opencode.major").write_text(marker)
+        if brew_ver is not None:
+            (self.brew / "VERSION").write_text(brew_ver + "\n")
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
-                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{sha}"; OPENCODE_PIN="1"\n'
-                  f'OPENCODE2_VERSION="2.3.0"; OPENCODE2_SHA256="{"0" * 64}"\n'
+                  f'REPO_DIR="{REPO}"\nCONFIG_DIR="{self.cfg}"\n'
+                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{v1_sha or self.assets[PINNED][1]}"; OPENCODE_PIN="1"\n'
+                  f'OPENCODE2_VERSION="{self.V2}"; OPENCODE2_SHA256="{v2_sha or self.assets[self.V2][1]}"\n'
                   f'_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
-                  + (f'OPENCODE_MAJOR="{major_env}"\n' if major_env else "")
-                  + block(whole=True) + 'echo "CHOICE=${OPENCODE_MAJOR:-1} SERVE=${OC_SERVE_MAJOR:-none}"\n')
-        path = ":".join([str(self.bin), str(self.brew), "/usr/bin", "/bin"])
+                  f'OPENCODE_MAJOR_WANT="{want}"\n'
+                  + major_choice() + "\n" + block(whole=True)
+                  + '\necho "CHOICE=${OPENCODE_MAJOR:-1} SERVE=${OC_SERVE_MAJOR:-none} START=${OC_START_MAJOR:-none}"\n')
+        path_extra = [str(self.brew)] if brew_ver is not None else []
+        path = ":".join([str(self.bin), *path_extra, "/usr/bin", "/bin"])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"HOME": str(self.home), "PATH": path, "OC_LOG": str(self.log),
-                                "OC_TARBALL": str(self.tarball)})
-        return r.returncode, r.stdout + r.stderr
+                                "OC_TAR_V1": str(self.assets[PINNED][0]),
+                                "OC_TAR_V2": str(self.assets[self.V2][0])})
+        marker_file = self.cfg / "opencode.major"
+        calls = self.log.read_text().splitlines() if self.log.exists() else []
+        return (r.returncode, r.stdout + r.stderr,
+                marker_file.read_text() if marker_file.exists() else None, calls)
 
-    def test_a_failed_fetch_keeps_the_choice_1_and_writes_no_marker(self):
-        rc, out = self.run_home(sha="0" * 64)     # the download answers the wrong bytes
+    def test_no_flag_installs_the_pinned_2_and_marks_the_box_2(self):
+        rc, out, marker, calls = self.run_home()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2 START=none", out)
+        self.assertEqual(calls, [f"curl https://github.com/anomalyco/opencode/releases/download/v{self.V2}"
+                                 "/opencode-linux-arm64.tar.gz"])
+        self.assertEqual(self.version_of(self.home_bin), self.V2)
+        self.assertIn(f"installing {self.V2}", out)
+        self.assertIsNotNone(marker)
+        self.assertEqual(marker.splitlines()[0], "2", "a plain run writes the marker 2")
+
+    def test_opencode_2_flag_is_still_accepted(self):
+        rc, out, marker, calls = self.run_home(want="2")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2", out)
+        self.assertEqual(self.version_of(self.home_bin), self.V2)
+        self.assertEqual(marker.splitlines()[0], "2")
+
+    def test_opencode_1_marks_the_box_1(self):
+        rc, out, marker, calls = self.run_home(want="1")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=1 SERVE=1", out)
+        self.assertEqual(calls, [f"curl https://github.com/anomalyco/opencode/releases/download/v{PINNED}"
+                                 "/opencode-linux-arm64.tar.gz"])
+        self.assertEqual(self.version_of(self.home_bin), PINNED)
+        self.assertIsNotNone(marker)
+        self.assertEqual(marker.splitlines()[0], "1", "--opencode 1 is memorized in the marker")
+
+    def test_a_box_marked_1_stays_1_on_a_plain_update(self):
+        rc, out, marker, calls = self.run_home(marker="1\n# asked with ./install.sh --opencode 1\n",
+                                               brew_ver=PINNED)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=1 SERVE=1", out, "the marker 1 keeps the box on 1.x across updates")
+        self.assertEqual(calls, [], "the pinned 1.x is already in place: no download")
+        self.assertIn("the version this repo tests", out)
+        self.assertEqual(marker.splitlines()[0], "1", "the marker is rewritten as 1, not erased")
+
+    def test_a_box_marked_2_stays_2_on_a_plain_update(self):
+        rc, out, marker, calls = self.run_home(marker="2\n", brew_ver=self.V2)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2", out)
+        self.assertEqual(calls, [])
+        self.assertEqual(marker.splitlines()[0], "2")
+
+    def test_a_plain_update_of_a_pre_v156_1_x_box_moves_to_2(self):
+        # no marker (the box was installed before v1.56.0), a 1.x binary in place: the
+        # default wins, the pinned 2.x comes down over it, the marker becomes 2
+        rc, out, marker, calls = self.run_home(brew_ver=PINNED)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2 START=1", out)
+        self.assertEqual(calls, [f"curl https://github.com/anomalyco/opencode/releases/download/v{self.V2}"
+                                 "/opencode-linux-arm64.tar.gz"])
+        self.assertEqual(self.version_of(self.home_bin), self.V2)
+        self.assertEqual(marker.splitlines()[0], "2")
+        self.assertIn("installing", out)
+
+    def test_a_stray_2_x_on_a_no_marker_box_is_replaced_by_the_pinned_2(self):
+        rc, out, marker, calls = self.run_home(brew_ver="2.3.0")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2", out)
+        self.assertEqual(self.version_of(self.home_bin), self.V2, "the pin replaced the stray 2.3.0")
+        self.assertEqual(marker.splitlines()[0], "2")
+
+    def test_a_box_marked_1_with_a_stray_2_x_keeps_its_choice_when_the_download_fails(self):
+        rc, out, marker, calls = self.run_home(marker="1\n", brew_ver="2.3.0", v1_sha="0" * 64)
         self.assertEqual(rc, 0, out)
         self.assertIn("CHOICE=1 SERVE=2", out, "the 2.x binary in place is what serves")
-        self.assertFalse((self.home / ".config" / "qwen38" / "opencode.major").exists(),
-                         "a run that could not download never opts a box into OpenCode 2")
         self.assertIn("keeps serving the OpenCode already installed", out)
         self.assertIn("2.3.0", out)
-
-    def test_the_choice_2_box_with_a_1_x_binary_keeps_its_choice_too(self):
-        (self.brew / "VERSION").write_text("1.19.0\n")
-        rc, out = self.run_home(sha="0" * 64, major_env="2")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("CHOICE=2 SERVE=1", out, "the 1.x binary in place is what serves")
-        self.assertFalse((self.home / ".config" / "qwen38" / "opencode.major").exists(),
-                         "no marker for a binary that is not the pinned 2.x either")
-        self.assertIn("keeps serving the OpenCode already installed", out)
-        self.assertIn("1.19.0", out)
+        self.assertIn("Re-run ./install.sh --opencode 1", out)
+        self.assertIsNotNone(marker)
+        self.assertEqual(marker.splitlines()[0], "1", "a failed crossing does not touch the marker")
 
 
 class TheFailedCrossingServesWhatStands(unittest.TestCase):
@@ -557,29 +644,35 @@ class TheRollbackTakesTheV2CompactionKeysOut(unittest.TestCase):
                 sorted(p.name for p in cfg.iterdir()),
                 sorted(p.name for p in (home / ".config" / "opencode").iterdir()))
 
-    def test_the_marker_says_whether_the_box_was_in_2(self):
+    def test_the_marker_and_the_flag_resolve_the_major(self):
+        # Since v1.56.0 (decision 1546) OpenCode 2 is the default: no flag and no marker means
+        # 2 (that is also what the first update of a pre-v1.56.0 1.x box gets), a marker "1"
+        # keeps the box on 1.x across updates, and an explicit flag always wins.
         t = pathlib.Path(tempfile.mkdtemp(prefix="oc-mj-"))
         self.addCleanup(shutil.rmtree, t, True)
         cfg = t / "cfg"
         cfg.mkdir()
-        (cfg / "opencode.major").write_text("2\n")
-        for want, want_was2 in (("", "1"), ("1", "1"), ("2", "1")):
+
+        def resolve(marker, want):
+            if marker is None:
+                (cfg / "opencode.major").unlink(missing_ok=True)
+            else:
+                (cfg / "opencode.major").write_text(marker)
             script = ("set -euo pipefail\n"
                       f'CONFIG_DIR="{cfg}"\nOPENCODE_MAJOR_WANT="{want}"\n' + major_choice()
                       + '\necho "MAJOR=${OPENCODE_MAJOR} WAS2=${OC_WAS_2}"\n')
             r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
                                env={"PATH": "/usr/bin:/bin"})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            major, was2 = r.stdout.strip().splitlines()[-1].split()[0:2]
-            self.assertEqual(was2, f"WAS2={want_was2}")
-            self.assertEqual(major, f"MAJOR={want or '2'}")
-        (cfg / "opencode.major").unlink()
-        script = ("set -euo pipefail\n"
-                  f'CONFIG_DIR="{cfg}"\nOPENCODE_MAJOR_WANT=""\n' + major_choice()
-                  + '\necho "MAJOR=${OPENCODE_MAJOR} WAS2=${OC_WAS_2}"\n')
-        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
-                           env={"PATH": "/usr/bin:/bin"})
-        self.assertIn("MAJOR=1 WAS2=0", r.stdout)
+            return r.stdout.strip().splitlines()[-1]
+
+        self.assertEqual(resolve("2\n", ""), "MAJOR=2 WAS2=1")
+        self.assertEqual(resolve("2\n", "1"), "MAJOR=1 WAS2=1")
+        self.assertEqual(resolve("2\n", "2"), "MAJOR=2 WAS2=1")
+        self.assertEqual(resolve("1\n", ""), "MAJOR=1 WAS2=0")
+        self.assertEqual(resolve("1\n", "2"), "MAJOR=2 WAS2=0")
+        self.assertEqual(resolve(None, ""), "MAJOR=2 WAS2=0")
+        self.assertEqual(resolve(None, "1"), "MAJOR=1 WAS2=0")
 
     def test_a_box_that_was_in_2_gets_exactly_the_v2_keys_out_of_both_configs(self):
         rc, out, gen_left, user_left, gen_raw, user_raw, gen_files, user_files = self.run_rollback(was2=True)
@@ -1021,59 +1114,56 @@ class TheOpencodeMajorFlag(unittest.TestCase):
         self.assertIn("--opencode takes 1 or 2", r.stdout + r.stderr)
 
 
-class TheNoFlagRunIsTheV154Run(unittest.TestCase):
-    """A ./install.sh without --opencode must stay the v1.54 run, answer for answer
-    (decision 445: the v2 choice is opt-in, never the default). The v1.54 opencode block
-    is kept as a fixture and run side by side with today's, same throwaway HOME, same
-    fake curl and tarball: same answers, same files, no marker, no v2 key anywhere."""
+class TheNoFlagRunIsTheV2Run(unittest.TestCase):
+    """A ./install.sh without --opencode is the v2 run since v1.56.0 (decision 1546, which
+    replaced decision 445: the v2 choice is the default now, not an option). The opencode
+    block runs whole in a throwaway HOME against a fake curl that serves either asset by
+    the version its URL names: no flag, no marker, no binary: CHOICE=2, the 2.x asset
+    downloaded, the marker 2. TheDefaultIsTwo above pins the same facts per scenario."""
 
-    def setUp(self):
-        self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-noflag-"))
-        self.addCleanup(shutil.rmtree, self.t, True)
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {PINNED}\n".encode()
-            info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
-            tf.addfile(info, io.BytesIO(body))
-        self.tarball = self.t / "asset.tar.gz"
-        self.tarball.write_bytes(buf.getvalue())
-        self.sha = hashlib.sha256(buf.getvalue()).hexdigest()
-
-    def run_block(self, body: str, tag: str):
-        home = self.t / f"home-{tag}"
+    def test_no_flag_is_the_v2_run(self):
+        # (the per-scenario facts live in TheDefaultIsTwo; here the block answers as v2)
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-noflag-"))
+        self.addCleanup(shutil.rmtree, t, True)
+        home = t / "home"
         home.mkdir()
         (home / ".bashrc").write_text("# a user's bashrc\n")
-        bin_ = self.t / f"fakebin-{tag}"
-        bin_.mkdir(exist_ok=True)
-        (bin_ / "curl").write_text(FAKE_CURL)
+        cfg = home / ".config" / "qwen38"
+        bin_ = t / "fakebin"
+        bin_.mkdir()
+        (bin_ / "curl").write_text(TheDefaultIsTwo.FAKE_CURL_V)
         (bin_ / "curl").chmod(0o755)
-        log = self.t / f"calls-{tag}.log"
+        log = t / "calls.log"
+        assets = {}
+        for ver in (PINNED, TheDefaultIsTwo.V2):
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+                body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {ver}\n".encode()
+                info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
+                tf.addfile(info, io.BytesIO(body))
+            p = t / f"asset-{ver}.tar.gz"
+            p.write_bytes(buf.getvalue())
+            assets[ver] = (p, hashlib.sha256(buf.getvalue()).hexdigest())
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
-                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{self.sha}"; OPENCODE_PIN="1"\n'
-                  'OPENCODE2_VERSION="2.3.2"; OPENCODE2_SHA256="' + "0" * 64 + '"\n'
+                  f'REPO_DIR="{REPO}"\nCONFIG_DIR="{cfg}"\n'
+                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{assets[PINNED][1]}"; OPENCODE_PIN="1"\n'
+                  f'OPENCODE2_VERSION="{TheDefaultIsTwo.V2}"; OPENCODE2_SHA256="{assets[TheDefaultIsTwo.V2][1]}"\n'
                   '_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
-                  + body + 'echo "CHOICE=${OPENCODE_MAJOR:-1}"\n')
+                  'OPENCODE_MAJOR_WANT=""\n'
+                  + major_choice() + "\n" + block(whole=True)
+                  + '\necho "CHOICE=${OPENCODE_MAJOR:-1}"\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"HOME": str(home), "PATH": f"{bin_}:/usr/bin:/bin",
-                                "OC_LOG": str(log), "OC_TARBALL": str(self.tarball)})
-        state = {"bashrc": (home / ".bashrc").read_text(),
-                 "marker": (home / ".config" / "qwen38" / "opencode.major").exists(),
-                 "binary": subprocess.run([str(home / ".opencode" / "bin" / "opencode"), "--version"],
-                                          capture_output=True, text=True).stdout.strip(),
-                 "calls": log.read_text().splitlines() if log.exists() else []}
-        # the two runs answer in two throwaway homes: their paths differ and say nothing
-        return r.returncode, (r.stdout + r.stderr).replace(str(home), "<home>"), state
-
-    def test_no_flag_answers_and_writes_exactly_what_v1_54_did(self):
-        fixture = (REPO / "tests" / "fixtures" / "install-opencode-block-v1.54.txt").read_text()
-        rc_old, out_old, st_old = self.run_block(fixture, "v154")
-        rc_new, out_new, st_new = self.run_block(block(whole=True), "today")
-        self.assertEqual(rc_old, 0, out_old)
-        self.assertEqual(rc_new, 0, out_new)
-        self.assertEqual(out_new, out_old, "a run without --opencode must answer exactly what v1.54 answered")
-        self.assertEqual(st_new, st_old, "a run without --opencode must write exactly what v1.54 wrote")
-        self.assertIn("CHOICE=1", out_new)
-        self.assertFalse(st_new["marker"], "no run without the flag ever opts a box into OpenCode 2")
+                                "OC_LOG": str(log), "OC_TAR_V1": str(assets[PINNED][0]),
+                                "OC_TAR_V2": str(assets[TheDefaultIsTwo.V2][0])})
+        out = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, out)
+        self.assertIn("CHOICE=2", out, "without the flag the run serves OpenCode 2 since v1.56.0")
+        self.assertTrue((cfg / "opencode.major").exists(), "the marker says 2")
+        self.assertEqual((cfg / "opencode.major").read_text().splitlines()[0], "2")
+        self.assertEqual(log.read_text().splitlines(),
+                         [f"curl https://github.com/anomalyco/opencode/releases/download/v{TheDefaultIsTwo.V2}"
+                          "/opencode-linux-arm64.tar.gz"])
 
 
 if __name__ == "__main__":

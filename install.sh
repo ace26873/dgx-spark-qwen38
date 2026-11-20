@@ -521,8 +521,11 @@ _ENV_OPENCODE_SHA256="${OPENCODE_SHA256:-}"
 OPENCODE_VERSION="${OPENCODE_VERSION:-1.19.6}"
 OPENCODE_SHA256="${OPENCODE_SHA256:-5b68c1f4c5e75b4134e664cc8f36d634d64208d4fcfe5bcf3b48bab699c2dbac}"
 OPENCODE_PIN="${OPENCODE_PIN:-1}"
-# OpenCode 2, offered by ./install.sh --opencode 2 and never the default (Hasan's plan
-# of 2026-10-22: prove it as an option first). From v2.2.0 GitHub publishes release assets
+# OpenCode 2, the default since v1.56.0 (decision 1546 of 2026-11-20, which replaced the
+# opt-in plan of 2026-10-22 once 2.3.2 was proven on the reference box): a plain
+# ./install.sh installs it, and so does the first update of a box installed before
+# v1.56.0, whose marker does not exist yet; ./install.sh --opencode 1 pins the box back
+# to 1.x and is remembered. From v2.2.0 GitHub publishes release assets
 # again (checked on the API the 2026-11-14), so the same recipe pins it: the arm64 asset
 # opencode-linux-arm64.tar.gz by its GitHub digest. Four things were read out of the 2.3.0
 # binary and a sandbox on the reference box (2026-11-14): serve refuses --log-level in capitals and dies at boot
@@ -709,11 +712,13 @@ without a terminal.
                         default model alone). Remembered by later runs, each of
                         which says so.
   --with-opencode       re-enable it after a --no-opencode
-  --opencode 2|1        which OpenCode this box serves: 1 is the tested pin and the
-                        default; 2 opts the box into OpenCode 2 (the pinned
-                        OPENCODE2_VERSION): the oc launcher, the Agent view and its
-                        guards follow the choice. Remembered by later runs; --opencode 1
-                        goes back (it takes our v2 deny array out of your global config).
+  --opencode 2|1        which OpenCode this box serves: 2 is the default (the pinned
+                        OPENCODE2_VERSION), 1 goes back to the pinned 1.x
+                        (OPENCODE_VERSION): the oc launcher, the Agent view and its
+                        guards follow the choice. Remembered by later runs in
+                        ~/.config/qwen38/opencode.major, so an update does not move a
+                        box that chose 1; --opencode 1 also takes our v2 deny array out
+                        of your global config.
   --no-cockpit          skip the web cockpit and its Agent view (no dashboard
                         unit, no sudoers allowlist). Remembered by later runs,
                         each of which says so.
@@ -1453,24 +1458,31 @@ elif [ "$WITH_OPENCODE" -eq 0 ] && [ -f "$OC_OFF_MARK" ]; then
 fi
 # Which OpenCode this box serves. The choice persists like the on/off one, by a marker
 # in CONFIG_DIR written when the step below actually puts a matching binary in place (a
-# failed download never opts a box in). 1 is the tested pin; 2 is the opt-in OpenCode 2
-# (Hasan's plan of 2026-10-22: option first, default only after proofs on both boxes).
-OPENCODE_MAJOR=1
-# Whether the box was in OpenCode 2 at the START of this run (the marker), read before the
-# step below rewrites or removes it: a run that goes back to 1.x uses it to take the v2-only
-# keys back out of the configs the v2 wrote them in, and a box that never chose 2 is not
-# touched at all.
+# failed download never opts a box in or out). OpenCode 2 is the default since v1.56.0
+# (decision 1546 of 2026-11-20, replacing the opt-in plan of 2026-10-22): a plain run
+# serves it, and so does the first update of a box installed before v1.56.0, whose marker
+# does not exist yet. --opencode 1 pins the box back to the tested 1.x and writes the
+# marker "1", so a later update does not move the box to 2 behind the operator's back.
+OPENCODE_MAJOR=2
+# The marker as it stands at the START of this run, read before the step below rewrites
+# it: a run that goes back to 1.x uses "2" to take the v2-only keys back out of the configs
+# the v2 wrote them in (OC_WAS_2), and "1" keeps the box on 1.x. A box with no marker was
+# installed before v1.56.0 and is not touched by the rollbacks either.
 OC_WAS_2=0
-if [ -s "$CONFIG_DIR/opencode.major" ] && [ "$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || true)" = "2" ]; then
-  OC_WAS_2=1
+OC_MARKER_MAJOR=""
+if [ -s "$CONFIG_DIR/opencode.major" ]; then
+  OC_MARKER_MAJOR="$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || true)"
+  if [ "$OC_MARKER_MAJOR" = "2" ]; then OC_WAS_2=1; fi
 fi
 if [ -n "$OPENCODE_MAJOR_WANT" ]; then
   case "$OPENCODE_MAJOR_WANT" in
     1|2) OPENCODE_MAJOR="$OPENCODE_MAJOR_WANT" ;;
     *) printf -- '--opencode takes 1 or 2 (which OpenCode to serve), not %s\n' "$OPENCODE_MAJOR_WANT" >&2; exit 1 ;;
   esac
-elif [ "$OC_WAS_2" -eq 1 ]; then
-  OPENCODE_MAJOR=2
+else
+  # no flag: the marker decides when it exists ("1" keeps the box on 1.x), the default
+  # (2) otherwise, which is also what the first update of a pre-v1.56.0 1.x box gets
+  if [ "$OC_MARKER_MAJOR" = "1" ]; then OPENCODE_MAJOR=1; fi
 fi
 # The helpers that write opencode's config read the same choice (oc-merge-limits.py
 # --compaction writes the v2 compaction block on a box that chose OpenCode 2), so the
@@ -2735,6 +2747,9 @@ OC_ON_PATH="$OC_FOUND"   # what a shell of the user's finds, before the fallback
 [ -z "$OC_FOUND" ] && [ -x "$OC_HOME_BIN" ] && OC_FOUND="$OC_HOME_BIN"
 OC_WAS_ABSENT=0; [ -z "$OC_FOUND" ] && OC_WAS_ABSENT=1
 OC_HAVE=""; [ -n "$OC_FOUND" ] && OC_HAVE="$(oc_version "$OC_FOUND")"
+# The major the box served BEFORE this run: a run that moves a 1.x box to OpenCode 2
+# (the default since v1.56.0) says so at the end of the install, with the way back.
+OC_START_MAJOR=""; [ -n "$OC_HAVE" ] && OC_START_MAJOR="${OC_HAVE%%.*}"
 if [ "$OPENCODE_PIN" != "1" ]; then
   echo "opencode ${OC_HAVE:-not installed}: kept as it is (OPENCODE_PIN=$OPENCODE_PIN)"
 elif [ "$OC_HAVE" = "$OC_TARGET_VER" ]; then
@@ -2814,14 +2829,20 @@ if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && ver_lt "$OC_HAVE" "$OC_TARG
   echo "NOTE: opencode is still $OC_HAVE after the step above; oc and the Agent view keep running it"
 fi
 # The marker records the OpenCode this box NOW serves, and only once a binary stands there:
-# a run that could not download never opts a box in, and never opts it out either.
+# a run that could not download never opts a box in, and never opts it out either. Since
+# v1.56.0 it says the major either way (decision 1546): "1" is what keeps a box on 1.x
+# across updates, "2" is the default, so a plain later run does not move the box.
 if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && [ "${OC_HAVE%%.*}" = "${OPENCODE_MAJOR:-1}" ]; then
   OC_STATE_DIR="${CONFIG_DIR:-$HOME/.config/qwen38}"
   mkdir -p "$OC_STATE_DIR"
-  case "${OPENCODE_MAJOR:-1}" in
-    2) printf '2\n# asked with ./install.sh --opencode 2 on %s\n' "$(date -u +%Y-%m-%dT%H:%MZ)" > "$OC_STATE_DIR/opencode.major" ;;
-    *) rm -f "$OC_STATE_DIR/opencode.major" ;;
-  esac
+  if [ -n "${OPENCODE_MAJOR_WANT:-}" ]; then
+    OC_MAJOR_NOTE="asked with ./install.sh --opencode $OPENCODE_MAJOR_WANT on $(date -u +%Y-%m-%dT%H:%MZ)"
+  elif [ -n "${OC_MARKER_MAJOR:-}" ]; then
+    OC_MAJOR_NOTE="kept from the box's earlier choice (the marker said $OC_MARKER_MAJOR)"
+  else
+    OC_MAJOR_NOTE="the default since v1.56.0, written on $(date -u +%Y-%m-%dT%H:%MZ)"
+  fi
+  printf '%s\n# %s\n' "${OPENCODE_MAJOR:-1}" "$OC_MAJOR_NOTE" > "$OC_STATE_DIR/opencode.major"
 fi
 # Going back to 1.x takes OUR v2 deny array out of the global config: OpenCode 1.19 refuses
 # to start while a config holds "permissions" ("V2 permissions are not supported by OpenCode
