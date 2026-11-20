@@ -1256,9 +1256,11 @@ const SAID = {};
 function sayOnce(key, txt){ if (SAID[key] === txt) return; SAID[key] = txt; setText('sayer', txt); }
 
 // Every control that runs an action is disabled, with its reason, while it cannot.
+// [data-busy] is the same disabling for a control that does not open the action sheet
+// (the sign-out button signs out at once): data-act means "opens the sheet", nothing else.
 function applyBusy(){
   const why = busyWhy(), eng = noEngineWhy();
-  document.querySelectorAll('[data-act]').forEach(b => {
+  document.querySelectorAll('[data-act], [data-busy]').forEach(b => {
     const need = NEEDS_ENGINE.has(b.dataset.act) ? eng : '';
     const own = b.dataset.blocked || '';
     b.disabled = !!(why || need || own);
