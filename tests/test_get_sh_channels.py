@@ -234,6 +234,16 @@ def main() -> None:
         assert state(empty, "symbolic-ref", "-q", "--short", "HEAD") == "main", "the clone left main"
         assert not state(empty, "branch", "--list", "stable"), "a stable branch was created"
 
+        # 11. The API's tag_name is read whole: a suffix of the tag's own (-rc1, +build) is
+        #     never cut off (B1 of the review, 2026-11-20). The old sed kept v[0-9][0-9.]* and
+        #     read "v1.58.0" out of "v1.58.0-rc1": a tag that does not exist, and a refusal.
+        rc_tag = "v1.58.0-rc1"
+        rc_commit = publish(pub, "the rc release", rc_tag)
+        r = run_get(box, curl_shim(base, rc_tag))
+        assert r.returncode == 0 and "INSTALL_RAN" in r.stdout, f"the suffixed tag failed: {r.stderr}"
+        assert f"the latest published release, {rc_tag}" in r.stdout, r.stdout
+        assert state(box, "rev-parse", "HEAD") == rc_commit, "the suffixed tag was truncated to another"
+
         print("test_get_sh_channels: OK")
     finally:
         shutil.rmtree(base, ignore_errors=True)

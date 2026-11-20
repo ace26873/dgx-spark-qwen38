@@ -159,15 +159,20 @@ main() {
 
   # What this update installs: origin/main on the edge channel, the latest published release on
   # the stable one. Three sources in order (DESIGN, decision 1529): GitHub's own "latest
-  # release", the same answer the cockpit reads (published releases, prereleases excluded,
-  # anonymous, no token); then the tags of the remote itself, which no API budget limits; then
-  # what the fetch above already brought, for a box whose API call and ls-remote both fail.
+  # release", the same answer the cockpit reads; then the tags of the remote itself, which no
+  # API budget limits; then what the fetch above already brought, for a box whose API call
+  # and ls-remote both fail. "Latest" is GitHub's own word, and GitHub's documentation of
+  # this endpoint says what it is: "the most recent non-prerelease, non-draft release" (REST
+  # API, "Get the latest release", docs.github.com): no draft and no prerelease is ever
+  # answered, whatever its tag is named. The tag_name is read WHOLE: a tag may carry a
+  # suffix of its own (-rc1, +build), and a sed that kept v[0-9][0-9.]* cut it off and named
+  # a tag that does not exist (review, 2026-11-20).
   TAG=""; TAG_KNOWN_PUBLISHED=""
   if [ "$CHANNEL" = stable ]; then
     if command -v curl >/dev/null 2>&1; then
       TAG=$(curl -fsSL --max-time 8 -H 'Accept: application/vnd.github+json' \
               https://api.github.com/repos/hasso5703/alzeo/releases/latest 2>/dev/null \
-            | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9.]*\)".*/\1/p') || TAG=""
+            | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[^"]*\)".*/\1/p') || TAG=""
       [ -n "$TAG" ] && TAG_KNOWN_PUBLISHED=1
     fi
     if [ -z "$TAG" ]; then
