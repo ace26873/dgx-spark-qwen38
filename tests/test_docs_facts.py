@@ -364,20 +364,35 @@ class ThePrivilegedPathNamesWhatSudoRuns(unittest.TestCase):
                 self.assertIsNone(named.search(ln), f"ARCHITECTURE.md: {ln.strip()!r} puts {word} beside sudo")
 
 
-class TheRollbackInOpencodeMdIsComplete(unittest.TestCase):
-    """docs/opencode.md's OpenCode 2 section is the return path's instructions: going back to
-    1.x must also take the v2 plugin out of the plugins directory (1.x does not run a
-    default-export plugin, the file stays dead), and a run whose download fails must be
-    described as it behaves: it keeps serving the OpenCode already installed and writes
-    nothing for the other major (blind review of 2026-11-20, D7 and D2/D3)."""
+class TheOpencode2DefaultInOpencodeMdIsComplete(unittest.TestCase):
+    """docs/opencode.md's OpenCode 2 section says the new default and the whole way back
+    (decision 1546, 2026-11-20, replacing the opt-in): 2 is the default since v1.56.0, the
+    first update of a pre-v1.56.0 1.x box moves to 2 and the install says so with the way
+    back, --opencode 1 is remembered in the marker so later updates keep 1.x, the plugin is
+    swapped on a crossing, and a run whose download fails keeps serving the OpenCode already
+    installed and writes nothing for the other major (blind review of 2026-11-20, D2/D3)."""
 
     def section(self):
         text = (REPO / "docs/opencode.md").read_text()
-        i = text.index("## OpenCode 2, opt-in")
+        i = text.index("## OpenCode 2, the default since v1.56.0")
         return text[i:text.index("## Opting out", i)]
 
-    def test_going_back_to_1x_names_the_v2_plugin_removal(self):
-        self.assertIn("rm -f ~/.config/opencode/plugins/auto-continue-v2.js", self.section())
+    def test_the_section_says_2_is_the_default_and_what_a_plain_run_installs(self):
+        s = self.section()
+        self.assertIn("a plain `./install.sh`", s)
+        self.assertIn("2.3.2", s)
+        self.assertIn("opencode.major", s)
+
+    def test_the_first_update_of_a_1_x_box_is_said_with_the_end_message(self):
+        s = self.section()
+        self.assertIn("moved to 2.3.2; to go back: ./install.sh --opencode 1", s)
+
+    def test_going_back_to_1x_is_remembered_and_swaps_the_plugin(self):
+        s = self.section()
+        self.assertIn("./install.sh --opencode 1", s)
+        self.assertIn('marker `1`', s, "--opencode 1 is memorized so later updates keep 1.x")
+        self.assertIn("auto-continue-v2.js", s)
+        self.assertIn("auto-continue.js", s, "the swap both ways is described")
 
     def test_a_failed_download_is_said_to_keep_serving_what_is_installed(self):
         s = self.section()

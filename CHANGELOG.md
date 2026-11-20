@@ -1,16 +1,20 @@
 # Changelog
 
-## v1.56.0 (2026-11-20): opencode 2 becomes an opt-in choice (`--opencode 2`), pinned at 2.3.2, never the default
+## v1.56.0 (2026-11-20): opencode 2 is the default, pinned at 2.3.2 (`--opencode 1` stays on the 1.x pin, remembered)
 
-`./install.sh --opencode 2` installs the pinned OpenCode **2.3.2** (GitHub's release asset
-`opencode-linux-arm64.tar.gz` with its `OPENCODE2_SHA256`, refused without its checksum like 1.x)
-beside the pinned 1.x, remembers the choice in `~/.config/qwen38/opencode.major`, and wires the Agent
-unit, the `oc` launcher and the generated config to the v2 grammar. `./install.sh --opencode 1` goes
-back, and a `./install.sh` without the flag changes nothing against 1.x. Nothing ever defaults to
-2.x: a stray 2.x binary found on the PATH does not opt a box in, and a run whose download fails keeps
-serving the OpenCode already installed and writes nothing for the other major (no marker, no config
-key, no unit), so no mixed state is left behind; re-run `./install.sh --opencode <major>` once
-GitHub is reachable to install the pin.
+Decision 1546 (2026-11-20, replacing the opt-in of decision 445): a plain `./install.sh` installs
+the pinned OpenCode **2.3.2** (GitHub's release asset `opencode-linux-arm64.tar.gz` with its
+`OPENCODE2_SHA256`, refused without its checksum like 1.x), writes the marker
+`~/.config/qwen38/opencode.major` as `2`, and wires the Agent unit, the `oc` launcher and the
+generated config to the v2 grammar. The first update of a box installed before v1.56.0 (no marker
+yet, serving 1.x) moves it to 2 the same way, properly (configs merged, nothing of the user's
+erased, unit re-rendered, launcher rewritten, auto-continue plugin swapped, 1.x sessions migrated by
+2.x's first boot), and ends with `opencode   : moved to 2.3.2; to go back: ./install.sh --opencode 1`.
+`./install.sh --opencode 1` goes back to the pinned 1.19.6 and writes the marker `1`, so a later
+update without the flag keeps the box on 1.x; `--opencode 2` stays accepted and writes `2`. A run
+whose download fails keeps serving the OpenCode already installed and writes nothing for the other
+major (no marker, no config key, no unit), so no mixed state is left behind; re-run `./install.sh`
+once GitHub is reachable to install the pin.
 
 - **What the v2 wiring is.** the Agent unit serves `opencode v2.3.2` on 127.0.0.1 only; its health
   probe reads `GET /api/info` (every other path answers the app's HTML page, issue #55704); its
@@ -33,9 +37,9 @@ GitHub is reachable to install the pin.
   writes or removes such an entry, it is your choice.
 - **The way back.** `./install.sh --opencode 1` takes this repo's `permissions` array out of the
   global config (1.19 refuses to start while one holds it; an array that is not this repo's is left
-  alone and said), erases the marker, takes the v2 compaction keys (`keep`, `background`) out of both
-  configs, and reinstalls the pinned 1.x; a v2 plugin installed by hand goes too
-  (`rm -f ~/.config/opencode/plugins/auto-continue-v2.js`).
+  alone and said), writes the marker `1` (so later updates keep the box on 1.x), takes the v2
+  compaction keys (`keep`, `background`) out of both configs, restores the v1 auto-continue plugin
+  in place of the v2 one, and reinstalls the pinned 1.x.
 - **The Agent relay and its cleanup.** on 2.x, `/api/config`, `/api/provider`, `/api/model` and
   `/api/credential` answer the box's API key in clear; the relay scrubs every secret on every method
   of those routes (a POST is scrubbed too), refuses what it cannot read as JSON (compressed,

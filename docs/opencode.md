@@ -102,18 +102,20 @@ only `"autoupdate": false`, `"notify"` or a minor/major release stopped it), whi
 two boxes installed a week apart ended up on two versions. 1.19 installs nothing by itself,
 but with any value other than `false` its TUI checks every 10 minutes and, once it is on
 the newest 1.x, shows "/update to upgrade to OpenCode 2.0" on its home screen; 1.18.35
-announces 2.x as soon as GitHub's latest release is one. OpenCode 2's server is not the
-1.x `opencode serve` the Agent view relays. So, with the pin, the generated config and
-yours get `"autoupdate": false`: no check and no notice (`OPENCODE_DISABLE_AUTOUPDATE=1`
-does the same for one run). The Agent view says when the opencode it serves is not the
-pinned one. An update that installs the cockpit restarts the Agent view's server on a new
-opencode, after the cockpit that relays it, whatever lane the box boots on and however that
-opencode came (since v1.38.6: before, only an update with a text lane at boot did, and only
-for a binary dated after the server's start, which npm and Homebrew do not give). An update
-that installs no cockpit (`--no-cockpit`, or `--no-start` on a box booting a text lane) leaves
-the server on the opencode it runs until it restarts.
-`dashboard/install-agent.sh` never points it at OpenCode 2, whose server the Agent view is
-not written for yet: it says so and keeps the opencode it runs.
+announces 2.x as soon as GitHub's latest release is one. So, with the pin, the generated
+config and yours get `"autoupdate": false` on 1.x (`"update": "disable"` on OpenCode 2,
+the default since v1.56.0, see below): no check and no notice
+(`OPENCODE_DISABLE_AUTOUPDATE=1` does the same for one run). The Agent view says when the
+opencode it serves is not the pinned one. An update that installs the cockpit restarts the
+Agent view's server on a new opencode, after the cockpit that relays it, whatever lane the
+box boots on and however that opencode came (since v1.38.6: before, only an update with a
+text lane at boot did, and only for a binary dated after the server's start, which npm and
+Homebrew do not give). An update that installs no cockpit (`--no-cockpit`, or `--no-start`
+on a box booting a text lane) leaves the server on the opencode it runs until it restarts.
+`dashboard/install-agent.sh` renders the profile of the OpenCode the box serves: 2.x only
+when the marker (or `OPENCODE_MAJOR`) says 2, and a stray 2.x on the PATH of a box that did
+not choose it (Homebrew Core's formula is one) is refused before anything renders, so the
+installed unit keeps the opencode it runs.
 
 `OPENCODE_PIN=0 ./install.sh` keeps whatever opencode you have and leaves `autoupdate`
 alone. `OPENCODE_VERSION=<x> OPENCODE_SHA256=<its digest>` pins another release (a
@@ -121,9 +123,9 @@ version without its checksum is refused: it would not be a pin). A download that
 not match its sha256 is not installed, and nothing about opencode fails the rest of the
 install.
 
-## OpenCode 2, opt-in
+## OpenCode 2, the default since v1.56.0
 
-OpenCode 2 is not the default of anything: the box stays on the tested 1.19.6 until you ask. `./install.sh --opencode 2` (one-liner: `| bash -s -- --opencode 2`) installs the pinned 2.3.2 (GitHub's release asset, `OPENCODE2_VERSION` with its `OPENCODE2_SHA256`, refused without its checksum like 1.x), remembers the choice in `~/.config/qwen38/opencode.major`, and wires everything to it: the Agent unit, the `oc` launcher, the generated config. `./install.sh --opencode 1` goes back: it takes this repo's `permissions` array out of your global config (OpenCode 1.19 refuses to start while one holds it, measured against 1.19.5 on 2026-11-14; an array that is not the one this repo wrote is left alone and said, with the way back), erases the marker and installs the pinned 1.x again. If you installed the v2 plugin by hand, take it out too: `rm -f ~/.config/opencode/plugins/auto-continue-v2.js` (1.x does not run a default-export plugin; the file would sit there dead). A stray 2.x found on the PATH (Homebrew Core's formula is one) never opts a box in: the choice wins, and a run whose download fails keeps serving the OpenCode already installed and writes nothing for the other major (no marker, no config key, no unit), so no mixed state is left behind; re-run `./install.sh --opencode <major>` once GitHub is reachable to install the pin.
+Since v1.56.0 (decision 1546, 2026-11-20, replacing the opt-in of 2026-10-22) OpenCode 2 is the default: a plain `./install.sh` (the one-liner included) installs the pinned 2.3.2 (GitHub's release asset, `OPENCODE2_VERSION` with its `OPENCODE2_SHA256`, refused without its checksum like 1.x), writes the marker `~/.config/qwen38/opencode.major` as `2`, and wires everything to it: the Agent unit, the `oc` launcher, the generated config. The first update of a box installed before v1.56.0 (no marker yet, serving 1.x) moves it to 2 the same way, properly: the generated config is rewritten in the v2 grammar and your global one gets the v2 keys merged in with everything of yours kept (nothing of yours is erased either way), the Agent unit is re-rendered for 2.x, the `oc` launcher rewritten, the auto-continue plugin swapped (`auto-continue-v2.js` in place of `auto-continue.js`, which 2.x does not run), and the 1.x sessions are migrated by 2.x's own first boot (`GET /api/experimental/migration/v1`, measured in a sandbox on 2026-11-20). The end of that install says it plainly: `opencode   : moved to 2.3.2; to go back: ./install.sh --opencode 1`. `./install.sh --opencode 1` goes back to the pinned 1.19.6 and writes the marker `1`, so a later update without the flag keeps the box on 1.x: it also takes this repo's `permissions` array out of your global config (OpenCode 1.19 refuses to start while one holds it, measured against 1.19.5 on 2026-11-14; an array that is not the one this repo wrote is left alone and said, with the way back), takes the v2 compaction keys (`keep`, `background`) out of both configs, restores the v1 plugin `auto-continue.js` in place of `auto-continue-v2.js`, and installs the pinned 1.x again. `./install.sh --opencode 2` is still accepted and writes the marker `2`. A run whose download fails keeps serving the OpenCode already installed and writes nothing for the other major (no marker, no config key, no unit), so no mixed state is left behind; re-run `./install.sh` (or `--opencode <major>`) once GitHub is reachable to install the pin.
 
 What the 2.x server is, measured on 2.3.0 on this box (the binary, its answers and its bundle, 2026-11-14 and 15):
 
