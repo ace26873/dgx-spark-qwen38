@@ -244,6 +244,30 @@ def main() -> None:
         assert f"the latest published release, {rc_tag}" in r.stdout, r.stdout
         assert state(box, "rev-parse", "HEAD") == rc_commit, "the suffixed tag was truncated to another"
 
+        # 12. Offline: a clear refusal, not git's raw error, and nothing touched (B3 of the
+        #     review, 2026-11-20). The old code died on the fetch of main with git's own
+        #     message (rc 128) before any source of tag was tried.
+        offbox = os.path.join(base, "offline-box")
+        origin = os.path.join(base, "hasso5703", "dgx-spark-qwen38.git")
+        git("clone", "-q", origin, offbox, cwd=base)
+        for k, v in (("user.email", "t@t"), ("user.name", "t")):
+            git("config", k, v, cwd=offbox)
+        # an origin this script accepts as this repo, at a path that does not exist: every
+        # network call of the run fails, the fetch of main first
+        git("remote", "set-url", "origin", os.path.join(base, "hasso5703", "dgx-spark-qwen38-absent.git"),
+            cwd=offbox)
+        before = state(offbox, "rev-parse", "HEAD")
+        if os.path.exists(channel_file):
+            os.remove(channel_file)
+        r = run_get(offbox, curl_shim(base))
+        assert r.returncode == 1, "an offline run did not refuse"
+        assert "cannot reach GitHub" in r.stderr, r.stderr
+        assert "Nothing was touched" in r.stderr, r.stderr
+        assert "fatal" not in r.stderr, f"git's raw error leaked through: {r.stderr}"
+        assert state(offbox, "rev-parse", "HEAD") == before, "the offline run moved the clone"
+        assert state(offbox, "symbolic-ref", "-q", "--short", "HEAD") == "main", "the clone left main"
+        assert not os.path.exists(channel_file), "the offline run wrote the channel file"
+
         print("test_get_sh_channels: OK")
     finally:
         shutil.rmtree(base, ignore_errors=True)

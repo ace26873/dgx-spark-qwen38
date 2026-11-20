@@ -149,7 +149,16 @@ main() {
     fi
   }
 
-  git -C "$DIR" fetch -q origin main
+  # Offline, the refusal comes here, before anything is touched: git's own error (rc 128,
+  # a raw "fatal:") told the operator nothing, and the sources of tag below were never
+  # reached anyway (review, 2026-11-20). Nothing has been written at this point: not the
+  # clone, not a branch, not the channel file.
+  if ! git -C "$DIR" fetch -q origin main 2>/dev/null; then
+    echo "ERROR: cannot reach GitHub (no network, or GitHub is down): the fetch of main failed." >&2
+    echo "  Nothing was touched: the clone, its branches and the channel file are as they were." >&2
+    echo "  try again once online." >&2
+    exit 1
+  fi
   # The release tags too. A fetch of main alone brings none, and the cockpit's release check
   # and `git describe` read them: a box updated by this command kept naming the release it
   # was first cloned at (v1.19.0 on the reference box running v1.20.1, 2026-10-01). A tag of
