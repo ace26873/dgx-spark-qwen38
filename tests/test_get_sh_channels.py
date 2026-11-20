@@ -234,6 +234,9 @@ def main() -> None:
         git("init", "-q", "--bare", "-b", "main", ".", cwd=bare)
         empty = os.path.join(base, "empty")
         git("clone", "-q", bare, empty, cwd=base)
+        # an identity of its own, as the other clones here: the CI's throwaway HOME has no git identity
+        for k, v in (("user.email", "t@t"), ("user.name", "t")):
+            git("config", k, v, cwd=empty)
         with open(os.path.join(empty, "install.sh"), "w") as f:
             f.write(STUB)
         os.chmod(os.path.join(empty, "install.sh"), 0o755)
