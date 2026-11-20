@@ -19,6 +19,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 INSTALL = REPO / "install.sh"
@@ -357,8 +358,12 @@ class TheDefaultIsTwo(unittest.TestCase):
         plugin_dir = self.home / ".config" / "opencode" / "plugins"
         if plugins:
             plugin_dir.mkdir(parents=True, exist_ok=True)
-            for name in plugins:
-                (plugin_dir / name).write_text(f"// the operator's {name}\n")
+            for entry in plugins:
+                # a bare name is the copy this repo delivers (extras/opencode/<name>); a
+                # (name, content) pair is a copy the operator edited by hand
+                name, content = (entry if isinstance(entry, tuple)
+                                 else (entry, (REPO / "extras" / "opencode" / entry).read_text()))
+                (plugin_dir / name).write_text(content)
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
                   f'REPO_DIR="{REPO}"\nCONFIG_DIR="{self.cfg}"\n'
                   f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{v1_sha or self.assets[PINNED][1]}"; OPENCODE_PIN="1"\n'
@@ -377,6 +382,8 @@ class TheDefaultIsTwo(unittest.TestCase):
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         self.plugins_after = (sorted(p.name for p in plugin_dir.iterdir())
                               if plugin_dir.is_dir() else None)
+        oc_dir = self.home / ".config" / "opencode"
+        self.kept_after = sorted(p.name for p in oc_dir.glob("*.kept-*")) if oc_dir.is_dir() else []
         return (r.returncode, r.stdout + r.stderr,
                 marker_file.read_text() if marker_file.exists() else None, calls)
 
@@ -454,8 +461,9 @@ class TheDefaultIsTwo(unittest.TestCase):
         self.assertEqual(marker.splitlines()[0], "1", "a failed crossing does not touch the marker")
 
     def test_migrating_to_2_swaps_the_auto_continue_plugin(self):
-        # the operator had the v1 plugin: the v2 port goes in, the v1 file comes out
-        # (OpenCode 2 does not run it: module.ts of 2.3.2 requires a default export)
+        # the operator had the v1 plugin, byte-for-byte the copy this repo delivers: the v2
+        # port goes in, the v1 file is removed (OpenCode 2 does not run it: module.ts of
+        # 2.3.2 requires a default export), and nothing is kept aside
         rc, out, marker, calls = self.run_home(brew_ver=PINNED, plugins=("auto-continue.js",))
         self.assertEqual(rc, 0, out)
         self.assertIn("CHOICE=2 SERVE=2 START=1", out)
@@ -463,6 +471,7 @@ class TheDefaultIsTwo(unittest.TestCase):
         v2 = (self.home / ".config" / "opencode" / "plugins" / "auto-continue-v2.js").read_text()
         self.assertEqual(v2, (REPO / "extras" / "opencode" / "auto-continue-v2.js").read_text())
         self.assertIn("auto-continue plugin:", out)
+        self.assertEqual(self.kept_after, [], "a copy identical to the delivered one is removed, not kept")
 
     def test_a_box_that_never_installed_a_plugin_gets_none(self):
         rc, out, marker, calls = self.run_home(brew_ver=PINNED)
@@ -471,6 +480,8 @@ class TheDefaultIsTwo(unittest.TestCase):
         self.assertNotIn("auto-continue plugin:", out)
 
     def test_going_back_to_1_restores_the_v1_plugin(self):
+        # the v2 plugin in place is the delivered copy: back on 1.x the v1 one goes in, the
+        # v2 file is removed (1.x does not run it), nothing kept aside
         rc, out, marker, calls = self.run_home(want="1", marker="2\n", brew_ver=self.V2,
                                                plugins=("auto-continue-v2.js",))
         self.assertEqual(rc, 0, out)
@@ -479,6 +490,60 @@ class TheDefaultIsTwo(unittest.TestCase):
         v1 = (self.home / ".config" / "opencode" / "plugins" / "auto-continue.js").read_text()
         self.assertEqual(v1, (REPO / "extras" / "opencode" / "auto-continue.js").read_text())
         self.assertIn("auto-continue plugin:", out)
+        self.assertEqual(self.kept_after, [], "a copy identical to the delivered one is removed, not kept")
+
+    def test_a_modified_v1_plugin_is_kept_aside_not_erased(self):
+        # the operator edited the copy they put in plugins/ (their own relaunch text): the
+        # crossing to 2 must not erase it. It is moved next to the plugins dir as
+        # auto-continue.js.kept-AAAAMMJJ, where no major loads it (2.3.2 scans only plugin/
+        # and plugins/ under the config root, plugin/source-directory.ts of v2.3.2; 1.19.6
+        # globs {plugin,plugins}/*.{ts,js} in it, config/plugin.ts of v1.19.6), and the
+        # NOTE names the kept path.
+        edited = "// my own relaunch text, not the file the repo delivers\n"
+        rc, out, marker, calls = self.run_home(brew_ver=PINNED,
+                                               plugins=(("auto-continue.js", edited),))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=2 START=1", out)
+        self.assertEqual(self.plugins_after, ["auto-continue-v2.js"], "the v1 file is out of plugins/")
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        kept = self.home / ".config" / "opencode" / f"auto-continue.js.kept-{today}"
+        self.assertTrue(kept.is_file(), f"the edited copy is kept as {kept.name}: {self.kept_after}")
+        self.assertEqual(kept.read_text(), edited, "the operator's text is untouched")
+        self.assertIn("NOTE:", out)
+        self.assertIn(str(kept), out, "the NOTE names the kept path")
+        self.assertIn("auto-continue plugin:", out)
+
+    def test_going_back_to_1_keeps_a_modified_v2_plugin_aside(self):
+        # same rule in the other direction: an edited v2 copy is kept as
+        # auto-continue-v2.js.kept-AAAAMMJJ when the box goes back to 1.x
+        edited = "// my v2 setup, edited by hand\n"
+        rc, out, marker, calls = self.run_home(want="1", marker="2\n", brew_ver=self.V2,
+                                               plugins=(("auto-continue-v2.js", edited),))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=1 SERVE=1", out)
+        self.assertEqual(self.plugins_after, ["auto-continue.js"])
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        kept = self.home / ".config" / "opencode" / f"auto-continue-v2.js.kept-{today}"
+        self.assertTrue(kept.is_file(), f"the edited v2 copy is kept as {kept.name}: {self.kept_after}")
+        self.assertEqual(kept.read_text(), edited, "the operator's text is untouched")
+        self.assertIn(str(kept), out, "the NOTE names the kept path")
+
+    def test_a_kept_copy_already_there_is_not_overwritten(self):
+        # an edited copy was already kept on an earlier update: the new one gets a suffix,
+        # the earlier kept copy is not touched
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        oc_dir = self.home / ".config" / "opencode"
+        oc_dir.mkdir(parents=True, exist_ok=True)
+        first = oc_dir / f"auto-continue.js.kept-{today}"
+        first.write_text("// kept on an earlier update\n")
+        edited = "// edited again on this update\n"
+        rc, out, marker, calls = self.run_home(brew_ver=PINNED,
+                                               plugins=(("auto-continue.js", edited),))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(first.read_text(), "// kept on an earlier update\n")
+        self.assertEqual(self.kept_after,
+                         [f"auto-continue.js.kept-{today}", f"auto-continue.js.kept-{today}.2"])
+        self.assertEqual((oc_dir / f"auto-continue.js.kept-{today}.2").read_text(), edited)
 
 
 class TheFailedCrossingServesWhatStands(unittest.TestCase):

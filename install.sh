@@ -2875,22 +2875,45 @@ fi
 # The auto-continue plugin follows the major when the operator installed one (this repo
 # never puts a plugin in by itself): OpenCode 2 does not run the v1 plugin (module.ts of
 # 2.3.2 requires a default export) and 1.x does not run the v2 one, so a crossing swaps
-# the file. Going back to 1.x is guarded by OC_WAS_2 like the config rollbacks above: a
-# box that never was in 2 has no v2 plugin of ours to take out.
+# the file. The file taken out is removed only when it is byte-for-byte the copy this repo
+# delivers (cmp -s against extras/opencode); a copy the operator edited is theirs: it is
+# moved next to the plugins dir as <name>.kept-AAAAMMJJ (never over an earlier kept copy),
+# where no major loads it (2.3.2 scans only plugin/ and plugins/ under the config root,
+# plugin/source-directory.ts of v2.3.2; 1.19.6 globs {plugin,plugins}/*.{ts,js} in it,
+# config/plugin.ts of v1.19.6), and a NOTE names the kept path. Going back to 1.x is
+# guarded by OC_WAS_2 like the config rollbacks above: a box that never was in 2 has no
+# v2 plugin of ours to take out.
 OC_PLUGIN_DIR="$HOME/.config/opencode/plugins"
+oc_plugin_take_out() {  # $1 the file to take out of plugins/, $2 the copy this repo delivers for its major
+  if cmp -s "$1" "$2"; then
+    rm -f "$1"
+    return 0
+  fi
+  local base stamp kept n
+  base="$(basename "$1")"
+  stamp="$(date -u +%Y%m%d)"
+  kept="$HOME/.config/opencode/$base.kept-$stamp"
+  n=1
+  while [ -e "$kept" ]; do n=$((n + 1)); kept="$HOME/.config/opencode/$base.kept-$stamp.$n"; done
+  if mv "$1" "$kept"; then
+    echo "NOTE: $1 was not the copy this repo delivers, so it was kept at $kept instead of removed (no major loads a file outside plugins/)"
+  else
+    echo "NOTE: could not move $1 out of the plugins dir; take it out by hand, the major now served does not run it"
+  fi
+}
 if [ "${OC_SERVE_MAJOR:-1}" = "2" ] && [ -f "$OC_PLUGIN_DIR/auto-continue.js" ]; then
   if install -m 644 "$REPO_DIR/extras/opencode/auto-continue-v2.js" "$OC_PLUGIN_DIR/auto-continue-v2.js"; then
-    rm -f "$OC_PLUGIN_DIR/auto-continue.js"
-    echo "auto-continue plugin: the OpenCode 2 port is in place ($OC_PLUGIN_DIR/auto-continue-v2.js), the 1.x one removed (2.x does not run it)"
+    oc_plugin_take_out "$OC_PLUGIN_DIR/auto-continue.js" "$REPO_DIR/extras/opencode/auto-continue.js"
+    echo "auto-continue plugin: the OpenCode 2 port is in place ($OC_PLUGIN_DIR/auto-continue-v2.js), the 1.x one out of the plugins dir (2.x does not run it)"
   else
-    echo "NOTE: could not install the OpenCode 2 auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue-v2.js $OC_PLUGIN_DIR/ && rm -f $OC_PLUGIN_DIR/auto-continue.js"
+    echo "NOTE: could not install the OpenCode 2 auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue-v2.js $OC_PLUGIN_DIR/ && take $OC_PLUGIN_DIR/auto-continue.js out"
   fi
 elif [ "${OC_SERVE_MAJOR:-1}" != "2" ] && [ "${OC_WAS_2:-0}" -eq 1 ] && [ -f "$OC_PLUGIN_DIR/auto-continue-v2.js" ]; then
   if install -m 644 "$REPO_DIR/extras/opencode/auto-continue.js" "$OC_PLUGIN_DIR/auto-continue.js"; then
-    rm -f "$OC_PLUGIN_DIR/auto-continue-v2.js"
-    echo "auto-continue plugin: back to the 1.x one ($OC_PLUGIN_DIR/auto-continue.js), the v2 one removed (1.x does not run it)"
+    oc_plugin_take_out "$OC_PLUGIN_DIR/auto-continue-v2.js" "$REPO_DIR/extras/opencode/auto-continue-v2.js"
+    echo "auto-continue plugin: back to the 1.x one ($OC_PLUGIN_DIR/auto-continue.js), the v2 one out of the plugins dir (1.x does not run it)"
   else
-    echo "NOTE: could not restore the 1.x auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue.js $OC_PLUGIN_DIR/ && rm -f $OC_PLUGIN_DIR/auto-continue-v2.js"
+    echo "NOTE: could not restore the 1.x auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue.js $OC_PLUGIN_DIR/ && take $OC_PLUGIN_DIR/auto-continue-v2.js out"
   fi
 fi
 # The rest of this run (the Agent tab's unit, the oc launcher) finds opencode on PATH, and
