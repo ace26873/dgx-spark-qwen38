@@ -14,7 +14,10 @@ erased, unit re-rendered, launcher rewritten, auto-continue plugin swapped, 1.x 
 update without the flag keeps the box on 1.x; `--opencode 2` stays accepted and writes `2`. A run
 whose download fails keeps serving the OpenCode already installed and writes nothing for the other
 major (no marker, no config key, no unit), so no mixed state is left behind; re-run `./install.sh`
-once GitHub is reachable to install the pin.
+once GitHub is reachable to install the pin. On a major crossing the auto-continue file taken out of
+`plugins/` is removed only when it is byte-for-byte the copy this repo delivers (`cmp -s` against
+`extras/opencode`); one the operator edited is moved to `~/.config/opencode/<name>.kept-AAAAMMJJ`,
+outside the plugins dir so no major loads it, and the install's NOTE names the kept path.
 
 - **What the v2 wiring is.** the Agent unit serves `opencode v2.3.2` on 127.0.0.1 only; its health
   probe reads `GET /api/info` (every other path answers the app's HTML page, issue #55704); its
