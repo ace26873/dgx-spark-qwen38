@@ -72,16 +72,20 @@ once GitHub is reachable to install the pin.
   to before (44 entries compared, empty diff), no banner; the box ended on 1.19.6, marker absent,
   the 27B stock.
 - **The tests.** the opencode v2 suites run green the way the CI runs them, each file on its own with
-  a throwaway HOME: `tests/test_install_opencode_pin.py` (51), `test_install_oc_artifact.py` (54),
-  `test_docs_facts.py` (17), `test_install_agent_v2.py` (9), `test_install_agent_keeps.py` (16),
+  a throwaway HOME: `tests/test_install_opencode_pin.py` (66), `test_install_oc_artifact.py` (54),
+  `test_docs_facts.py` (19), `test_install_agent_v2.py` (9), `test_install_agent_keeps.py` (16),
   `test_agent_auto_deny.py` (3), `test_uninstall_opencode.py` (8), `test_install_first_run_opencode.py`
   (5), `test_auto_continue_v2.py` (12), `test_oc_merge_keep_lower.py` (3), `test_oc_backups_kept_few.py`
   (2), `test_install_native_limits.py` (2), `test_ci_local.py` (14), `test_check_pins.py` (45), the
   scripts `test_oc_jsonc_edits.py`, `test_oc_fit_compaction.py`, `test_oc_merge_limits.py`, and in
   `dashboard/tests/` `test_agent_relay.py` (62), `test_agent_relay_session.py` (3),
-  `test_cockpit_agent_collector.py` (7), `test_cockpit_opencode_config.py` (3): 316 tests plus 3
-  scripts, 0 failure, 0 skipped (the test journal of 516ffddc). Each defect the review of
-  this branch found (D1 to D7) has a test that fails on the code before its fix, shown with its output
+  `test_cockpit_agent_collector.py` (8), `test_cockpit_opencode_config.py` (3): 334 tests plus 3
+  scripts, 0 failure. The full offline suite ran the way the CI runs it on the default change
+  (313 files, 5522 tests, 0 failure, 0 error, HOME untouched, no serving port contacted; the 30
+  static steps replayed one by one, 0 failure; journal ocv2-defaut-2f10aac1). Each defect the review
+  of this branch found (D1 to D7) has a test that fails on the code before its fix, shown with its
+  output, and each default-change commit (red first): 7 red on the choice/marker, 3 on the
+  migration, 2 on the marker readers, 4 on the docs
   in that journal; the suites that read this CHANGELOG were re-run on this release's tree, in the gate
   journal of this commit.
 
