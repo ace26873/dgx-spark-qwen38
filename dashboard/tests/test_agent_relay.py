@@ -281,8 +281,26 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
                     or not opencode_origin_ok(self.headers.get("Origin"), self.headers.get("Host"))):
                 return self._json({"_tag": "PtyForbiddenError"}, 403)
             return self._json({"ticket": "t"})
+        if path in ("/api/config", "/api/provider", "/api/model", "/api/credential"):
+            # the answer of a POST on a secret route carries the key too (blind review
+            # 2026-11-20, D5); enc=1 answers it gzipped, which the relay must refuse
+            if "enc=1" in (self.path.partition("?")[2] if "?" in self.path else ""):
+                import gzip
+                raw = gzip.compress(b'{"apiKey": "sk-live"}')
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            return self._json({"info": {"providers": {"local": {
+                "options": {"apiKey": "sk-live", "headers": {"Authorization": "Bearer sk-live"}}}}},
+                "apiKey": "sk-live"})
         self._json({"len": len(body), "sha256": hashlib.sha256(body).hexdigest(),
                     "ctype": self.headers.get("Content-Type")})
+
+    do_DELETE = do_PUT = do_PATCH = do_POST
 
     def websocket(self):
         if self.path.startswith("/pty/") and not opencode_origin_ok(self.headers.get("Origin"),
@@ -981,6 +999,48 @@ class TheRelayAsksForIdentity(unittest.TestCase):
             self.assertIn(b"scrub limit", body)
         finally:
             ar.SCRUB_LIMIT = was
+
+
+class TheScrubCoversEveryMethod(unittest.TestCase):
+    """A POST, PUT, PATCH or DELETE on a secret route is scrubbed exactly like a GET: a script
+    injected in the tab can post, and the answer of a POST is not less secret. A compressed
+    answer on such a route is refused, fail closed, whatever the method (blind review of
+    2026-11-20, D5)."""
+
+    def _req(self, port, method, path, data=b""):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.putrequest(method, path, skip_host=True)
+            conn.putheader("Host", "127.0.0.1")
+            conn.putheader("Cookie", "cockpit=good")
+            conn.putheader("Content-Length", str(len(data)))
+            conn.endheaders(data if data else None)
+            resp = conn.getresponse()
+            return resp.status, resp.read()
+        finally:
+            conn.close()
+
+    def test_a_post_on_a_secret_route_is_scrubbed(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        for method, path, data in (("POST", "/api/config", b"{}"),
+                                   ("POST", "/api/provider", b"{}"),
+                                   ("PUT", "/api/model", b"{}"),
+                                   ("DELETE", "/api/credential", b"")):
+            with self.subTest(method=method, path=path):
+                code, body = self._req(relay.server_port, method, path, data)
+                self.assertEqual(code, 200, body[:120])
+                self.assertNotIn(b"sk-live", body, "the answer of a non-GET is scrubbed too")
+                self.assertIn(b"***", body, "the shape is kept")
+
+    def test_a_lying_gzip_answer_to_a_post_is_refused(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        code, body = self._req(relay.server_port, "POST", "/api/config?enc=1", b"{}")
+        self.assertEqual(code, 502, body[:120])
+        self.assertIn(b"not relayed", body)
 
 
 class TheHealthProbeTrustsNothing(unittest.TestCase):

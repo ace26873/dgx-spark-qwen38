@@ -567,9 +567,12 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
             except (OSError, http.client.HTTPException) as e:
                 conn.close()
                 return self.refuse(502, f"agent server unreachable ({type(e).__name__}); is opencode-web.service running?")
-            scrub_it = self.command == "GET" and resp.status == 200 and is_secret_path(self.path)
+            # every method but HEAD (a HEAD carries no body to leak): a script injected in
+            # the tab can POST to a secret route, and the answer of a POST is not less secret
+            # (blind review of 2026-11-20, D5)
+            scrub_it = self.command != "HEAD" and resp.status == 200 and is_secret_path(self.path)
             if scrub_it:
-                # OpenCode 2 resolves {file:...} in the answers to these GETs: the key came
+                # OpenCode 2 resolves {file:...} in the answers to these routes: the key came
                 # back in clear from /api/config, /api/provider and /api/model on 2.3.0.
                 # Read that answer here, scrub it, and send the length of what we send.
                 ctype = (resp.getheader("Content-Type") or "").lower()
