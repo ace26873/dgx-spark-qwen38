@@ -1459,6 +1459,10 @@ if [ -n "$OPENCODE_MAJOR_WANT" ]; then
 elif [ -s "$CONFIG_DIR/opencode.major" ] && [ "$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || true)" = "2" ]; then
   OPENCODE_MAJOR=2
 fi
+# The helpers that write opencode's config read the same choice (oc-merge-limits.py
+# --compaction writes the v2 compaction block on a box that chose OpenCode 2), so the
+# shell exports it once here and every python3 call below inherits it.
+export OC_MAJOR="$OPENCODE_MAJOR"
 # Before anything is pulled or downloaded: this was refused at step 7, after the image,
 # the checkpoints and the engine's configs (found in review, 2026-09-24).
 if [ "$OPENCODE" -eq 1 ] && [ -n "$_ENV_OPENCODE_VERSION" ] && [ -z "$_ENV_OPENCODE_SHA256" ]; then
@@ -3276,8 +3280,19 @@ if os.environ.get("OC_LFM3_BOOT") == "1" and "lfm3" in providers:
 # it), which changes the history the engine cached, so the next turn recomputes
 # everything after the first cleared output (2026-10-13: 232 of 527 tool parts
 # cleared in a 410K-token session). Room is made by compaction instead.
+# OpenCode 2 reads its own shape there (schema config/compaction.ts of 2.3.2): keep.tokens
+# is what the v1 key mapped to (the legacy key still lands, deprecated), prune does not
+# exist in 2.x, and background (default true since 2.3.1) precomputes the summary while
+# the context nears the ceiling, reading the just-processed prefix from the prompt cache,
+# so the automatic compaction swaps it in at once instead of waiting for a summary. It is
+# pinned here because the v2 auto-continue port relies on the runner resuming after an
+# auto compaction with that swap, and a default that flips would only show up as a stall.
+if os.environ.get("OC_MAJOR") == "2":
+    compaction = {"keep": {"tokens": int(os.environ["OC_KEEP"])}, "background": True}
+else:
+    compaction = {"preserve_recent_tokens": int(os.environ["OC_KEEP"]), "prune": False}
 doc = {"$schema": "https://opencode.ai/config.json", "provider": providers,
-       "compaction": {"preserve_recent_tokens": int(os.environ["OC_KEEP"]), "prune": False},
+       "compaction": compaction,
        "model": default, "small_model": default}
 # Cohere's report (2026-10-26): the shell rules for its hosts, under a key of their own, as
 # oc-merge-limits.py --deny-permission gives them (OC_DENY). opencode merges this file over the
@@ -3324,8 +3339,17 @@ print(f"{'kept' if same else 'wrote'} {cfg_dir}/opencode.json (default {default}
       f"providers: {', '.join(providers) or 'none'})")
 PYEOF
 echo "opencode limits: context $OC_CTX, output $OC_OUT, port $OC_PORT"
-# opencode's threshold is limit.input - min(20,000, limit.output) (see oc-limits.sh)
-echo "  compaction fires at $((OC_CTX - (OC_OUT < 20000 ? OC_OUT : 20000))) tokens and keeps $OC_KEEP verbatim"
+if [ "${OPENCODE_MAJOR:-1}" = "2" ]; then
+  # OpenCode 2 keeps 15% of the window free before auto compaction, at least 16,000 tokens
+  # above a 32,000-token window (calculateCeiling, packages/core/src/session/compaction.ts
+  # of 2.3.2), and keeps OC_KEEP verbatim beside the summary (keep.tokens)
+  OC_BUF=$((OC_CTX * 15 / 100))
+  if [ "$OC_CTX" -ge 32000 ] && [ "$OC_BUF" -lt 16000 ]; then OC_BUF=16000; fi
+  echo "  compaction fires at $((OC_CTX - OC_BUF)) tokens and keeps $OC_KEEP verbatim (keep.tokens, background summary on)"
+else
+  # opencode's threshold is limit.input - min(20,000, limit.output) (see oc-limits.sh)
+  echo "  compaction fires at $((OC_CTX - (OC_OUT < 20000 ? OC_OUT : 20000))) tokens and keeps $OC_KEEP verbatim"
+fi
 OC_USER_CFG="$HOME/.config/opencode/opencode.json"
 # A box with no opencode config of its own gets this one. There is nothing to merge
 # into and nothing of the user's to keep, and nothing else points opencode at the file
@@ -3535,6 +3559,13 @@ elif [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
 # says (opencode loads OPENCODE_CONFIG after it). Without this, a config with no
 # provider for this box sent oc's prompts to opencode's own hosted model (2026-09-23).
 [ -f "$CONFIG_DIR/opencode.json" ] && export OPENCODE_CONFIG="\${OPENCODE_CONFIG:-$CONFIG_DIR/opencode.json}"
+# OpenCode 2 reads CLAUDE.md of every directory without AGENTS.md, and ~/.claude/CLAUDE.md
+# as the global fallback, into EVERY prompt (2.3.1; measured on 2.3.2 in a sandbox: both
+# files land in the system message of each request). On a box that is the owner's private
+# file leaving in every prompt, so the documented switch skips every CLAUDE.md (read at
+# server start, packages/cli/src/server-process.ts of 2.3.2; docs/instructions). "0" is not
+# truthy there, so setting it to 0 brings them back.
+export OPENCODE_DISABLE_CLAUDE_CODE_PROMPT="\${OPENCODE_DISABLE_CLAUDE_CODE_PROMPT:-1}"
 OPENCODE_BIN="\$(command -v opencode || true)"
 [ -n "\$OPENCODE_BIN" ] || OPENCODE_BIN="\$HOME/.opencode/bin/opencode"
 if [ ! -x "\$OPENCODE_BIN" ]; then
@@ -3566,13 +3597,6 @@ export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="\${OPENCODE_EXPERIMENTAL_OUTPUT_T
 # says (opencode loads OPENCODE_CONFIG after it). Without this, a config with no
 # provider for this box sent oc's prompts to opencode's own hosted model (2026-09-23).
 [ -f "$CONFIG_DIR/opencode.json" ] && export OPENCODE_CONFIG="\${OPENCODE_CONFIG:-$CONFIG_DIR/opencode.json}"
-# OpenCode 2 reads CLAUDE.md of every directory without AGENTS.md, and ~/.claude/CLAUDE.md
-# as the global fallback, into EVERY prompt (2.3.1; measured on 2.3.2 in a sandbox: both
-# files land in the system message of each request). On a box that is the owner's private
-# file leaving in every prompt, so the documented switch skips every CLAUDE.md (read at
-# server start, packages/cli/src/server-process.ts of 2.3.2; docs/instructions). "0" is not
-# truthy there, so setting it to 0 brings them back.
-export OPENCODE_DISABLE_CLAUDE_CODE_PROMPT="\${OPENCODE_DISABLE_CLAUDE_CODE_PROMPT:-1}"
 OPENCODE_BIN="\$(command -v opencode || true)"
 [ -n "\$OPENCODE_BIN" ] || OPENCODE_BIN="\$HOME/.opencode/bin/opencode"
 if [ ! -x "\$OPENCODE_BIN" ]; then

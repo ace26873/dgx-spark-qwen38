@@ -38,7 +38,8 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
              flocal_unit=False, flocal_boot=False, ornith_unit=False, ornith_boot=False, unsloth_unit=False,
              unsloth_boot=False, unsloth_slots="-c 524288 -np 2",
              unsloth_model="snapshots/" + "d" * 40 + "/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
-             unsloth_want=False, unsloth_handed="", lfm25_unit=False, lfm25_boot=False, lfm3_unit=False, lfm3_boot=False):
+             unsloth_want=False, unsloth_handed="", lfm25_unit=False, lfm25_boot=False, lfm3_unit=False, lfm3_boot=False,
+             major="1"):
     t = pathlib.Path(tempfile.mkdtemp(prefix="oc-art-"))
     kolibri = t / "qwen38-kolibri.service"
     if kolibri_unit:
@@ -96,6 +97,7 @@ def generate(lane, mode, unit_ctx=None, flash_unit=False, model="RadixArk/Qwen3.
               # (found by the CI, 2026-10-24)
               'MEM_CLASS=128\n'
               f'REPO_DIR="{REPO}"; CONFIG_DIR="{t}"; OC_PORT=30001; OC_CTX={ctx}; OC_OUT={out}\n'
+              f'OPENCODE_MAJOR={major}\n'
               'OC_LABEL=local; OPENCODE_PIN=1\n' + block())
     r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                        env={"PATH": "/usr/bin:/bin", "HOME": str(t)})
@@ -583,6 +585,34 @@ class TheGeneratedConfigCarriesTheShellRules(unittest.TestCase):
         d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), doc=True)
         self.assertEqual(d["permission"], {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny",
                                                      "*100.100.100.200*": "deny"}})
+
+
+class TheV2CompactionBlock(unittest.TestCase):
+    """On a box that chose OpenCode 2 (--opencode 2) the generated config carries the v2
+    compaction block: keep.tokens sized by the table, background pinned true (the 2.3.2
+    default; the precomputed summary is what lets the auto compaction swap in at once,
+    reading the cached prefix), and no v1 key (2.x maps preserve_recent_tokens as a
+    deprecated legacy and drops prune with a warning). The v1 block is unchanged."""
+
+    def test_major_2_writes_keep_tokens_and_background(self):
+        d = generate("27b", "1m", unit_ctx=1010000, flash_unit=True, pair=("551000", "160000"),
+                     doc=True, major="2")
+        self.assertEqual(d["compaction"], {"keep": {"tokens": 132000}, "background": True})
+
+    def test_major_2_sizes_keep_from_the_booted_lane(self):
+        d = generate("27b", "1m", unit_ctx=1010000, flash_unit=True, pair=("551000", "160000"),
+                     kolibri_unit=True, kolibri_boot=True, doc=True, major="2")
+        self.assertEqual(d["compaction"], {"keep": {"tokens": 46000}, "background": True})
+        self.assertEqual(d["model"], "kolibri/kolibri-1")
+
+    def test_major_1_keeps_the_v1_block(self):
+        d = generate("27b", "1m", unit_ctx=1010000, flash_unit=True, pair=("551000", "160000"),
+                     doc=True, major="1")
+        self.assertEqual(d["compaction"], {"preserve_recent_tokens": 132000, "prune": False})
+
+    def test_no_major_given_defaults_to_the_v1_block(self):
+        d = generate("27b", "1m", unit_ctx=1010000, flash_unit=True, pair=("551000", "160000"), doc=True)
+        self.assertEqual(d["compaction"], {"preserve_recent_tokens": 132000, "prune": False})
 
 
 if __name__ == "__main__":

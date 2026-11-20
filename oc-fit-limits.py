@@ -32,6 +32,19 @@ from pathlib import Path
 
 CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", Path.home() / ".config/qwen38"))
 REPO_DIR = Path(__file__).resolve().parent
+
+
+def _oc_major() -> str:
+    """The OpenCode this box serves (./install.sh --opencode 2 wrote the marker), so the
+    compaction merge writes the v2 block on such a box, as install.sh exports OC_MAJOR
+    for its own calls."""
+    try:
+        return (CONFIG_DIR / "opencode.major").read_text().splitlines()[0].strip() or "1"
+    except OSError:
+        return "1"
+
+
+OC_MERGE_ENV = {**os.environ, "OC_MAJOR": _oc_major()}
 # Same knob and default as the proxy's oversize guard, so one prompt that opencode
 # is willing to build is one prompt the proxy is willing to relay.
 USABLE = 1.0 - float(os.environ.get("OVERSIZE_MARGIN_FRAC", "0.08"))
@@ -345,7 +358,7 @@ def main(argv: list[str]) -> int:
         before = (int(target.stat().st_mtime), file_sha(target))
         out = subprocess.run([sys.executable, str(REPO_DIR / "oc-merge-limits.py"), str(target),
                               provider, served, str(context), str(output)],
-                             capture_output=True, text=True)
+                             capture_output=True, text=True, env=OC_MERGE_ENV)
         said = (out.stdout or out.stderr).strip()
         print(f"  {target}: {said.splitlines()[-1] if said else 'no output'}")
         if out.returncode not in (0, 3):
@@ -364,7 +377,7 @@ def main(argv: list[str]) -> int:
             lowered = lowered or not m or c < a or d < b or (c, d) == (a, b)
         if keep.isdigit() and int(keep) > 0:
             out = subprocess.run([sys.executable, str(REPO_DIR / "oc-merge-limits.py"), str(target),
-                                  "--compaction", keep], capture_output=True, text=True)
+                                  "--compaction", keep], capture_output=True, text=True, env=OC_MERGE_ENV)
             said = (out.stdout or out.stderr).strip()
             print(f"  {target}: {said.splitlines()[-1] if said else 'no output'}")
             if out.returncode != 0:

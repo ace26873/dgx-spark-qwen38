@@ -150,6 +150,57 @@ def main() -> None:
     assert m._verify_compaction(p, 50000) == ""
     assert "expected 7" in m._verify_compaction(p, 7)
 
+    # 6b. With OC_MAJOR=2 in the environment (install.sh exports the box's --opencode choice)
+    #     --compaction writes OpenCode 2's own block (schema config/compaction.ts of 2.3.2):
+    #     keep.tokens for the same number, background pinned true (the 2.3.2 default, whose
+    #     precomputed summary lets the auto compaction swap in at once from the cached
+    #     prefix), and the v1 keys taken out of an existing block (2.x maps
+    #     preserve_recent_tokens as a deprecated legacy and drops prune with a warning).
+    def compact2(path, keep):
+        r = subprocess.run([sys.executable, SCRIPT, path, "--compaction", str(keep)],
+                           capture_output=True, text=True, env=dict(os.environ, OC_MAJOR="2"))
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    p = write(tmp, wrap('{"context": 1, "input": 1, "output": 1}'))
+    rc, out = compact2(p, 50000)
+    assert rc == 0 and "keep.tokens=50000" in out, out
+    d = doc_of(p)
+    assert d["compaction"] == {"keep": {"tokens": 50000}, "background": True}, d.get("compaction")
+    assert "user comment kept" in open(p).read(), "the JSONC comment was dropped"
+    assert d["provider"]["other"]["models"]["x"]["limit"] == {"context": 1, "input": 1, "output": 1}
+    rc, out = compact2(p, 50000)
+    assert rc == 0 and "unchanged" in out, out
+    rc, out = compact2(p, 60000)
+    assert rc == 0 and doc_of(p)["compaction"]["keep"]["tokens"] == 60000, out
+
+    # a v1 block migrates: the legacy keys come out, the block's other keys stay
+    body = ('{\n  // mine\n  "compaction": {"auto": true, "preserve_recent_tokens": 9, "prune": true,'
+            ' "reserved": 5, "tail_turns": 2},\n'
+            '  "provider": {"qwen38": {"models": {"qwen3.8-27b": {"limit": '
+            '{"context": 1, "input": 1, "output": 1}}}}}\n}\n')
+    p = write(tmp, body)
+    rc, out = compact2(p, 50000)
+    assert rc == 0, out
+    d = doc_of(p)["compaction"]
+    assert d == {"auto": True, "keep": {"tokens": 50000}, "background": True}, d
+    assert "// mine" in open(p).read(), "the JSONC comment was dropped"
+    assert m._verify_compaction_v2(p, 50000) == ""
+    assert "expected 7" in m._verify_compaction_v2(p, 7)
+
+    # the v2 verifier also refuses a block without background or with a legacy key left
+    p = write(tmp, json.dumps({"compaction": {"keep": {"tokens": 50000}}}) + "\n")
+    assert "background" in m._verify_compaction_v2(p, 50000)
+    p = write(tmp, json.dumps({"compaction": {"keep": {"tokens": 50000}, "background": True,
+                                              "prune": False}}) + "\n")
+    assert "prune" in m._verify_compaction_v2(p, 50000)
+
+    # without OC_MAJOR the same file gets the v1 keys, not the v2 block
+    p = write(tmp, json.dumps({"compaction": {"keep": {"tokens": 50000}}}) + "\n")
+    rc, out = compact(p, 50000)
+    c = doc_of(p)["compaction"]
+    assert rc == 0 and c["preserve_recent_tokens"] == 50000 and c["prune"] is False, out
+    assert "background" not in c, "the v1 mode must not write the v2 key"
+
     # 7. --add-providers: the config a box's first install wrote gains the provider of a
     #    lane installed since, and nothing else in it moves. The 27B first and the flash
     #    lane later left the copy with no flashnext: the served model answers under any

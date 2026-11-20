@@ -102,7 +102,10 @@ PYCTX
     oc_def_keep=""
     [ -n "$oc_def_ctx" ] && oc_def_keep="$("$HERE/oc-limits.sh" --preserve "$oc_def_ctx" 2>/dev/null || true)"
     if [ -n "$oc_def_keep" ]; then
-      python3 "$HERE/oc-merge-limits.py" "$oc_json" --compaction "$oc_def_keep" \
+      # OC_MAJOR from the marker, as install.sh exports it: on a box that chose OpenCode 2
+      # the compaction block is written in the v2 shape (keep.tokens + background)
+      OC_MAJOR="$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || echo 1)" \
+        python3 "$HERE/oc-merge-limits.py" "$oc_json" --compaction "$oc_def_keep" \
         || echo "NOTE: could not size the compaction of $oc_json for the $oc_lane lane ($oc_def_keep tokens); set it yourself"
     fi
   done

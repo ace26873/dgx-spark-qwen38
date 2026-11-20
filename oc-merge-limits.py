@@ -2,7 +2,8 @@
 """Merge this repo's opencode limits into an EXISTING opencode.json.
 
 Usage: oc-merge-limits.py <target opencode.json> <provider> <model id> <context> <output> [--keep-lower]
-       oc-merge-limits.py <target opencode.json> --compaction <preserve_recent_tokens>
+       oc-merge-limits.py <target opencode.json> --compaction <keep tokens>   (v1 keys, or the v2
+         block when OC_MAJOR=2 in the environment: install.sh exports it for the box's choice)
        oc-merge-limits.py <target opencode.json> <provider> <model id> --add-variant <level>
        oc-merge-limits.py <target opencode.json> --autoupdate false|notify
        oc-merge-limits.py <target opencode.json> --deny-bash
@@ -42,6 +43,13 @@ recomputes everything after the first cleared output. Seen 2026-10-13 on a
 410K-token agent session: 232 of 527 tool parts cleared. Leaving stale tool
 output in place keeps the cached prefix whole; room is made by compaction
 instead.
+
+With OC_MAJOR=2 in the environment (install.sh exports the box's --opencode choice),
+--compaction writes OpenCode 2's own block instead (schema config/compaction.ts of
+2.3.2): `keep.tokens` for the same number, `background: true` pinned (the default
+since 2.3.1; the precomputed summary is what lets the auto compaction swap in at
+once, reading the cached prefix), and the v1 keys taken out of the block, since 2.x
+maps preserve_recent_tokens as a deprecated legacy and drops prune with a warning.
 
 --autoupdate writes the top-level "autoupdate" key: false, the JSON boolean (opencode's
 schema takes a boolean or "notify", not the string "false"), or "notify". install.sh
@@ -476,6 +484,85 @@ def merge_compaction(path: str, keep: int) -> int:
     if not _landed(path, saved, _verify_compaction(path, keep), "the compaction block"):
         return 1
     print(f"compaction: preserve_recent_tokens={keep}, prune=false (backup {saved})")
+    return 0
+
+
+# The v1 keys of the compaction block, as OpenCode 2 treats them (normalize.ts of 2.3.2):
+# preserve_recent_tokens and reserved are mapped to keep.tokens / buffer as deprecated
+# legacy, prune and tail_turns are dropped with a warning. A v2 write takes them out.
+COMPACTION_LEGACY = ("preserve_recent_tokens", "prune", "reserved", "tail_turns")
+
+
+def _major() -> str:
+    """The OpenCode major this box serves, from OC_MAJOR (install.sh exports its choice); 1
+    when unset, so a standalone call keeps the v1 keys."""
+    return os.environ.get("OC_MAJOR", "1")
+
+
+def compaction_v2_want(doc: dict, keep: int) -> dict:
+    """The document with OpenCode 2's compaction block: keep.tokens sized by the table, and
+    background pinned true (the 2.3.2 default, compaction.ts: `background: true`): the
+    precomputed summary is what lets the auto compaction swap in at once, reading the
+    just-processed prefix from the prompt cache. The v1 keys come out of the block."""
+    want = copy.deepcopy(doc)
+    cur = want.get("compaction") if isinstance(want.get("compaction"), dict) else {}
+    cur = {k: v for k, v in cur.items() if k not in COMPACTION_LEGACY}
+    cur["keep"] = {"tokens": keep}
+    cur["background"] = True
+    want["compaction"] = cur
+    return want
+
+
+def _verify_compaction_v2(path: str, keep: int) -> str:
+    """'' when the file on disk really declares the v2 compaction block."""
+    try:
+        doc = _reread(path)
+    except ValueError as e:
+        return str(e)
+    c = doc.get("compaction")
+    if not isinstance(c, dict):
+        return "compaction block missing"
+    if _dig(c, "keep", "tokens") != keep:
+        return f"keep.tokens is {_dig(c, 'keep', 'tokens')!r}, expected {keep}"
+    if c.get("background") is not True:
+        return f"background is {c.get('background')!r}, expected true"
+    left = [k for k in COMPACTION_LEGACY if k in c]
+    return "" if not left else f"v1 keys left in the block: {', '.join(left)}"
+
+
+def merge_compaction_v2(path: str, keep: int) -> int:
+    """Write OpenCode 2's compaction block (keep.tokens + background, v1 keys out), keeping
+    everything else byte for byte."""
+    opened = _open(path)
+    if opened is None:
+        return 1
+    text, doc = opened
+    want = compaction_v2_want(doc, keep)
+    if doc.get("compaction") == want["compaction"]:
+        print(f"compaction already keep.tokens={keep}, background=true: unchanged")
+        return 0
+    new_text = text
+    try:
+        cur = doc.get("compaction")
+        block = json.dumps({"keep": {"tokens": keep}, "background": True})
+        if isinstance(cur, dict):
+            for k in COMPACTION_LEGACY:
+                if k in cur:
+                    new_text = remove_member(new_text, ["compaction", k])
+            new_text = set_member(new_text, ["compaction"], "keep", json.dumps({"tokens": keep}))
+            new_text = set_member(new_text, ["compaction"], "background", "true")
+        else:
+            new_text = set_member(new_text, [], "compaction", block)
+    except ValueError as e:
+        print(f"{path}: refused, {e}; unchanged")
+        return 1
+    saved, bad = commit(path, new_text, want)
+    if bad:
+        print(f"{path}: refused, {bad}; unchanged.")
+        return 1
+    if not _landed(path, saved, _verify_compaction_v2(path, keep), "the v2 compaction block"):
+        return 1
+    print(f"compaction: keep.tokens={keep}, background=true, v1 keys out (backup {saved})")
     return 0
 
 
@@ -1070,6 +1157,8 @@ def remove_providers(path: str, key_file: str) -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[2] == "--compaction":
+        if _major() == "2":
+            return merge_compaction_v2(argv[1], int(argv[3]))
         return merge_compaction(argv[1], int(argv[3]))
     if len(argv) == 4 and argv[2] == "--autoupdate":
         if argv[3] not in AUTOUPDATE:
