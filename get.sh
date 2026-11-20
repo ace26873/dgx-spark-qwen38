@@ -139,12 +139,15 @@ main() {
       case "$(tr -d '[:space:]' < "$CHANNEL_FILE")" in edge) CHANNEL=edge ;; esac
     fi
   fi
-  # the choice is written before anything moves: a run that fails later has still kept it,
-  # which is what the one who made it asked for (and the file is one word, read above)
-  if [ ! -s "$CHANNEL_FILE" ] || [ "$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null)" != "$CHANNEL" ]; then
-    mkdir -p "$HOME/.config/qwen38" && printf '%s\n' "$CHANNEL" > "$CHANNEL_FILE" \
-      || echo "── NOTE: could not write the channel to $CHANNEL_FILE (this update still follows $CHANNEL)"
-  fi
+  # the choice is written only once the update has succeeded: a run that refuses (no
+  # release to be found, a clone it will not touch) leaves everything as it was, the
+  # channel file included, and "Nothing was touched" says true (review, 2026-11-20)
+  write_channel() {
+    if [ ! -s "$CHANNEL_FILE" ] || [ "$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null)" != "$CHANNEL" ]; then
+      mkdir -p "$HOME/.config/qwen38" && printf '%s\n' "$CHANNEL" > "$CHANNEL_FILE" \
+        || echo "── NOTE: could not write the channel to $CHANNEL_FILE (this update still follows $CHANNEL)"
+    fi
+  }
 
   git -C "$DIR" fetch -q origin main
   # The release tags too. A fetch of main alone brings none, and the cockpit's release check
@@ -159,12 +162,13 @@ main() {
   # release", the same answer the cockpit reads (published releases, prereleases excluded,
   # anonymous, no token); then the tags of the remote itself, which no API budget limits; then
   # what the fetch above already brought, for a box whose API call and ls-remote both fail.
-  TAG=""
+  TAG=""; TAG_KNOWN_PUBLISHED=""
   if [ "$CHANNEL" = stable ]; then
     if command -v curl >/dev/null 2>&1; then
       TAG=$(curl -fsSL --max-time 8 -H 'Accept: application/vnd.github+json' \
               https://api.github.com/repos/hasso5703/alzeo/releases/latest 2>/dev/null \
             | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9.]*\)".*/\1/p') || TAG=""
+      [ -n "$TAG" ] && TAG_KNOWN_PUBLISHED=1
     fi
     if [ -z "$TAG" ]; then
       TAG=$(git -C "$DIR" ls-remote --tags origin 2>/dev/null \
@@ -186,7 +190,14 @@ main() {
     fi
     TARGET_BRANCH=stable
     TARGET_REF="refs/tags/$TAG"
-    echo "── Channel: stable (the latest published release, $TAG)"
+    # the API's answer is a published release, GitHub itself says so; the fallbacks are the
+    # highest tag, which may be a tag pushed before its release exists (or never): the line
+    # says which one this is, never "published" for a tag nothing published (review, 2026-11-20)
+    if [ -n "$TAG_KNOWN_PUBLISHED" ]; then
+      echo "── Channel: stable (the latest published release, $TAG)"
+    else
+      echo "── Channel: stable (the highest tag, $TAG, which may not be a published release yet)"
+    fi
   else
     TARGET_BRANCH=main
     TARGET_REF=origin/main
@@ -357,6 +368,8 @@ main() {
   # and, unlike ff-only, immune to shallow-clone ancestry gaps.
   git -C "$DIR" reset -q --hard "$TARGET_REF"
   echo "── At: $(git -C "$DIR" log -1 --format='%h %s')"
+  # every refusal is past: the channel this run followed is the one the box keeps
+  write_channel
 
   cd "$DIR"
   # exec from a real file. stdin is still the pipe this script came through (read to

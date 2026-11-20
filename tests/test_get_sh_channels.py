@@ -157,6 +157,22 @@ def main() -> None:
         assert r.returncode == 0 and "INSTALL_RAN" in r.stdout, f"the ls-remote fallback failed: {r.stderr}"
         assert state(box, "rev-parse", "HEAD") == n2, "the fallback did not find the newest tag"
 
+        # 6b. A tag pushed but not published as a release (Hasan tags, the release comes
+        #     later): the API's answer still wins when it comes, and when it does not, the
+        #     fallback says what it took, the highest tag, not "the latest published release"
+        #     (M1 of the review, 2026-11-20).
+        git("tag", "v1.99.0", cwd=pub); git("push", "-q", "origin", "v1.99.0", cwd=pub)
+        r = run_get(box, curl_shim(base, "v1.57.0"))
+        assert r.returncode == 0, r.stderr
+        assert "the latest published release, v1.57.0" in r.stdout, r.stdout
+        assert state(box, "rev-parse", "HEAD") == n2, "the API's answer did not win over the higher tag"
+        r = run_get(box, curl_shim(base))
+        assert r.returncode == 0 and "INSTALL_RAN" in r.stdout, r.stderr
+        assert "the highest tag, v1.99.0, which may not be a published release yet" in r.stdout, r.stdout
+        assert "the latest published release" not in r.stdout, r.stdout
+        assert state(box, "rev-parse", "HEAD") == state(box, "rev-parse", "v1.99.0"), \
+            "the fallback did not take the highest tag"
+
         # 7. A channel file that says nothing get.sh knows: stable, the default.
         os.makedirs(os.path.dirname(channel_file), exist_ok=True)
         with open(channel_file, "w") as f:
@@ -205,10 +221,15 @@ def main() -> None:
         git("add", "-A", cwd=empty); git("commit", "-qm", "no release yet", cwd=empty)
         git("push", "-q", "origin", "main", cwd=empty)
         before = state(empty, "rev-parse", "HEAD")
+        # a refused run writes nothing anywhere, the channel file included (M2 of the
+        # review, 2026-11-20): the choice is recorded only once the update has succeeded
+        if os.path.exists(channel_file):
+            os.remove(channel_file)
         r = run_get(empty, curl_shim(base))
         assert r.returncode == 1, "a repo with no release updated anyway"
         assert "could not find the latest published release" in r.stderr, r.stderr
         assert "Nothing was touched" in r.stderr, r.stderr
+        assert not os.path.exists(channel_file), "a refused run wrote the channel file"
         assert state(empty, "rev-parse", "HEAD") == before, "the clone moved"
         assert state(empty, "symbolic-ref", "-q", "--short", "HEAD") == "main", "the clone left main"
         assert not state(empty, "branch", "--list", "stable"), "a stable branch was created"
