@@ -262,7 +262,8 @@ class TheSwitch(unittest.TestCase):
         (repo / "switch-model.sh").chmod(0o755)
         for f in ("install.sh", "lanes.sh", "boxmem.py", "ckpt-fetch.py", "install-lfm25.sh", "sglang-lane.sh", "vllm-lane.sh",
                   "qwen38-lfm25.service.template", "oc-limits.sh", "oc-lfm25.py", "oc-merge-limits.py",
-                  "oc-point-default.py", "pi-gen.py"):
+                  # the merger loads its sibling, the server matcher (e449833e, review 7)
+                  "oc-permissions.py", "oc-point-default.py", "pi-gen.py"):
             shutil.copy(REPO / f, repo / f)
         self.hf = self.t / "hf"
         # the unit an install put there: the 27B lane's image, this box's cache

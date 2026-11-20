@@ -53,7 +53,8 @@ class ClientsOnly(unittest.TestCase):
         for c in box.configs:
             c.write_text(json.dumps(base, indent=2) + "\n")
         # what the script runs beside it in this mode
-        for f in ("oc-limits.sh", "oc-merge-limits.py", "oc-point-default.py", gen, "pi-gen.py", "boxmem.py"):
+        # oc-permissions.py too: the merger loads its sibling, the server matcher (e449833e, review 7)
+        for f in ("oc-limits.sh", "oc-merge-limits.py", "oc-permissions.py", "oc-point-default.py", gen, "pi-gen.py", "boxmem.py"):
             (box.script.parent / f).write_text((REPO / f).read_text())
         (box.script.parent / "oc-limits.sh").chmod(0o755)
         box.target_unit = unit

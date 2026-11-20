@@ -259,7 +259,8 @@ class TheSwitch(unittest.TestCase):
         (repo / "switch-model.sh").chmod(0o755)
         for f in ("install.sh", "lanes.sh", "boxmem.py", "ckpt-fetch.py", "install-lfm3.sh", "vllm-lane.sh",
                   "qwen38-lfm3.service.template", "oc-limits.sh", "oc-lfm3.py", "oc-merge-limits.py",
-                  "oc-point-default.py", "pi-gen.py"):
+                  # the merger loads its sibling, the server matcher (e449833e, review 7)
+                  "oc-permissions.py", "oc-point-default.py", "pi-gen.py"):
             shutil.copy(REPO / f, repo / f)
         self.hf = self.t / "hf"
         self.unit = self.units / "qwen38-lfm3.service"
