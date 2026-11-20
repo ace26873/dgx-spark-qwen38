@@ -1,21 +1,87 @@
 # Changelog
 
-## Unreleased: OpenCode 2 becomes an opt-in choice (`--opencode 2`), pinned at 2.3.2, never the default
+## v1.57.0 (2026-11-20): opencode 2 becomes an opt-in choice (`--opencode 2`), pinned at 2.3.2, never the default
 
 `./install.sh --opencode 2` installs the pinned OpenCode **2.3.2** (GitHub's release asset
 `opencode-linux-arm64.tar.gz` with its `OPENCODE2_SHA256`, refused without its checksum like 1.x)
-beside the pinned 1.x, remembers the choice in `~/.config/qwen38/opencode.major`, and wires the
-Agent unit, the `oc` launcher and the generated config to the v2 grammar: the health probe reads
-`/api/info` (every other path answers the HTML page, issue #55704), the approvals ride
-`OPENCODE_CONFIG_CONTENT` (`OPENCODE_PERMISSION` is gone from the 2.x binary), the exfiltration
-denies ride the ordered `permissions` array with the server's own matcher (`oc-permissions.py`),
-and the Agent relay scrubs the key that `/api/config`, `/api/provider`, `/api/model` and
-`/api/credential` answer in clear. `./install.sh --opencode 1` goes back: it takes this repo's
-`permissions` array out of the global config (1.19 refuses to start while one holds it), erases
-the marker and reinstalls the pinned 1.x. A `./install.sh` without the flag changes nothing
-against 1.x. The 2.x facts were measured on 2.3.0 (2026-11-13 to 15,
-`~/qa-tools/opencode-v2-migration/reprise-20261114/MESURES.md`); the delta to 2.3.2 is
-re-measured before anything becomes a default.
+beside the pinned 1.x, remembers the choice in `~/.config/qwen38/opencode.major`, and wires the Agent
+unit, the `oc` launcher and the generated config to the v2 grammar. `./install.sh --opencode 1` goes
+back, and a `./install.sh` without the flag changes nothing against 1.x. Nothing ever defaults to
+2.x: a stray 2.x binary found on the PATH does not opt a box in, and a run whose download fails keeps
+serving the OpenCode already installed and writes nothing for the other major (no marker, no config
+key, no unit), so no mixed state is left behind; re-run `./install.sh --opencode <major>` once
+GitHub is reachable to install the pin.
+
+- **What the v2 wiring is.** the Agent unit serves `opencode v2.3.2` on 127.0.0.1 only; its health
+  probe reads `GET /api/info` (every other path answers the app's HTML page, issue #55704); its
+  approvals ride `OPENCODE_CONFIG_CONTENT` (`OPENCODE_PERMISSION` is gone from the 2.x binary); its
+  exfiltration denies ride the ordered `permissions` array with the server's own matcher
+  (`oc-permissions.py`); its log level is lower-case (`info`, 2.x refuses the capitals 1.x wants);
+  the generated config carries the v2 compaction block (`compaction.keep.tokens` plus `background`),
+  `policies` denying `provider.use` on the `opencode` provider, `share: "disabled"`,
+  `websearch: false` and `update: "disable"`; the auto-continue plugin is ported to the 2.x plugin
+  API (`extras/opencode/auto-continue-v2.js`). The `oc` launcher appends `--auto` after its arguments,
+  because 2.x's parser rejects a global flag before a subcommand (`opencode --auto run ...` prints
+  the help and exits 1 on 2.3.2); when no launcher was installed, the install summary tells
+  `OPENCODE_CONFIG=... opencode --auto`, which opens the TUI in auto mode (measured on 2.3.2 in a
+  sandbox: the status line reads "Build auto", against "Build" without the flag).
+- **What the v2 does not read into its prompts.** since 2.3.1, 2.x discovers the `CLAUDE.md` of
+  every directory without an `AGENTS.md`, and `~/.claude/CLAUDE.md` as the global fallback, into
+  every prompt; the v2 unit and the v2 `oc` launcher set `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1`, the
+  documented switch read at server start, which cuts that discovery only. The explicit
+  `instructions` entries of your own config are still applied, exactly as in 1.x: this repo never
+  writes or removes such an entry, it is your choice.
+- **The way back.** `./install.sh --opencode 1` takes this repo's `permissions` array out of the
+  global config (1.19 refuses to start while one holds it; an array that is not this repo's is left
+  alone and said), erases the marker, takes the v2 compaction keys (`keep`, `background`) out of both
+  configs, and reinstalls the pinned 1.x; a v2 plugin installed by hand goes too
+  (`rm -f ~/.config/opencode/plugins/auto-continue-v2.js`).
+- **The Agent relay and its cleanup.** on 2.x, `/api/config`, `/api/provider`, `/api/model` and
+  `/api/credential` answer the box's API key in clear; the relay scrubs every secret on every method
+  of those routes (a POST is scrubbed too), refuses what it cannot read as JSON (compressed,
+  oversized, cut) with a 502, classifies a path only after normalizing it (`/api//config`,
+  `/foo/../api/config`), answers 401 without the session cookie, and drops `accept-encoding` only on
+  those secret routes.
+- **Measured on 2.3.2.** the 2.x facts were first measured on 2.3.0 (2026-11-13 to 15,
+  `~/qa-tools/opencode-v2-migration/reprise-20261114/MESURES.md`); the delta to 2.3.2 was re-measured
+  in a sandbox before the pin moved (`~/qa-tools/opencode-v2/plan-20261120/sorties-232`).
+- **Proven on the reference box (2026-11-20, 09:05 to 09:14, rc=0,
+  `~/qa-tools/preuves/ocv2/preuve.log`).** `./install.sh --opencode 2` from the branch (38f0ad96, the
+  commit the journal names) ran rc=0 (09:05:47 to 09:07:20), 249 Mo received, the Hugging Face cache
+  +0 Mo (568.98 Go), opencode 2.3.2 in place with the marker at 2, the unit serving "opencode v2.3.2"
+  on 127.0.0.1:4096, loopback only, the 27B untouched (still revision
+  52d1adc5f38aa5ebf099c29ed7025ba34cfbb854 of RadixArk/Qwen3.8-27B-NVFP4). The relay on :30091
+  answered 401 without the cookie and `/api/info` 200 JSON version 2.3.2; seven GET routes answered
+  200 (`/` 9264 bytes, `/api/info` 159, `/api/session?limit=8&order=desc` 3977, `/api/config` 16006,
+  `/api/provider` 2293, `/api/model` 7904, `/api/credential` 11) with 0 occurrence of the API key in
+  each body; the Agent view read server.version = binary = pinned = 2.3.2, no banner, no JS error.
+  `opencode run` on the 27B through the proxy and through a capture relay both read 7351; across the
+  3 captured request bodies, the run directory's CLAUDE.md witness had 0 hit, the HOME phrases 106
+  hits (53 patterns) while the user's own config listed `~/.claude/CLAUDE.md` in `instructions`,
+  and 0 once those 2 entries were removed from a copy of that config. A 4-turn v2 session through
+  the relay took 5.8 s, 5.6 s, 3.5 s and 3.5 s per turn, the prefix-cache share of each prompt
+  0.9971, 0.9953, 0.9982 and 0.9955 (verdict `part_cache_tours_2a4` [0.9953, 0.9982, 0.9955]).
+  `./install.sh --opencode 1` ran rc=0 (09:09:10 to 09:10:38), 164 Mo received, cache +0 Mo
+  (568.98 Go), back on 1.19.6 with the marker gone and no v2 key left in either config, `compaction`
+  back to `{"preserve_recent_tokens": 135000, "prune": false}`, and the live client check answered
+  7351 (rc=0, 17 s). Reinstalling from the published clone (stable, tag v1.55.0) ran rc=0 (09:11:56
+  to 09:13:22), 1 Mo received, cache +0 Mo (568.98 Go), the sha256 of the units and configs identical
+  to before (44 entries compared, empty diff), no banner; the box ended on 1.19.6, marker absent,
+  the 27B stock.
+- **The tests.** the opencode v2 suites run green the way the CI runs them, each file on its own with
+  a throwaway HOME: `tests/test_install_opencode_pin.py` (51), `test_install_oc_artifact.py` (54),
+  `test_docs_facts.py` (17), `test_install_agent_v2.py` (9), `test_install_agent_keeps.py` (16),
+  `test_agent_auto_deny.py` (3), `test_uninstall_opencode.py` (8), `test_install_first_run_opencode.py`
+  (5), `test_auto_continue_v2.py` (12), `test_oc_merge_keep_lower.py` (3), `test_oc_backups_kept_few.py`
+  (2), `test_install_native_limits.py` (2), `test_ci_local.py` (14), `test_check_pins.py` (45), the
+  scripts `test_oc_jsonc_edits.py`, `test_oc_fit_compaction.py`, `test_oc_merge_limits.py`, and in
+  `dashboard/tests/` `test_agent_relay.py` (62), `test_agent_relay_session.py` (3),
+  `test_cockpit_agent_collector.py` (7), `test_cockpit_opencode_config.py` (3): 316 tests plus 3
+  scripts, 0 failure, 0 skipped (`~/qa-tools/logs/ocv2-v155-516ffddc.log`). Each defect the review of
+  this branch found (D1 to D7) has a test that fails on the code before its fix, shown with its output
+  in that journal; the suites that read this CHANGELOG were re-run on this release's tree, in the gate
+  journal of this commit.
+
 ## v1.55.0 (2026-11-20): the one command installs the stable channel, the latest published release, and --edge follows main
 
 Until now `curl -fsSL https://get.alzeo.ai | bash` reset every box to main's tip: a release when
