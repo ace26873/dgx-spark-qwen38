@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.57.0 (2026-11-20): opencode 2 becomes an opt-in choice (`--opencode 2`), pinned at 2.3.2, never the default
+## v1.56.0 (2026-11-20): opencode 2 becomes an opt-in choice (`--opencode 2`), pinned at 2.3.2, never the default
 
 `./install.sh --opencode 2` installs the pinned OpenCode **2.3.2** (GitHub's release asset
 `opencode-linux-arm64.tar.gz` with its `OPENCODE2_SHA256`, refused without its checksum like 1.x)
