@@ -135,11 +135,22 @@ class TheV2Panel(unittest.TestCase):
 class TheV1PanelStillWorks(unittest.TestCase):
     def test_the_1_x_branch_reads_its_own_route_and_names_its_own_pin(self):
         cp = load("panel_v1", UNIT_V1)
+        # the box chose 1.x (marker 1, ./install.sh --opencode 1): its panel names the 1.x pin
+        pathlib.Path(os.environ["COCKPIT_CONFIG_DIR"], "opencode.major").write_text("1\n")
         wire(cp, {"healthy": True, "version": PIN_V1}, {"/config": {"permission": {"*": "allow"}}})
         out = cp.collect_agent()
         self.assertEqual(out["auto_live"], True)
         self.assertIsNone(out.get("guard_ok"), "the v2 guard check is not done on 1.x")
         self.assertEqual(out["pinned"], PIN_V1)
+
+    def test_a_1_x_server_on_a_box_with_no_marker_is_told_the_default_2_x_pin(self):
+        # Since v1.56.0 a plain ./install.sh brings OpenCode 2 (decision 1546), so a box with
+        # no marker yet (installed before v1.56.0) is told the 2.x pin beside its 1.x server:
+        # the Agent tab says ./install.sh brings it in line, which now means moving to 2.
+        cp = load("panel_v1_nomarker", UNIT_V1)
+        wire(cp, {"healthy": True, "version": PIN_V1}, {"/config": {"permission": {"*": "allow"}}})
+        out = cp.collect_agent()
+        self.assertEqual(out["pinned"], PIN_V2)
 
     def test_the_version_line_is_read_as_opencode_answers_it(self):
         # 2.x prints "opencode v2.3.0" where 1.x prints the number alone (measured F2): compared raw,

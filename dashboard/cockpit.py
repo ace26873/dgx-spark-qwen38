@@ -2550,17 +2550,19 @@ _OC_PIN_CACHE: dict = {}
 
 def opencode_pinned(binary_version: str | None = None) -> str | None:
     """The opencode version install.sh pins, of the OpenCode this box runs: 1.x is pinned
-    by OPENCODE_VERSION, the --opencode 2 choice by OPENCODE2_VERSION (both are GitHub
-    release assets, digested the same way). The binary answers when the panel can see it;
-    the choice marker from install.sh answers otherwise; 1.x remains the word when neither
-    speaks. The page and the installer must never name two versions of the same thing."""
+    by OPENCODE_VERSION, OpenCode 2 by OPENCODE2_VERSION (both are GitHub release assets,
+    digested the same way). The binary answers when the panel can see it; the choice marker
+    from install.sh answers otherwise ("1" or "2" since v1.56.0); when neither speaks, the
+    default pin is the 2.x one, because since v1.56.0 a plain ./install.sh installs it
+    (decision 1546). The page and the installer must never name two versions of the same
+    thing."""
     major = "2" if (binary_version or "").split(".")[0] == "2" else None
     if major is None:
         try:
             first = (CONFIG_DIR / "opencode.major").read_text().splitlines()[0].strip()
-            major = "2" if first == "2" else "1"
+            major = first if first in ("1", "2") else "2"
         except (OSError, IndexError):
-            major = "1"
+            major = "2"
     var = "OPENCODE2_VERSION" if major == "2" else "OPENCODE_VERSION"
     path = REPO_DIR / "install.sh"
     try:

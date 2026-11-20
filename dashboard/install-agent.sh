@@ -89,19 +89,21 @@ OC_VERSION="$("$OPENCODE_BIN" --version 2>/dev/null || true)"; OC_VERSION="${OC_
 OC_MAJOR="$(printf '%s' "$OC_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d. -f1 || true)"
 # OpenCode 2 speaks the tab's language now (the relay probes /api/info, reads the ordered
 # "permissions" and scrubs the answers that resolve {file:...} keys, measured on 2.3.0 the
-# 2026-11-14) - but only on a box that chose it: ./install.sh --opencode 2 hands
-# OPENCODE_MAJOR=2 down here. A stray 2.x found on the PATH (Homebrew Core's formula is
-# one) is still refused before anything renders, so the installed unit keeps the opencode
-# it runs (decision 455, 2026-10-22).
+# 2026-11-14) - but only on a box that serves it: since v1.56.0 install.sh hands
+# OPENCODE_MAJOR=2 down on any box it moved to the default (decision 1546). A stray 2.x
+# found on the PATH of a box whose marker says 1 (Homebrew Core's formula is one) is still
+# refused before anything renders, so the installed unit keeps the opencode it runs
+# (decision 455, 2026-10-22).
 # The box's own choice, read from its marker when ./install.sh did not pass it down: a standalone
 # re-run (the retry hint, docs/cockpit.md) must render the profile this box actually serves
-# (independent review of the v2 migration, finding 4).
+# (independent review of the v2 migration, finding 4). No marker means a box a pre-v1.56.0
+# release installed, still serving 1.x: the fallback stays 1 there.
 OPENCODE_MAJOR="${OPENCODE_MAJOR:-$(head -1 "$HOME/.config/qwen38/opencode.major" 2>/dev/null || true)}"
 OPENCODE_MAJOR="${OPENCODE_MAJOR:-1}"
 OC_PROFILE=1
 if [ -n "$OC_MAJOR" ] && [ "$OC_MAJOR" -ge 2 ]; then
   if [ "${OPENCODE_MAJOR:-1}" != "2" ]; then
-    die "$OPENCODE_BIN is opencode ${OC_VERSION##* }, OpenCode 2, which this box did not choose: run ./install.sh --opencode 2 (it serves it under the Agent view's own guards), or put the opencode 1.x this repo pins first on your PATH (./install.sh installs it in ~/.opencode/bin), or set OPENCODE_BIN to it (docs/opencode.md)."
+    die "$OPENCODE_BIN is opencode ${OC_VERSION##* }, OpenCode 2, which this box did not choose: run ./install.sh --opencode 2 (since v1.56.0 a plain ./install.sh serves OpenCode 2 too, it is the default), or put the opencode 1.x this repo pins first on your PATH (./install.sh --opencode 1 installs it in ~/.opencode/bin), or set OPENCODE_BIN to it (docs/opencode.md)."
   fi
   OC_PROFILE=2
 fi

@@ -79,6 +79,11 @@ def pinned_default() -> str:
     return re.search(r'^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
 
 
+def pinned2_default() -> str:
+    import re
+    return re.search(r'^OPENCODE2_VERSION="\$\{OPENCODE2_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
+
+
 class TheOpencodePin(unittest.TestCase):
     def setUp(self):
         self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-pin-"))
@@ -803,6 +808,9 @@ class TheCockpitNamesThePin(Scratch, unittest.TestCase):
     and reads that version out of install.sh, so the two can never name different ones."""
 
     def test_the_cockpit_reads_the_installers_pin(self):
+        # Since v1.56.0 (decision 1546) the pin a box with no marker is told is the 2.x one,
+        # because that is what a plain ./install.sh installs by default; a box whose marker
+        # says 1 is told the 1.x pin, so its Agent tab does not nag it to move.
         code = ("import importlib.util, os, sys\n"
                 "t = sys.argv[2]; open(t + '/api-key', 'w').write('k')\n"
                 "os.environ.update(COCKPIT_DRY_RUN='1', COCKPIT_CONFIG_DIR=t, COCKPIT_PORT='0',\n"
@@ -814,7 +822,13 @@ class TheCockpitNamesThePin(Scratch, unittest.TestCase):
         cfg, home = self.scratch("oc-ck-cfg-"), self.scratch("oc-ck-")
         r = subprocess.run(["python3", "-c", code, str(REPO), cfg], capture_output=True, text=True,
                            timeout=60, env={**os.environ, "HOME": home})
-        self.assertEqual(r.stdout.strip().splitlines()[-1], pinned_default(), r.stderr[-400:])
+        self.assertEqual(r.stdout.strip().splitlines()[-1], pinned2_default(),
+                         "no marker: the default pin since v1.56.0 " + r.stderr[-400:])
+        for marker, want in (("1\n", pinned_default()), ("2\n", pinned2_default())):
+            (pathlib.Path(cfg) / "opencode.major").write_text(marker)
+            r = subprocess.run(["python3", "-c", code, str(REPO), cfg], capture_output=True, text=True,
+                               timeout=60, env={**os.environ, "HOME": home})
+            self.assertEqual(r.stdout.strip().splitlines()[-1], want, f"marker {marker!r} " + r.stderr[-400:])
 
     def test_the_agent_tab_says_when_it_serves_another_version(self):
         js = (REPO / "dashboard" / "static" / "js" / "agent.js").read_text()
@@ -1011,6 +1025,11 @@ class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
         # the config directory comes from here and goes with the test: made inside a child
         # that has no TMPDIR, it was left in /tmp at every run (2026-10-03)
         cfg, home = self.scratch("oc-none-cfg-"), self.scratch("oc-none-")
+        r = subprocess.run(["python3", "-c", code, str(REPO), cfg], capture_output=True, text=True,
+                           timeout=60, env={"HOME": home, "PATH": "/usr/bin:/bin"})
+        # no marker: the pin a plain ./install.sh installs is the 2.x one since v1.56.0
+        self.assertEqual(r.stdout.strip().splitlines()[-1], f"False None {pinned2_default()}", r.stderr[-400:])
+        (pathlib.Path(cfg) / "opencode.major").write_text("1\n")
         r = subprocess.run(["python3", "-c", code, str(REPO), cfg], capture_output=True, text=True,
                            timeout=60, env={"HOME": home, "PATH": "/usr/bin:/bin"})
         self.assertEqual(r.stdout.strip().splitlines()[-1], f"False None {pinned_default()}", r.stderr[-400:])
