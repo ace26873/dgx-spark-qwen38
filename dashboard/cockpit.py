@@ -132,16 +132,19 @@ def release_state():
            "clone": clone, "behind_clone": bool(lag)}
     if lag:
         out["behind_clone_why"] = lag
-        # get.sh updates a clone on main with no commit of its own past origin/main, and refuses any other ("not
-        # 'main'", "local commits not on origin/main"): the banner that asks for the update gave get.sh to a box
-        # installed from a worktree that holds commits of its own, which it refused (review of v1.48.0, 2026-11-13).
-        # Such a clone is given its own installer. Read only while a banner shows, as git's other reads here. get.sh
+        # get.sh updates a clone on its channel's branch (main or stable) with no commit of its own
+        # past origin/main, and refuses any other ("not 'main' or 'stable'", "local commits not on
+        # origin/main"): the banner that asks for the update gave get.sh to a box installed from a
+        # worktree that holds commits of its own, which it refused (review of v1.48.0, 2026-11-13).
+        # A stable clone sits at a published tag, an ancestor of origin/main, so the count past
+        # origin/main stays the one read (decision 1529, 2026-11-19). Such a clone is given its own
+        # installer. Read only while a banner shows, as git's other reads here. get.sh
         # also refuses a clone with a tracked file modified ("modified tracked files"; untracked ones it keeps), which
         # its own installer installs as it is (independent review of v1.48.1).
         branch = run(["git", "-C", str(REPO_DIR), "symbolic-ref", "-q", "--short", "HEAD"]).strip()
         ahead = run(["git", "-C", str(REPO_DIR), "rev-list", "--count", "origin/main..HEAD"]).strip()
         edited = run(["git", "-C", str(REPO_DIR), "status", "--porcelain", "--untracked-files=no"]).strip()
-        if head and (branch != "main" or (ahead.isdigit() and int(ahead) > 0) or edited):
+        if head and (branch not in ("main", "stable") or (ahead.isdigit() and int(ahead) > 0) or edited):
             out["clone_local"] = True
     # the same release on both sides said nothing of what moved ("the services run v1.40.4, the clone
     # is v1.40.4", Hasan's capture, 2026-10-29): the two commits, and the clone's past the recorded one
@@ -161,6 +164,18 @@ def release_state():
             if log and count.isdigit():
                 out["commits"], out["commits_count"] = [ln[:160] for ln in log], int(count)
     return out
+
+
+def channel():
+    """The update channel this box follows (get.sh, decision 1529): stable, the latest published
+    release, or edge, main. The file is get.sh's own (~/.config/qwen38/channel); anything it
+    cannot read or does not recognize is stable, which is also the default when it never wrote
+    one. Read at each config build: a switch of channel is reflected without a restart."""
+    try:
+        c = (CONFIG_DIR / "channel").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "stable"
+    return c if c in ("stable", "edge") else "stable"
 
 
 def installed_release():
@@ -4185,6 +4200,10 @@ PERIODS = {name: period for period, cols in TIERS for name in cols}
 STATE["config"] = {"data": {"usable_frac": USABLE_FRAC, "version": VERSION, "dry_run": DRY_RUN,
                             "repo_dir": str(REPO_DIR), "periods": PERIODS,
                             "agent_port": AGENT_PORT,
+                            # the channel this box's updates follow (get.sh, decision 1529):
+                            # stable, the latest published release, or edge, main. The page
+                            # says which one this box is on and how to switch
+                            "channel": channel(),
                             # the page says what happens to a wedged engine, and on a default
                             # install that is nothing: it promised the belt's restart regardless
                             "autoheal": AUTOHEAL, "autoheal_grace_s": AUTOHEAL_GRACE,

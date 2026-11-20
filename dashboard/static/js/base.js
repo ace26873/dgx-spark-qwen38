@@ -523,8 +523,9 @@ function updateCmd(cfg){
   return (c.terminal_only || {}).update
     || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash`;
 }
-// The installer of this very clone, for one get.sh refuses to update: off main, or with commits of its own past
-// origin/main (a worktree a developer installs from; cockpit.py, release_state's clone_local)
+// The installer of this very clone, for one get.sh refuses to update: off its channel's branch
+// (main or stable), or with commits of its own past origin/main (a worktree a developer installs
+// from; cockpit.py, release_state's clone_local)
 function localInstallCmd(cfg){
   const c = cfg || {};
   return (c.terminal_only || {}).update_stack || `cd ${c.repo_dir || '~/dgx-spark-qwen38'} && ./install.sh`;

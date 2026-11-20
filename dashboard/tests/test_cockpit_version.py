@@ -207,13 +207,16 @@ class TheInstalledRelease(unittest.TestCase):
         self.assertNotIn("commits_count", out)
 
     def test_a_clone_get_sh_refuses_says_so(self):
-        # get.sh updates a clone on main with no commit of its own past origin/main, and refuses any other (a worktree a
-        # developer installs from): the banner that asks for the update gave such a clone get.sh all the same (review
+        # get.sh updates a clone on its channel's branch (main, or stable at a published tag, which
+        # no commit past origin/main precedes: decision 1529, 2026-11-19) with no commit of its own
+        # past origin/main, and refuses any other (a worktree a developer installs from): the
+        # banner that asks for the update gave such a clone get.sh all the same (review
         # of v1.48.0, 2026-11-13). Its branch and its commits past origin/main, read from git when a banner shows
         real = self.cp.run
         self.addCleanup(setattr, self.cp, "run", real)
         # and a tracked file modified, which get.sh refuses too (independent review of v1.48.1)
-        for branch, ahead, edited, local in (("main\n", "0\n", "", False), ("main\n", "3\n", "", True),
+        for branch, ahead, edited, local in (("main\n", "0\n", "", False), ("stable\n", "0\n", "", False),
+                                             ("main\n", "3\n", "", True), ("stable\n", "2\n", "", True),
                                              ("fix/v1481\n", "0\n", "", True), ("main\n", "0\n", " M install.sh\n", True),
                                              ("", "0\n", "", True)):          # "" : a detached HEAD, which symbolic-ref names not
             with self.subTest(branch=branch, ahead=ahead, edited=edited):
@@ -240,6 +243,18 @@ class TheInstalledRelease(unittest.TestCase):
                 argvs.clear()
                 self.assertNotIn("clone_local", self.update())
                 self.assertEqual([a for a in argvs if "rev-parse" not in a], [])
+
+    def test_the_channel_is_stable_unless_the_file_says_edge(self):
+        # get.sh keeps the choice in ~/.config/qwen38/channel (decision 1529): stable, the latest
+        # published release, unless the file says edge; anything unreadable or unknown is stable,
+        # which is also what a box that never chose follows
+        self.assertEqual(self.cp.channel(), "stable")
+        (self.tmp / "channel").write_text("edge\n")
+        self.assertEqual(self.cp.channel(), "edge")
+        (self.tmp / "channel").write_text("nonsense\n")
+        self.assertEqual(self.cp.channel(), "stable")
+        (self.tmp / "channel").unlink()
+        self.assertEqual(self.cp.channel(), "stable")
 
     def test_a_recorded_commit_that_is_no_string_never_fails_the_panel(self):
         # load_record checks the schema and the choices, not the commit: a hand edit that leaves a number there
