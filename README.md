@@ -19,6 +19,10 @@ uses, and run `./install.sh` there: that is all the one-liner does ([Quickstart]
 get.alzeo.ai is only a redirect to get.sh on GitHub: to trust GitHub alone, run the same file from
 there with `curl -fsSL https://raw.githubusercontent.com/hasso5703/alzeo/main/get.sh | bash`.
 
+The same command installs and updates, on the **stable channel**: the latest published release,
+nothing newer. To follow main instead, say so once and the box keeps the choice:
+`curl -fsSL https://get.alzeo.ai | bash -s -- --edge` (back with `--stable`).
+
 Alzeo was named dgx-spark-qwen38 until 2026-11-01. A box installed before updates as it always did,
 its folder and services keep their names, and every old address of the repository leads here.
 

@@ -136,8 +136,12 @@ cd ~/dgx-spark-qwen38 && curl -fsSL https://raw.githubusercontent.com/hasso5703/
 ```
 
 The command the cockpit gives when a newer release is out. The README's `curl -fsSL
-https://get.alzeo.ai | bash` runs the same file. Before it touches the clone, get.sh checks that the
-folder is a clone of this repository, on main, with no modified tracked file and no local commit,
+https://get.alzeo.ai | bash` runs the same file. It installs the **stable channel**: the latest
+published release, found from GitHub's release API, then the remote's tags, then the tags the
+update itself fetched. To follow main instead, `bash -s -- --edge` once (back with `--stable`);
+the choice is kept in `~/.config/qwen38/channel`. Before it touches the clone, get.sh checks that the
+folder is a clone of this repository, on `main` or `stable` (its channel's branch, reset to the
+release on each update), with no modified tracked file and no local commit,
 and says how to go on when one is not. It fetches main and the release tags, then runs install.sh.
 A `git pull` skips those checks.
 
