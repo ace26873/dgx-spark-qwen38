@@ -105,7 +105,10 @@ class ABoxBootingAnotherLaneGetsTheAgentTab(unittest.TestCase):
     its next boot (the reference box on the FP4-Local lane, 2026-10-22, where a new pin's reason
     was the Bun under opencode). That branch runs it now, after the cockpit, as step 10 does."""
     GUARD = '[ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then\n'
-    AGENT = '"$REPO_DIR/dashboard/install-agent.sh" \\\n'
+    # the call carries the major that stands after step 7 as an environment prefix (the v2
+    # migration passes it; since a failed major crossing it is OC_SERVE_MAJOR, so the unit is
+    # never rendered for the major that did not come down), at both sites alike
+    AGENT = 'OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh" \\\n'
     TEXT = SCRIPTS["dashboard/install-agent.sh"]
 
     def test_its_branch_runs_the_agent_installer_after_the_cockpit_as_step_10_does(self):
