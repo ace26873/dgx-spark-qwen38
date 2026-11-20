@@ -45,9 +45,16 @@ the **stable channel**, and main becomes a choice.
   fails on the code before it: the suffixed tag was truncated and another release installed, an
   offline run died with git's raw error (rc 128), the shallow refusal said nothing of
   `--unshallow`, and a move back printed only "At: <hash>". The older get.sh suites run on the
-  edge channel, which is the old behavior, and the CI runs the new suite on every push. Proofs
-  on a real box (the migration, the cockpit's banners, the Update button, `--edge` and
-  `--stable` against the real API) come with this release's checks.
+  edge channel, which is the old behavior, and the CI runs the new suite on every push.
+  Proven on the reference box (2026-11-20): the real GitHub API's latest release is read whole
+  (`v1.54.0`); with the box's own clone pointed at a local origin carrying the tags v1.54.0 and
+  v1.55.0, and a curl shim for the API call, this get.sh moved the box from main to the stable
+  branch at v1.55.0 as the one command does (12 MB received, the Hugging Face cache unchanged, the
+  27B not restarted, the cockpit saying 1.55.0 and the stable channel), then followed `--edge` to
+  main and `--stable` back to the tag, the page saying each channel; the box was then put back on
+  main with its units and configs as before and no banner on the cockpit's five views. Not proven
+  on the box: the cockpit's Update button, and the real API answering a release past v1.54.0,
+  which only this release's own publication can show.
 
 ## v1.54.0 (2026-11-20): the cockpit gets a Transcription tab, a sign out and a Traffic view that says what the proxy never saw, the 27B lane gains DaisyRose 27B as a sixth target, opencode moves to 1.19.6, and a local CI run measures what the runner's does
 
