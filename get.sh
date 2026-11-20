@@ -9,6 +9,8 @@
 # prints the cockpit URL when it is done.
 # Pass install.sh options after `bash -s --`, e.g.:
 #   curl -fsSL https://get.alzeo.ai | bash -s -- --no-service
+# The channel: stable by default (the latest published release), --edge to follow main:
+#   curl -fsSL https://get.alzeo.ai | bash -s -- --edge
 # Env overrides pass through (PORT=, HF_CACHE=, DIR= for a custom clone location).
 # Everything is wrapped in main() so nothing runs on a partial download.
 set -euo pipefail
@@ -62,6 +64,13 @@ main() {
     esac
     return 1
   }
+  # The highest vX.Y.Z of what it reads, numbers compared left to right: sort -V is a GNU
+  # extension the BSD sort of a mac does not have, and plain sort reads v1.10 below v1.9.
+  highest_tag() {
+    awk '$0 ~ /^v[0-9]+\.[0-9]+(\.[0-9]+)?$/ { split(substr($0, 2), p, ".")
+         n = p[1] * 1000000 + p[2] * 1000 + p[3]
+         if (t == "" || n > m) { m = n; t = $0 } } END { print t }'
+  }
   command -v git >/dev/null || { echo "ERROR: git is required (stock on DGX OS)." >&2; exit 1; }
 
   # Case 1: running from inside an existing clone of this repo (any path) -> use it.
@@ -108,6 +117,35 @@ main() {
   fi
 
   echo "── Repo: $DIR"
+
+  # ── The channel: stable (the latest published release) by default, edge (main) opted into ──
+  # --stable and --edge are consumed here (never passed to install.sh) and the choice is kept in
+  # ~/.config/qwen38/channel: a file of the config dir, which no reset of the clone touches (a
+  # tracked file of the clone would be reset over, an untracked one copied aside by keep_aside).
+  # No file yet: stable, which is also what a box installed before this channel exists migrates
+  # to at its next update, from main, without downloading anything the tags do not already need.
+  CHANNEL_FILE="$HOME/.config/qwen38/channel"
+  CHANNEL=""; ARGS=()
+  for a in "$@"; do
+    case "$a" in
+      --stable) CHANNEL=stable ;;
+      --edge)   CHANNEL=edge ;;
+      *) ARGS+=("$a") ;;
+    esac
+  done
+  if [ -z "$CHANNEL" ]; then
+    CHANNEL=stable
+    if [ -r "$CHANNEL_FILE" ]; then
+      case "$(tr -d '[:space:]' < "$CHANNEL_FILE")" in edge) CHANNEL=edge ;; esac
+    fi
+  fi
+  # the choice is written before anything moves: a run that fails later has still kept it,
+  # which is what the one who made it asked for (and the file is one word, read above)
+  if [ ! -s "$CHANNEL_FILE" ] || [ "$(tr -d '[:space:]' < "$CHANNEL_FILE" 2>/dev/null)" != "$CHANNEL" ]; then
+    mkdir -p "$HOME/.config/qwen38" && printf '%s\n' "$CHANNEL" > "$CHANNEL_FILE" \
+      || echo "── NOTE: could not write the channel to $CHANNEL_FILE (this update still follows $CHANNEL)"
+  fi
+
   git -C "$DIR" fetch -q origin main
   # The release tags too. A fetch of main alone brings none, and the cockpit's release check
   # and `git describe` read them: a box updated by this command kept naming the release it
@@ -116,13 +154,57 @@ main() {
   git -C "$DIR" fetch -q --tags origin 2>/dev/null \
     || echo "── NOTE: the release tags did not all come (a tag of the same name exists here?); the update goes on"
 
-  # Must be on main (a detached HEAD or a side branch would silently pin an old version).
-  CUR=$(git -C "$DIR" symbolic-ref -q --short HEAD || echo DETACHED)
-  if [ "$CUR" != "main" ] && [ "${FORCE_UPDATE:-0}" != "1" ]; then
-    echo "ERROR: $DIR is on '$CUR', not 'main'; refusing to install from it." >&2
-    echo "  rerun with FORCE_UPDATE=1 to switch to main (your branch/commit is kept)" >&2
-    exit 1
+  # What this update installs: origin/main on the edge channel, the latest published release on
+  # the stable one. Three sources in order (DESIGN, decision 1529): GitHub's own "latest
+  # release", the same answer the cockpit reads (published releases, prereleases excluded,
+  # anonymous, no token); then the tags of the remote itself, which no API budget limits; then
+  # what the fetch above already brought, for a box whose API call and ls-remote both fail.
+  TAG=""
+  if [ "$CHANNEL" = stable ]; then
+    if command -v curl >/dev/null 2>&1; then
+      TAG=$(curl -fsSL --max-time 8 -H 'Accept: application/vnd.github+json' \
+              https://api.github.com/repos/hasso5703/alzeo/releases/latest 2>/dev/null \
+            | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9.]*\)".*/\1/p') || TAG=""
+    fi
+    if [ -z "$TAG" ]; then
+      TAG=$(git -C "$DIR" ls-remote --tags origin 2>/dev/null \
+            | sed -n 's#.*[[:space:]]refs/tags/\(v[0-9]*\.[0-9]*\(\.[0-9]*\)\)$#\1#p' | highest_tag) || TAG=""
+    fi
+    if [ -z "$TAG" ]; then
+      TAG=$(git -C "$DIR" tag -l | sed -n 's/^\(v[0-9]*\.[0-9]*\(\.[0-9]*\)\)$/\1/p' | highest_tag)
+    fi
+    # the tag must be one this clone has: the API can name a release the fetch above did not
+    # bring (its fetch of the tags failed, or the cache of a redirect served an older list)
+    if [ -n "$TAG" ] && ! git -C "$DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+      git -C "$DIR" fetch -q origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
+    fi
+    if [ -z "$TAG" ] || ! git -C "$DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+      echo "ERROR: could not find the latest published release of this repo (no answer from GitHub's" >&2
+      echo "  release API, none from the remote's tags, none in this clone). Nothing was touched." >&2
+      echo "  try again online, or follow main instead:  bash -s -- --edge" >&2
+      exit 1
+    fi
+    TARGET_BRANCH=stable
+    TARGET_REF="refs/tags/$TAG"
+    echo "── Channel: stable (the latest published release, $TAG)"
+  else
+    TARGET_BRANCH=main
+    TARGET_REF=origin/main
+    echo "── Channel: edge (main)"
   fi
+
+  # Must be on a branch this script follows (a detached HEAD or a side branch would silently
+  # pin an old version): the channel's own, or the other one, which a switch of channel or a
+  # box installed before the stable channel existed is on.
+  CUR=$(git -C "$DIR" symbolic-ref -q --short HEAD || echo DETACHED)
+  case "$CUR" in
+    main|stable) ;;
+    *) if [ "${FORCE_UPDATE:-0}" != "1" ]; then
+         echo "ERROR: $DIR is on '$CUR', not 'main' or 'stable'; refusing to install from it." >&2
+         echo "  rerun with FORCE_UPDATE=1 to switch to $TARGET_BRANCH (your branch/commit is kept)" >&2
+         exit 1
+       fi ;;
+  esac
 
   # Invariant: if this script completes, you ARE on the latest origin/main.
   # Only TRACKED modifications can make the checkout stale or altered. Untracked
@@ -202,41 +284,57 @@ main() {
     printf '%s' "$KEPTLIST" | sed -n '1,5s/^/     /p'
     [ "$NKEPT" -le 5 ] || echo "     ... and $((NKEPT - 5)) more, in that folder"
   }
-  # Off main under FORCE_UPDATE, the switch comes after the stash, and a detached HEAD's
-  # commit is put on a branch first. Switched first, a change that conflicted with main
-  # ended the run (rc 128), and a commit made on a detached HEAD was left on no branch
-  # (found in review, 2026-09-24).
-  if [ "$CUR" != "main" ]; then
+  # Off the target branch, the switch comes after the stash, and a detached HEAD's
+  # commit is put on a branch first. Switched first, a change that conflicted with the
+  # target ended the run (rc 128), and a commit made on a detached HEAD was left on no branch
+  # (found in review, 2026-09-24). It runs under FORCE_UPDATE from a side branch, and without
+  # it for a change of channel or a box on main taking the stable one for the first time.
+  if [ "$CUR" != "$TARGET_BRANCH" ]; then
     if [ "$CUR" = "DETACHED" ]; then
       BK="backup-$(git -C "$DIR" rev-parse --short HEAD)"
       git -C "$DIR" branch -f "$BK" >/dev/null
       echo "── FORCE_UPDATE=1: the detached commit is kept on branch '$BK'"
     fi
-    # the checkout below writes local main over ignored files too, and the reset then origin/main: both are looked
-    # at from here, before either (code review of v1.45.0)
-    if git -C "$DIR" rev-parse -q --verify main >/dev/null; then keep_aside_against origin/main main
-    else keep_aside_against origin/main; fi
-    echo "── FORCE_UPDATE=1: switching from '$CUR' to main (your branch is kept)"
-    # forced: the tracked changes are stashed above and every file of the user's in its way copied aside, and an
-    # untracked one at a path main tracks made the checkout fail, then its fallback (-b main: "a branch named main
-    # already exists"), rc 128 (code review of v1.45.0)
-    if git -C "$DIR" rev-parse -q --verify main >/dev/null; then git -C "$DIR" checkout -qf main
-    else git -C "$DIR" checkout -qfb main origin/main; fi
+    # a stable branch that holds commits of its own (past origin/main, which a stable clone at
+    # its tag never has) would be moved by the checkout below: they are kept on a branch first
+    if [ "$TARGET_BRANCH" = stable ] && git -C "$DIR" rev-parse -q --verify stable >/dev/null 2>&1; then
+      if [ "$(git -C "$DIR" rev-list --count origin/main..stable 2>/dev/null || echo 1)" != "0" ]; then
+        BK="backup-$(git -C "$DIR" rev-parse --short stable)"
+        git -C "$DIR" branch -f "$BK" stable >/dev/null
+        echo "── the branch 'stable' held commits of its own: kept on branch '$BK'"
+      fi
+    fi
+    # the checkout below writes the target branch over ignored files too, and the reset then
+    # the release: both are looked at from here, before either (code review of v1.45.0)
+    if git -C "$DIR" rev-parse -q --verify "$TARGET_BRANCH" >/dev/null 2>&1; then
+      keep_aside_against "$TARGET_REF" "$TARGET_BRANCH"
+    else
+      keep_aside_against "$TARGET_REF"
+    fi
+    echo "── switching from '$CUR' to $TARGET_BRANCH (your branch is kept)"
+    # forced from a side branch, or a change of channel: the tracked changes are stashed above
+    # and every file of the user's in its way copied aside
+    if [ "$TARGET_BRANCH" = main ]; then
+      if git -C "$DIR" rev-parse -q --verify main >/dev/null 2>&1; then git -C "$DIR" checkout -qf main
+      else git -C "$DIR" checkout -qfb main origin/main; fi
+    else
+      git -C "$DIR" checkout -qB stable "$TARGET_REF"
+    fi
   fi
   AHEAD=$(git -C "$DIR" rev-list --count origin/main..HEAD 2>/dev/null || echo 1)
   if [ "$AHEAD" != "0" ]; then
     if [ "${FORCE_UPDATE:-0}" = "1" ]; then
       BK="backup-$(git -C "$DIR" rev-parse --short HEAD)"
       git -C "$DIR" branch -f "$BK" >/dev/null
-      echo "── FORCE_UPDATE=1: local commits kept on branch '$BK', resetting to origin/main"
+      echo "── FORCE_UPDATE=1: local commits kept on branch '$BK', resetting to $TARGET_BRANCH"
     else
       echo "ERROR: $DIR has local commits not on origin/main, refusing to install a stale version." >&2
       echo "  keep your commits aside :  FORCE_UPDATE=1  then rerun (they stay on a backup branch)" >&2
       exit 1
     fi
   fi
-  # Copied aside, then said: here when the clone is on main; off main, before the switch above.
-  [ "$CUR" != "main" ] || keep_aside_against origin/main
+  # Copied aside, then said: here when the clone is on the target branch; off it, before the switch above.
+  [ "$CUR" != "$TARGET_BRANCH" ] || keep_aside_against "$TARGET_REF"
   # Untracked files are kept, but say so: neither those copied aside, which the release's own replace, nor a folder
   # the release puts a file in place of (drafts/, removed by the reset: code review of v1.45.0). A folder untracked
   # whole is named once (--directory): a .venv-mirror/ in the clone, as MIRROR.md makes one, listed its thousands of
@@ -257,14 +355,14 @@ main() {
   fi
   # Tree verified clean and no local commits (or backed up): hard sync is lossless
   # and, unlike ff-only, immune to shallow-clone ancestry gaps.
-  git -C "$DIR" reset -q --hard origin/main
+  git -C "$DIR" reset -q --hard "$TARGET_REF"
   echo "── At: $(git -C "$DIR" log -1 --format='%h %s')"
 
   cd "$DIR"
   # exec from a real file. stdin is still the pipe this script came through (read to
   # its end by now), so nothing in install.sh may read from it; sudo prompts on the tty
-  # it opens itself.
-  exec bash ./install.sh "$@"
+  # it opens itself. The channel flags never reach install.sh: they were consumed above.
+  exec bash ./install.sh ${ARGS[@]+"${ARGS[@]}"}
 }
 
 main "$@"

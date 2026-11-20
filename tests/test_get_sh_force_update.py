@@ -56,6 +56,11 @@ class Fixture(unittest.TestCase):
     def run_get(self, force=True):
         home = self.base / "home"
         home.mkdir(exist_ok=True)
+        # the edge channel: these tests exercise the update machinery (the stash, the copies
+        # aside, the backup branches), which edge runs exactly as get.sh always did on main.
+        # The stable channel, the default, has its own file: test_get_sh_channels.py
+        (home / ".config" / "qwen38").mkdir(parents=True, exist_ok=True)
+        (home / ".config" / "qwen38" / "channel").write_text("edge\n")
         env = {"PATH": os.environ["PATH"], "HOME": str(home), "DIR": str(self.work), "GIT_ALLOW_PROTOCOL": "file"}
         if force:
             env["FORCE_UPDATE"] = "1"

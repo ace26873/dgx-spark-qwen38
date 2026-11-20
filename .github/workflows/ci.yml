@@ -915,6 +915,15 @@ jobs:
       - name: get.sh guards (git fixture, stubbed installer)
         run: python3 tests/test_get_sh.py
 
+      - name: get.sh channels (stable by default, N-1 updated to N, edge and back)
+        run: |
+          # The one command installs the stable channel now: the latest published release,
+          # not main (decision 1529, 2026-11-19). The fixture is a bare origin with two
+          # tagged releases, a box cloned at N-1, and a curl shim standing in for GitHub's
+          # release API: the update from N-1 to N, the switch to edge and back, and the
+          # fallbacks when the API answers nothing. No step here reaches the network.
+          python3 tests/test_get_sh_channels.py
+
       - name: bench.sh names the lane it measures (fake engine)
         run: python3 tests/test_bench_lane.py
 

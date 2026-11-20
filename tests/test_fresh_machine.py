@@ -820,12 +820,17 @@ class TheWholeScripts(unittest.TestCase):
             'case "$*" in\n'
             '  *"remote get-url origin"*) echo https://github.com/hasso5703/dgx-spark-qwen38 ;;\n'
             '  *"symbolic-ref"*) echo main ;;\n'
+            '  *"ls-remote --tags"*) echo "0000000 refs/tags/v1.55.0" ;;\n'
             '  *"rev-list --count"*) echo 0 ;;\n'
             '  *"log -1"*) echo "abc1234 the release" ;;\n'
             'esac\nexit 0\n')
         (box.bin / "git").chmod(0o755)
+        # the stable channel's release API, answered as offline: get.sh falls back to the
+        # remote's tags, which the fake git above serves (no step of this test reaches the network)
+        (box.bin / "curl").write_text("#!/bin/bash\nexit 22\n")
+        (box.bin / "curl").chmod(0o755)
         env, record = wall.fenced_env(first=str(box.bin), DIR=str(clone))
-        r = subprocess.run(["bash", wall.walled("get.sh", at='  exec bash ./install.sh "$@"\n'), "--help"],
+        r = subprocess.run(["bash", wall.walled("get.sh", at='  exec bash ./install.sh ${ARGS[@]+"${ARGS[@]}"}\n'), "--help"],
                            capture_output=True, text=True, env=env, cwd=wall.cwd(), timeout=60,
                            stdin=subprocess.DEVNULL, start_new_session=True)
         out = r.stdout + r.stderr

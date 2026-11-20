@@ -49,6 +49,12 @@ def fixture(base):
     os.chmod(os.path.join(work, "install.sh"), 0o755)
     git("add", "-A", cwd=work); git("commit", "-qm", "v1", cwd=work)
     git("push", "-q", "origin", "main", cwd=work)
+    # the edge channel: these tests exercise the update machinery (the refusal of a stale or
+    # altered clone, the copies aside, the untracked files), which edge runs exactly as get.sh
+    # always did on main. The stable channel, the default, has its own file: test_get_sh_channels.py
+    os.makedirs(os.path.join(base, ".config", "qwen38"))
+    with open(os.path.join(base, ".config", "qwen38", "channel"), "w") as f:
+        f.write("edge\n")
     return origin, work
 
 
