@@ -1336,5 +1336,35 @@ class TheNowViewSaysThePortTheImageLaneListensOn(unittest.TestCase):
         self.assertIn("127.0.0.1:30026, behind this cockpit", r["before"], "its own default, not the other lane's port")
         self.assertIn("127.0.0.1:30126, behind this cockpit", r["after"])
 
+class TheSettingsPanelNamesTheChannel(unittest.TestCase):
+    """M3 of the review of feat/canal-stable (2026-11-20): the config payload has named
+    the update channel since the branch's second commit, and its message promised the
+    page would say which one this box is on. Nothing read it. The Repo panel, beside the
+    version and the update, is where the operator looks before running one."""
+
+    def test_both_channels_with_their_switch(self):
+        for ch, said, switch in (("stable", "stable (the latest published release)",
+                                  "Follow main instead: curl -fsSL https://get.alzeo.ai | bash -s -- --edge"),
+                                 ("edge", "edge (main)",
+                                  "Back to the published releases: curl -fsSL https://get.alzeo.ai | bash -s -- --stable")):
+            with self.subTest(channel=ch):
+                r = run(self, r"""
+                feed({config: Object.assign({}, CONFIG, {channel: '%s'}),
+                      repo: {tag: 'v1.54.0', branch: 'stable', head: 'abc def', dirty: false}});
+                report({line: txt('rp-channel'), title: $('rp-channel') ? $('rp-channel').title : null});
+                """ % ch)
+                self.assertEqual(r["line"], said)
+                self.assertEqual(r["title"], switch)
+
+    def test_a_config_without_the_channel_says_stable(self):
+        # a cockpit older than the channel, or a payload the page does not know: the default,
+        # which is also what get.sh installs with no channel file
+        r = run(self, r"""
+        feed({config: CONFIG, repo: {tag: 'v1.54.0', branch: 'stable', head: 'abc def', dirty: false}});
+        report(txt('rp-channel'));
+        """)
+        self.assertEqual(r, "stable (the latest published release)")
+
+
 if __name__ == "__main__":
     unittest.main()

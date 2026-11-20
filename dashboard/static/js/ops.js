@@ -836,6 +836,12 @@ afterApply(() => {
 });
 on('repo', d => {
   setText('rp-tag', d.tag || 'n/a'); setText('rp-branch', d.branch || 'n/a');
+  // the update channel this box follows (get.sh, decision 1529), beside the version and the
+  // update it names: the config payload names it, and the switch is the same one command
+  const ch = (F.config || {}).channel;
+  setText('rp-channel', ch === 'edge' ? 'edge (main)' : 'stable (the latest published release)');
+  setTitle('rp-channel', ch === 'edge' ? 'Back to the published releases: curl -fsSL https://get.alzeo.ai | bash -s -- --stable'
+                                      : 'Follow main instead: curl -fsSL https://get.alzeo.ai | bash -s -- --edge');
   setText('rp-head', (d.head || '').split(' ')[0] || 'n/a'); setTitle('rp-head', d.head || '');
   setText('rp-dirty', d.dirty == null ? 'unknown (git did not answer)' : d.dirty ? 'modified, uncommitted changes' : d.untracked ? `clean, ${d.untracked} untracked` : 'clean');
   const pv = F.proxy && F.proxy.version, ps = F.proxy && F.proxy.same_as_repo;
