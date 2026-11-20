@@ -2821,8 +2821,10 @@ fi
 # Going back to 1.x takes OUR v2 deny array out of the global config: OpenCode 1.19 refuses
 # to start while a config holds "permissions" ("V2 permissions are not supported by OpenCode
 # V1", measured against the box's 1.19.5 on 2026-11-14). --remove-permissions only touches
-# the array this repo wrote; a person's own table is left alone.
-if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OC_SERVE_MAJOR:-1}" != 2 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
+# the array this repo wrote; a person's own table is left alone. Like the compaction rollback
+# below, the removal is guarded by OC_WAS_2: a host that never chose 2 (no marker at the start
+# of this run) is not even asked, so it gets no NOTE on every install (blind review 2026-11-20, D4).
+if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OC_SERVE_MAJOR:-1}" != 2 ] && [ "${OC_WAS_2:-0}" -eq 1 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
   if ! OC_RM="$(python3 "$REPO_DIR/oc-merge-limits.py" "$HOME/.config/opencode/opencode.json" --remove-permissions 2>&1)"; then
     echo "NOTE: $OC_RM"
     echo "      OpenCode 1.19 refuses to start while a config holds \"permissions\": that array is not the one"

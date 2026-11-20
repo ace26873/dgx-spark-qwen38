@@ -475,14 +475,16 @@ class TheRollbackSpeaks(unittest.TestCase):
     so plainly: OpenCode 1.19 refuses to start while the config holds "permissions", and a silent
     refusal left the Agent tab dead with no reason on screen (independent review, finding 3)."""
 
-    def run_rollback(self, doc):
+    def run_rollback(self, doc, was2=1):
         t = pathlib.Path(tempfile.mkdtemp(prefix="oc-rollback-"))
         self.addCleanup(shutil.rmtree, t, True)
         home = t / "home"
         (home / ".config" / "opencode").mkdir(parents=True)
+        (home / ".config" / "qwen38").mkdir(parents=True)
         (home / ".config" / "opencode" / "opencode.json").write_text(json.dumps(doc))
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
-                  f'REPO_DIR="{REPO}"\n' + rollback())
+                  f'REPO_DIR="{REPO}"\nCONFIG_DIR="{home}/.config/qwen38"\nOPENCODE=1\nOC_SERVE_MAJOR=1\n'
+                  f'OC_WAS_2="{was2}"\n' + rollback())
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
         left = json.loads((home / ".config" / "opencode" / "opencode.json").read_text())
@@ -505,6 +507,16 @@ class TheRollbackSpeaks(unittest.TestCase):
         self.assertIn("NOTE", out)
         self.assertIn("opencode.json", out)
         self.assertIn("permissions", out)
+
+    def test_a_host_that_never_chose_2_is_not_even_asked(self):
+        # No marker at the start of the run (OC_WAS_2=0): a "permissions" table of the user's
+        # own is not the repo's, and the removal does not even try, so no NOTE on every
+        # install. Same guard as the compaction rollback below (blind review 2026-11-20, D4).
+        foreign = {"permissions": [{"action": "*", "resource": "*", "effect": "allow"}], "theme": "dark"}
+        rc, out, left = self.run_rollback(foreign, was2=0)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(left, foreign, "nothing written, nothing said")
+        self.assertNotIn("NOTE", out)
 
 
 class TheRollbackTakesTheV2CompactionKeysOut(unittest.TestCase):
