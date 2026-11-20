@@ -1,5 +1,54 @@
 # Changelog
 
+## v1.55.0 (2026-11-20): the one command installs the stable channel, the latest published release, and --edge follows main
+
+Until now `curl -fsSL https://get.alzeo.ai | bash` reset every box to main's tip: a release when
+main held one, the middle of the next one when it did not. The command now installs and updates
+the **stable channel**, and main becomes a choice.
+
+- **Stable by default.** The update installs the latest published release, the same answer the
+  cockpit's release check reads: GitHub's own "latest release" endpoint, which GitHub's
+  documentation defines as "the most recent non-prerelease, non-draft release", so no draft and
+  no prerelease is ever answered, whatever its tag is named. The tag is read whole: a suffix of
+  the tag's own (`-rc1`, `+build`) is never cut off. When the API does not answer (its anonymous
+  budget spent, no network to it), the remote's own tags answer, then the tags the update
+  fetched, and the line says which source won ("the latest published release" only when it is
+  GitHub's own answer). The clone moves to a branch of its own, `stable`, reset to the tag, and
+  install.sh runs from there; the `main` branch is kept where it was.
+- **--edge, --stable, and where the choice is kept.** `bash -s -- --edge` follows main as the
+  command always did; `bash -s -- --stable` comes back to the releases. The choice is kept in
+  `~/.config/qwen38/channel`, a file of the config dir that no reset of the clone touches, and
+  it is written only once an update has succeeded: a run that refuses leaves everything as it
+  was, the channel file included. No file yet means stable, which is also what every box
+  installed before this version migrates to at its next update, from main, without downloading
+  anything the tags do not need (the tag is an ancestor of the main the clone already holds).
+- **What an update does, and what it refuses.** It fetches main and the release tags, resolves
+  the release, checks the clone is one it may touch (a clone of this repository, on `main` or
+  `stable`, no modified tracked file, no local commit), and refuses before anything is written
+  when one is not. Offline, the refusal says so ("cannot reach GitHub ... Nothing was touched")
+  instead of git's raw error. A shallow clone (a manual `git clone --depth`) whose release tag
+  cannot be fetched is told the way out: `git fetch --unshallow`, or `--edge`. And a clone that
+  runs past the release (edge at main's tip, or main past the tag before a box's first stable
+  update) is told before it moves back: how many commits, from which version to which release,
+  that its branch is kept, and the way back (`--edge`); then the update goes on as always.
+- **The cockpit and the docs follow.** A clone on the `stable` branch is one get.sh updates: it
+  is no longer called a local clone the banner warns about, Settings names the channel beside
+  the version, and the README and docs/operations.md say the channel and its fallbacks. The
+  fallback that reads the remote's tags compares `vX.Y.Z` numbers only: the project tags
+  `vX.Y.Z` and nothing else, and the doc says so.
+- **The tests.** `tests/test_get_sh_channels.py` runs fifteen scenarios offline against a real
+  git fixture (a bare origin, a box a release behind, a curl shim): the migration from main, the
+  update from N-1 to N, `--edge` and back, the flags never reaching install.sh, the ls-remote
+  fallback, a channel file that says nothing known, a local commit refused then kept on a
+  backup branch, a modified file refused, no release found, a suffixed tag_name read whole,
+  offline, a shallow clone, and a move back said first. Each scenario added by this version
+  fails on the code before it: the suffixed tag was truncated and another release installed, an
+  offline run died with git's raw error (rc 128), the shallow refusal said nothing of
+  `--unshallow`, and a move back printed only "At: <hash>". The older get.sh suites run on the
+  edge channel, which is the old behavior, and the CI runs the new suite on every push. Proofs
+  on a real box (the migration, the cockpit's banners, the Update button, `--edge` and
+  `--stable` against the real API) come with this release's checks.
+
 ## v1.54.0 (2026-11-20): the cockpit gets a Transcription tab, a sign out and a Traffic view that says what the proxy never saw, the 27B lane gains DaisyRose 27B as a sixth target, opencode moves to 1.19.6, and a local CI run measures what the runner's does
 
 The cockpit gets a **Transcription** view (in the Create group, after Video) that drives the
