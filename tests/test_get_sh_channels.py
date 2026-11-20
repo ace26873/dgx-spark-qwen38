@@ -316,6 +316,29 @@ def main() -> None:
         assert not state(shabox, "branch", "--list", "stable"), "a stable branch was created"
         assert not os.path.exists(channel_file), "the refused run wrote the channel file"
 
+        # 14. A box on edge whose main runs past the release, taking --stable: the update says
+        #     it moves the clone back before it does (how many commits, from which version to
+        #     which, the way back), then goes on as always (B5 of the review, 2026-11-20).
+        for _ in range(2):
+            # the CHANGELOG's top heading is the version main runs, the newest first as the
+            # real one goes; the version the warning names is read from there
+            old = open(os.path.join(pub, "CHANGELOG.md")).read()
+            with open(os.path.join(pub, "CHANGELOG.md"), "w") as f:
+                f.write("## v1.59.0 (unreleased)\nwork on main past the release\n" + old)
+            git("add", "-A", cwd=pub); git("commit", "-qm", "main past the release", cwd=pub)
+        git("push", "-q", "origin", "main", cwd=pub)
+        r = run_get(box, curl_shim(base, "v1.58.0-rc1"), args=["--edge"])
+        assert r.returncode == 0 and "Channel: edge" in r.stdout, r.stdout + r.stderr
+        assert state(box, "rev-parse", "HEAD") != rc_commit, "edge did not take main's new tip"
+        r = run_get(box, curl_shim(base, "v1.58.0-rc1"), args=["--stable"])
+        assert r.returncode == 0 and "INSTALL_RAN" in r.stdout, f"the move back failed: {r.stderr}"
+        assert "moves the clone back" in r.stdout, r.stdout
+        assert "2 commit" in r.stdout, r.stdout
+        assert "from v1.59.0" in r.stdout and "v1.58.0-rc1" in r.stdout, r.stdout
+        assert "--edge" in r.stdout, r.stdout
+        assert state(box, "rev-parse", "HEAD") == rc_commit, "the clone did not return to the release"
+        assert state(box, "symbolic-ref", "-q", "--short", "HEAD") == "stable"
+
         print("test_get_sh_channels: OK")
     finally:
         shutil.rmtree(base, ignore_errors=True)

@@ -221,6 +221,20 @@ main() {
     else
       echo "── Channel: stable (the highest tag, $TAG, which may not be a published release yet)"
     fi
+    # A clone that runs ahead of the release (edge at main's tip, or main past the tag before a
+    # box's first stable update) moves BACK to the tag: said before it happens, with how many
+    # commits, from which version to which, and the way back (review, 2026-11-20). The version
+    # it runs is the CHANGELOG's top heading, the same place the cockpit reads it; without one,
+    # the commit's short hash.
+    BACK=$(git -C "$DIR" rev-list --count "refs/tags/$TAG..HEAD" 2>/dev/null || echo 0)
+    if [ "$BACK" != 0 ]; then
+      NOW=$(awk '/^## v[0-9]/ { if (match($0, /v[0-9]+(\.[0-9]+)+/)) { print substr($0, RSTART, RLENGTH); exit } }' \
+             "$DIR/CHANGELOG.md" 2>/dev/null)
+      [ -n "$NOW" ] || NOW=$(git -C "$DIR" rev-parse --short HEAD)
+      echo "── NOTE: this update moves the clone back $BACK commit(s), from $NOW to the release $TAG:"
+      echo "     the files main added past the release leave the working tree (your branch is kept)."
+      echo "     to follow main again:  bash -s -- --edge"
+    fi
   else
     TARGET_BRANCH=main
     TARGET_REF=origin/main
