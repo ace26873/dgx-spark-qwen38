@@ -1568,8 +1568,11 @@ jobs:
           # since 2026-11-10: test_proxy_pair_inprocess.py and test_proxy_pair_one_model_inprocess.py).
           # 2026-11-14: patch-kv.py, which writes the Arete target's fp8 KV declaration into the
           # config the engine reads, gets patch-yarn.py's floor for patch-yarn.py's reason (98% measured).
+          # 2026-11-20: oc-permissions.py, the OpenCode 2 matcher, lives at the root and is measured
+          # here (test_oc_merge_limits.py and test_oc_fit_limits.py load it in-process, 100%); its
+          # floor sat in the cockpit job, which measures only dashboard/, so it read "not measured".
           FLOORS = {"keepalive-proxy.py": 85, "patch-yarn.py": 90, "patch-kv.py": 90,
-                    "oc-fit-limits.py": 37, "build-token-map.py": 35}
+                    "oc-fit-limits.py": 37, "build-token-map.py": 35, "oc-permissions.py": 88}
           got, bad = {}, []
           for line in open(sys.argv[1]):
               m = re.match(r"^(\S+\.py)\s+\d+\s+\d+\s+\d+\s+\d+\s+(\d+)%", line)
@@ -1640,7 +1643,7 @@ jobs:
           # never run there. The gate caught exactly that on the first push. Note
           # that lifecycle.py and recipes.py read 100% in both, which is what
           # being pure logic buys.
-          FLOORS = {"cockpit.py": 68, "agent_relay.py": 88, "oc-permissions.py": 88, "registry.py": 88,
+          FLOORS = {"cockpit.py": 68, "agent_relay.py": 88, "registry.py": 88,
                     "lifecycle.py": 100, "recipes.py": 100}
           TOTAL_FLOOR = 89
           got, bad = {}, []
