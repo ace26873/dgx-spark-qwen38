@@ -201,6 +201,52 @@ def main() -> None:
     assert rc == 0 and c["preserve_recent_tokens"] == 50000 and c["prune"] is False, out
     assert "background" not in c, "the v1 mode must not write the v2 key"
 
+    # 6c. --remove-compaction-v2 takes exactly the keys the v2 block carries (keep,
+    #     background) out of the compaction block, and nothing else: the v1 keys, the
+    #     block's other keys and the rest of the file stay where they are. A config
+    #     without them is not written at all (no edit, no backup beside it). install.sh
+    #     runs it on both configs on a box going back from 2 to 1.
+    def rm_v2(path):
+        r = subprocess.run([sys.executable, SCRIPT, path, "--remove-compaction-v2"],
+                           capture_output=True, text=True)
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    sub = tempfile.mkdtemp(dir=tmp)
+    body = ('{\n  // mine\n  "compaction": {"preserve_recent_tokens": 135000, "prune": false,'
+            ' "auto": true, "background": true, "keep": {"tokens": 135000}},\n  "x": 1\n}\n')
+    p = write(sub, body)
+    rc, out = rm_v2(p)
+    assert rc == 0 and "keep" in out and "background" in out, out
+    d = doc_of(p)
+    assert d["compaction"] == {"preserve_recent_tokens": 135000, "prune": False, "auto": True}, \
+        d["compaction"]
+    assert d["x"] == 1 and "// mine" in open(p).read(), "the comment and the rest of the file moved"
+    b1 = open(p, "rb").read()
+    rc, out = rm_v2(p)                                  # a second pass writes nothing
+    assert rc == 0 and "unchanged" in out, out
+    assert open(p, "rb").read() == b1, "the second pass rewrote the file"
+
+    sub = tempfile.mkdtemp(dir=tmp)                     # a v2-only block: only the two keys go
+    p = write(sub, '{\n  "compaction": {"background": true, "keep": {"tokens": 135000}},\n  "x": 1\n}\n')
+    rc, out = rm_v2(p)
+    assert rc == 0 and doc_of(p) == {"compaction": {}, "x": 1}, doc_of(p)
+
+    sub = tempfile.mkdtemp(dir=tmp)                     # pretty-printed block
+    p = write(sub, json.dumps({"compaction": {"keep": {"tokens": 135000}, "background": True,
+                                               "prune": False}, "x": 1}, indent=2) + "\n")
+    rc, out = rm_v2(p)
+    assert rc == 0 and doc_of(p) == {"compaction": {"prune": False}, "x": 1}, doc_of(p)
+
+    for body in ('{\n  "compaction": {"preserve_recent_tokens": 135000, "prune": false},\n  "x": 1\n}\n',
+                 '{\n  "compaction": "auto",\n  "x": 1\n}\n',
+                 '{\n  "x": 1\n}\n'):
+        sub = tempfile.mkdtemp(dir=tmp)
+        p = write(sub, body)
+        rc, out = rm_v2(p)
+        assert rc == 0 and "unchanged" in out, f"{body!r}: {rc} {out}"
+        assert open(p).read() == body, "a config without the v2 keys was written"
+        assert os.listdir(sub) == ["oc.json"], f"a backup was left beside it: {os.listdir(sub)}"
+
     # 7. --add-providers: the config a box's first install wrote gains the provider of a
     #    lane installed since, and nothing else in it moves. The 27B first and the flash
     #    lane later left the copy with no flashnext: the served model answers under any

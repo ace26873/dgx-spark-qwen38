@@ -1451,12 +1451,20 @@ fi
 # failed download never opts a box in). 1 is the tested pin; 2 is the opt-in OpenCode 2
 # (Hasan's plan of 2026-10-22: option first, default only after proofs on both boxes).
 OPENCODE_MAJOR=1
+# Whether the box was in OpenCode 2 at the START of this run (the marker), read before the
+# step below rewrites or removes it: a run that goes back to 1.x uses it to take the v2-only
+# keys back out of the configs the v2 wrote them in, and a box that never chose 2 is not
+# touched at all.
+OC_WAS_2=0
+if [ -s "$CONFIG_DIR/opencode.major" ] && [ "$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || true)" = "2" ]; then
+  OC_WAS_2=1
+fi
 if [ -n "$OPENCODE_MAJOR_WANT" ]; then
   case "$OPENCODE_MAJOR_WANT" in
     1|2) OPENCODE_MAJOR="$OPENCODE_MAJOR_WANT" ;;
     *) printf -- '--opencode takes 1 or 2 (which OpenCode to serve), not %s\n' "$OPENCODE_MAJOR_WANT" >&2; exit 1 ;;
   esac
-elif [ -s "$CONFIG_DIR/opencode.major" ] && [ "$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || true)" = "2" ]; then
+elif [ "$OC_WAS_2" -eq 1 ]; then
   OPENCODE_MAJOR=2
 fi
 # The helpers that write opencode's config read the same choice (oc-merge-limits.py
@@ -2808,6 +2816,20 @@ if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OPENCODE_MAJOR:-1}" != 2 ] && [ -f "$HOME/
     echo "      this repo wrote, so it was left alone. Take it out of $HOME/.config/opencode/opencode.json by"
     echo "      hand, or stay on OpenCode 2 with ./install.sh --opencode 2 (docs/opencode.md)."
   fi
+fi
+# Going back to 1.x also takes the v2 compaction keys (keep, background) out of BOTH configs
+# the v2 wrote them in, the generated one and the user's global one: OpenCode 2's block is
+# keep.tokens + background (schema config/compaction.ts of 2.3.2) and 1.x reads neither key
+# there (the box's user config kept them after a --opencode 1 on 2026-11-20, until cleaned
+# by hand). Only the keys the v2 wrote come out: the v1 keys and everything the user put in
+# the block stay, and a box that never chose 2 (no marker at the start of this run) is not
+# touched at all.
+if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OPENCODE_MAJOR:-1}" != 2 ] && [ "${OC_WAS_2:-0}" -eq 1 ]; then
+  for OC_V2_CFG in "$CONFIG_DIR/opencode.json" "$HOME/.config/opencode/opencode.json"; do
+    [ -f "$OC_V2_CFG" ] || continue
+    python3 "$REPO_DIR/oc-merge-limits.py" "$OC_V2_CFG" --remove-compaction-v2 \
+      || echo "NOTE: could not take the v2 compaction keys out of $OC_V2_CFG; remove \"keep\" and \"background\" from its \"compaction\" block by hand"
+  done
 fi
 # The rest of this run (the Agent tab's unit, the oc launcher) finds opencode on PATH, and
 # a first install puts it in the shell's PATH the way opencode's own installer does.

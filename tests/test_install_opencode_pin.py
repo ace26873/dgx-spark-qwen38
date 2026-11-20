@@ -65,6 +65,15 @@ def rollback() -> str:
     return text[start:text.index("# The rest of this run (the Agent tab", start)]
 
 
+def major_choice() -> str:
+    """install.sh's own lines that resolve which OpenCode this run serves, and whether the box
+    was in 2 at the start of the run (the marker), from OPENCODE_MAJOR=1 to the export."""
+    text = INSTALL.read_text()
+    start = text.index("OPENCODE_MAJOR=1\n# Whether the box was in OpenCode 2 at the START")
+    end = text.index('export OC_MAJOR="$OPENCODE_MAJOR"', start) + len('export OC_MAJOR="$OPENCODE_MAJOR"')
+    return text[start:end]
+
+
 def pinned_default() -> str:
     import re
     return re.search(r'^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
@@ -378,6 +387,103 @@ class TheRollbackSpeaks(unittest.TestCase):
         self.assertIn("NOTE", out)
         self.assertIn("opencode.json", out)
         self.assertIn("permissions", out)
+
+
+class TheRollbackTakesTheV2CompactionKeysOut(unittest.TestCase):
+    """./install.sh --opencode 1 on a box that was in 2 (the marker said 2 at the start of the
+    run) takes exactly the keys the v2 compaction block wrote (keep, background) out of BOTH
+    configs the v2 touched, the generated one and the user's global one, leaving the v1 keys
+    and everything else. A box that never chose 2 is not touched at all (no write, no backup)."""
+
+    GEN = {"compaction": {"keep": {"tokens": 135000}, "background": True},
+           "provider": {"qwen38": {}}, "autoupdate": False}
+    USER = {"compaction": {"preserve_recent_tokens": 135000, "prune": False, "auto": True,
+                           "background": True, "keep": {"tokens": 135000}},
+            "instructions": ["~/.claude/CLAUDE.md"], "theme": "dark"}
+
+    def run_rollback(self, *, was2, major="1", gen=None, user=None):
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-rb2-"))
+        self.addCleanup(shutil.rmtree, t, True)
+        home = t / "home"
+        cfg = home / ".config" / "qwen38"
+        (home / ".config" / "opencode").mkdir(parents=True)
+        cfg.mkdir(parents=True)
+        (cfg / "opencode.json").write_text(json.dumps(gen if gen is not None else self.GEN, indent=2) + "\n")
+        (home / ".config" / "opencode" / "opencode.json").write_text(
+            json.dumps(user if user is not None else self.USER, indent=2) + "\n")
+        if was2:
+            (cfg / "opencode.major").write_text("2\n# asked with ./install.sh --opencode 2\n")
+        script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
+                  f'REPO_DIR="{REPO}"\nCONFIG_DIR="{cfg}"\nOPENCODE=1\nOPENCODE_MAJOR="{major}"\n'
+                  f'OC_WAS_2="{1 if was2 else 0}"\n' + rollback())
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                           env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
+        gen_raw = (cfg / "opencode.json").read_bytes()
+        user_raw = (home / ".config" / "opencode" / "opencode.json").read_bytes()
+        gen_left = json.loads(gen_raw)
+        user_left = json.loads(user_raw)
+        return (r.returncode, r.stdout + r.stderr, gen_left, user_left, gen_raw, user_raw,
+                sorted(p.name for p in cfg.iterdir()),
+                sorted(p.name for p in (home / ".config" / "opencode").iterdir()))
+
+    def test_the_marker_says_whether_the_box_was_in_2(self):
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-mj-"))
+        self.addCleanup(shutil.rmtree, t, True)
+        cfg = t / "cfg"
+        cfg.mkdir()
+        (cfg / "opencode.major").write_text("2\n")
+        for want, want_was2 in (("", "1"), ("1", "1"), ("2", "1")):
+            script = ("set -euo pipefail\n"
+                      f'CONFIG_DIR="{cfg}"\nOPENCODE_MAJOR_WANT="{want}"\n' + major_choice()
+                      + '\necho "MAJOR=${OPENCODE_MAJOR} WAS2=${OC_WAS_2}"\n')
+            r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                               env={"PATH": "/usr/bin:/bin"})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            major, was2 = r.stdout.strip().splitlines()[-1].split()[0:2]
+            self.assertEqual(was2, f"WAS2={want_was2}")
+            self.assertEqual(major, f"MAJOR={want or '2'}")
+        (cfg / "opencode.major").unlink()
+        script = ("set -euo pipefail\n"
+                  f'CONFIG_DIR="{cfg}"\nOPENCODE_MAJOR_WANT=""\n' + major_choice()
+                  + '\necho "MAJOR=${OPENCODE_MAJOR} WAS2=${OC_WAS_2}"\n')
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                           env={"PATH": "/usr/bin:/bin"})
+        self.assertIn("MAJOR=1 WAS2=0", r.stdout)
+
+    def test_a_box_that_was_in_2_gets_exactly_the_v2_keys_out_of_both_configs(self):
+        rc, out, gen_left, user_left, gen_raw, user_raw, gen_files, user_files = self.run_rollback(was2=True)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(gen_left["compaction"], {}, gen_left["compaction"])
+        self.assertEqual(gen_left["provider"], {"qwen38": {}})
+        self.assertIs(gen_left["autoupdate"], False)
+        self.assertEqual(user_left["compaction"],
+                         {"preserve_recent_tokens": 135000, "prune": False, "auto": True},
+                         user_left["compaction"])
+        self.assertEqual(user_left["instructions"], ["~/.claude/CLAUDE.md"])
+        self.assertEqual(user_left["theme"], "dark")
+
+    def test_a_box_that_never_was_in_2_is_not_touched(self):
+        gen = json.dumps(self.GEN, indent=2) + "\n"
+        user = json.dumps(self.USER, indent=2) + "\n"
+        rc, out, gen_left, user_left, gen_raw, user_raw, gen_files, user_files = self.run_rollback(
+            was2=False, gen=self.GEN, user=self.USER)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(gen_raw, gen.encode(), "the generated config was written")
+        self.assertEqual(user_raw, user.encode(), "the user's config was written")
+        self.assertEqual(gen_files, ["opencode.json"], f"a backup appeared: {gen_files}")
+        self.assertEqual(user_files, ["opencode.json"], f"a backup appeared: {user_files}")
+
+    def test_a_box_staying_in_2_is_not_touched(self):
+        gen = json.dumps(self.GEN, indent=2) + "\n"
+        user = json.dumps(self.USER, indent=2) + "\n"
+        rc, out, gen_left, user_left, gen_raw, user_raw, gen_files, user_files = \
+            self.run_rollback(was2=True, major="2")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(gen_raw, gen.encode())
+        self.assertEqual(user_raw, user.encode())
+        self.assertEqual(gen_files, ["opencode.json", "opencode.major"])
+        self.assertEqual(user_files, ["opencode.json"])
+
 
 class TheConfigStopsSelfUpdating(unittest.TestCase):
     """autoupdate false: with any other value opencode 1.19 offers OpenCode 2 on its TUI's

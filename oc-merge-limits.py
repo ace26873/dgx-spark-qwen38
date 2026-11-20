@@ -9,6 +9,7 @@ Usage: oc-merge-limits.py <target opencode.json> <provider> <model id> <context>
        oc-merge-limits.py <target opencode.json> --deny-bash
        oc-merge-limits.py <target opencode.json> --deny-permissions
        oc-merge-limits.py <target opencode.json> --remove-permissions
+       oc-merge-limits.py <target opencode.json> --remove-compaction-v2
        oc-merge-limits.py --agent-auto-permission
        oc-merge-limits.py --agent-auto-config-content
        oc-merge-limits.py --deny-permission
@@ -50,6 +51,12 @@ With OC_MAJOR=2 in the environment (install.sh exports the box's --opencode choi
 since 2.3.1; the precomputed summary is what lets the auto compaction swap in at
 once, reading the cached prefix), and the v1 keys taken out of the block, since 2.x
 maps preserve_recent_tokens as a deprecated legacy and drops prune with a warning.
+
+--remove-compaction-v2 takes exactly the keys the v2 block carries (keep, background)
+out of the compaction block, and nothing else: the v1 keys, the block's other keys and
+the rest of the file stay as they are. install.sh runs it on both configs on a box
+going back from OpenCode 2 to 1.x, so no v2-only key is left where 1.x reads the block.
+A config without those keys is not written at all.
 
 --autoupdate writes the top-level "autoupdate" key: false, the JSON boolean (opencode's
 schema takes a boolean or "notify", not the string "false"), or "notify". install.sh
@@ -563,6 +570,53 @@ def merge_compaction_v2(path: str, keep: int) -> int:
     if not _landed(path, saved, _verify_compaction_v2(path, keep), "the v2 compaction block"):
         return 1
     print(f"compaction: keep.tokens={keep}, background=true, v1 keys out (backup {saved})")
+    return 0
+
+
+# The keys OpenCode 2's compaction block carries and 1.x does not read there (schema
+# config/compaction.ts of 2.3.2): keep and background. A rollback to 1.x takes exactly
+# these two out of the configs the v2 wrote them in.
+COMPACTION_V2_KEYS = ("keep", "background")
+
+
+def remove_compaction_v2(path: str) -> int:
+    """Take OpenCode 2's compaction keys (keep, background) out of the compaction block,
+    leaving the v1 keys and every other key of the block and of the file as they are. A
+    config without them is not written at all: no edit, no backup."""
+    opened = _open(path)
+    if opened is None:
+        return 1
+    text, doc = opened
+    cur = doc.get("compaction")
+    if not isinstance(cur, dict) or not any(k in cur for k in COMPACTION_V2_KEYS):
+        print(f"no v2 compaction key in {path}: unchanged")
+        return 0
+    gone = [k for k in COMPACTION_V2_KEYS if k in cur]
+    want = copy.deepcopy(doc)
+    for k in gone:
+        del want["compaction"][k]
+    new_text = text
+    try:
+        for k in gone:
+            new_text = remove_member(new_text, ["compaction", k])
+    except ValueError as e:
+        print(f"{path}: refused, {e}; unchanged")
+        return 1
+    saved, bad = commit(path, new_text, want)
+    if bad:
+        print(f"{path}: refused, {bad}; unchanged.")
+        return 1
+    try:
+        got = _reread(path).get("compaction")
+        left = [k for k in COMPACTION_V2_KEYS if isinstance(got, dict) and k in got]
+        wrong = f"still there: {', '.join(left)}" if left else ""
+        if got != want.get("compaction"):
+            wrong = (wrong + "; " if wrong else "") + f"the block reads {got!r}"
+    except ValueError as e:
+        wrong = str(e)
+    if not _landed(path, saved, wrong, "the v2 compaction keys"):
+        return 1
+    print(f"v2 compaction keys out ({', '.join(gone)}) (backup {saved})")
     return 0
 
 
@@ -1171,6 +1225,8 @@ def main(argv: list[str]) -> int:
         return merge_deny_permissions(argv[1])
     if len(argv) == 3 and argv[2] == "--remove-permissions":
         return remove_permissions(argv[1])
+    if len(argv) == 3 and argv[2] == "--remove-compaction-v2":
+        return remove_compaction_v2(argv[1])
     if argv[1:] == ["--agent-auto-permission"]:
         print(agent_auto_permission())
         return 0
