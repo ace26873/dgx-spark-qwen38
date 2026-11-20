@@ -11,12 +11,19 @@ import os
 import pathlib
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 
 HERE = pathlib.Path(__file__).resolve()
 DASH = HERE.parents[1]
 REPO = HERE.parents[2]
+# The CI runs this file as a script from dashboard/ (tests/run_suite.py: cwd=dashboard,
+# python3 tests/<file>), so sys.path[0] is dashboard/tests, not dashboard, and cockpit.py's
+# "import agent_relay" (cockpit.py:40) needs dashboard on the path. Every neighbor of this
+# file inserts it (test_agent_relay.py, test_cockpit_collectors.py); this one did not, and
+# the CI's invocation made all 8 tests error with ModuleNotFoundError (blind review, D1).
+sys.path.insert(0, str(DASH))
 INSTALL = REPO / "install.sh"
 PIN_V1 = re.search(r'^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
 PIN_V2 = re.search(r'^OPENCODE2_VERSION="\$\{OPENCODE2_VERSION:-([0-9.]+)\}"', INSTALL.read_text(), re.M).group(1)
