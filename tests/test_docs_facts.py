@@ -364,5 +364,26 @@ class ThePrivilegedPathNamesWhatSudoRuns(unittest.TestCase):
                 self.assertIsNone(named.search(ln), f"ARCHITECTURE.md: {ln.strip()!r} puts {word} beside sudo")
 
 
+class TheRollbackInOpencodeMdIsComplete(unittest.TestCase):
+    """docs/opencode.md's OpenCode 2 section is the return path's instructions: going back to
+    1.x must also take the v2 plugin out of the plugins directory (1.x does not run a
+    default-export plugin, the file stays dead), and a run whose download fails must be
+    described as it behaves: it keeps serving the OpenCode already installed and writes
+    nothing for the other major (blind review of 2026-11-20, D7 and D2/D3)."""
+
+    def section(self):
+        text = (REPO / "docs/opencode.md").read_text()
+        i = text.index("## OpenCode 2, opt-in")
+        return text[i:text.index("## Opting out", i)]
+
+    def test_going_back_to_1x_names_the_v2_plugin_removal(self):
+        self.assertIn("rm -f ~/.config/opencode/plugins/auto-continue-v2.js", self.section())
+
+    def test_a_failed_download_is_said_to_keep_serving_what_is_installed(self):
+        s = self.section()
+        self.assertIn("keeps serving the OpenCode already installed", s)
+        self.assertIn("writes nothing for the other major", s)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
