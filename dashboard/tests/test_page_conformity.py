@@ -151,8 +151,8 @@ class TheServicesBehindTheirClone(unittest.TestCase):
                 self.assertNotIn("get.sh", b[0]["text"])
         b = self.banner("{installed: 'v1.48.0', clone: 'v1.48.0', behind_clone: true, behind_clone_why: 'commit', "
                         "clone_local: true}")
-        self.assertIn("This clone is off main or holds commits of its own, which the one-line update refuses to "
-                      "install.", b[0]["text"])
+        self.assertIn("This clone is off its channel's branch (main or stable) or holds commits of its own, "
+                      "which the one-line update refuses to install.", b[0]["text"])
         self.assertNotIn("A git pull", b[0]["text"])
         # a clone get.sh updates keeps the one-line update
         b = self.banner("{installed: 'v1.36.0', clone: 'v1.36.1', behind_clone: true, behind_clone_why: 'commit'}")
