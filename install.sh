@@ -2745,12 +2745,15 @@ elif [ -n "$OC_HAVE" ] && [ "${OC_HAVE%%.*}" != "${OPENCODE_MAJOR:-1}" ]; then
     [ -n "$OC_ON_PATH" ] && echo "      NOTE: a shell finds $OC_ON_PATH first: the Agent unit and this run take"
     [ -n "$OC_ON_PATH" ] && echo "      the installed copy at ~/.opencode/bin; keep only one OpenCode 2 on the PATH"
   else
-    # the choice wins both ways: a run that could not download neither installs the pin nor starts
-    # serving the found binary as the OTHER major (it would render the wrong unit around it and
-    # write a marker nobody asked for) (independent review of the v2 migration, finding 2)
-    echo "      $OC_TARGET_VER could not come down: this run keeps the box on the OpenCode it chose"
-    echo "      (${OPENCODE_MAJOR:-1}.x), serves nothing as the other major, and writes no marker."
-    echo "      The Agent tab stays down until $OC_TARGET_VER installs: re-run ./install.sh once GitHub is reachable."
+    # the choice wins both ways: a run that could not download neither installs the pin nor writes
+    # anything for the major it was asked to switch to. The binary in place keeps serving, and
+    # everything below (config, unit, launcher) is written for ITS major only (OC_SERVE_MAJOR),
+    # so no mixed state is left behind; the message says what really serves (blind review of
+    # 2026-11-20, D2/D3)
+    echo "      $OC_TARGET_VER could not come down: this run keeps serving the OpenCode already installed,"
+    echo "      $OC_HAVE at $OC_FOUND (OpenCode ${OC_HAVE%%.*}); nothing is written for ${OPENCODE_MAJOR:-1}.x"
+    echo "      (no marker, no config key, no unit), so the box is not left in a mixed state."
+    echo "      Re-run ./install.sh --opencode ${OPENCODE_MAJOR:-1} once GitHub is reachable to install $OC_TARGET_VER."
   fi
 elif [ -z "$OC_FOUND" ] || { [ "$OC_FOUND" -ef "$OC_HOME_BIN" ] && ver_lt "$OC_HAVE" "$OC_TARGET_VER"; }; then
   if [ -z "$OC_FOUND" ]; then
@@ -2792,6 +2795,16 @@ else
   echo "NOTE: opencode $OC_HAVE is newer than the $OC_TARGET_VER this repo tests. Kept: going back"
   echo "      a version can leave sessions a newer opencode wrote unreadable. OPENCODE_PIN=0 silences this."
 fi
+# What this run actually SERVES: the major of the binary that stands after the step above.
+# A crossing whose download failed leaves the old binary in place, so everything below (the
+# rollback of the v2 keys, the generated config, the Agent unit, the oc launcher, the final
+# summary) is written for the binary that runs, never for the major the run was asked to
+# switch to: a failed download leaves no mixed state (blind review of 2026-11-20, D2/D3).
+OC_SERVE_MAJOR="${OPENCODE_MAJOR:-1}"
+if [ -n "$OC_HAVE" ]; then
+  case "${OC_HAVE%%.*}" in 1|2) OC_SERVE_MAJOR="${OC_HAVE%%.*}" ;; esac
+fi
+export OC_MAJOR="$OC_SERVE_MAJOR"
 if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && ver_lt "$OC_HAVE" "$OC_TARGET_VER"; then
   echo "NOTE: opencode is still $OC_HAVE after the step above; oc and the Agent view keep running it"
 fi
@@ -2809,7 +2822,7 @@ fi
 # to start while a config holds "permissions" ("V2 permissions are not supported by OpenCode
 # V1", measured against the box's 1.19.5 on 2026-11-14). --remove-permissions only touches
 # the array this repo wrote; a person's own table is left alone.
-if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OPENCODE_MAJOR:-1}" != 2 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
+if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OC_SERVE_MAJOR:-1}" != 2 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
   if ! OC_RM="$(python3 "$REPO_DIR/oc-merge-limits.py" "$HOME/.config/opencode/opencode.json" --remove-permissions 2>&1)"; then
     echo "NOTE: $OC_RM"
     echo "      OpenCode 1.19 refuses to start while a config holds \"permissions\": that array is not the one"
@@ -2824,7 +2837,7 @@ fi
 # by hand). Only the keys the v2 wrote come out: the v1 keys and everything the user put in
 # the block stay, and a box that never chose 2 (no marker at the start of this run) is not
 # touched at all.
-if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OPENCODE_MAJOR:-1}" != 2 ] && [ "${OC_WAS_2:-0}" -eq 1 ]; then
+if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OC_SERVE_MAJOR:-1}" != 2 ] && [ "${OC_WAS_2:-0}" -eq 1 ]; then
   for OC_V2_CFG in "$CONFIG_DIR/opencode.json" "$HOME/.config/opencode/opencode.json"; do
     [ -f "$OC_V2_CFG" ] || continue
     python3 "$REPO_DIR/oc-merge-limits.py" "$OC_V2_CFG" --remove-compaction-v2 \
@@ -3133,7 +3146,7 @@ OC_LFM3="$OC_LFM3" OC_LFM3_CTX="$OC_LFM3_CTX" OC_LFM3_OUT="$OC_LFM3_OUT" \
 OC_LFM3_NAME="$OC_LFM3_NAME" OC_LFM3_BOOT="$LFM3_BOOT" \
 OC_KEEP="$OC_KEEP" OC_PIN="$OPENCODE_PIN" OC_DENY="$(python3 "$REPO_DIR/oc-merge-limits.py" --deny-permission)" \
 OC_DENY_V2="$(python3 "$REPO_DIR/oc-merge-limits.py" --deny-permissions)" \
-OC_MAJOR="${OPENCODE_MAJOR:-1}" \
+OC_MAJOR="${OC_SERVE_MAJOR:-${OPENCODE_MAJOR:-1}}" \
 OC_CONFIG_DIR="$CONFIG_DIR" python3 - <<'PYEOF' || die "could not write the opencode provider config"
 import json
 import os
@@ -3361,7 +3374,7 @@ print(f"{'kept' if same else 'wrote'} {cfg_dir}/opencode.json (default {default}
       f"providers: {', '.join(providers) or 'none'})")
 PYEOF
 echo "opencode limits: context $OC_CTX, output $OC_OUT, port $OC_PORT"
-if [ "${OPENCODE_MAJOR:-1}" = "2" ]; then
+if [ "${OC_SERVE_MAJOR:-1}" = "2" ]; then
   # OpenCode 2 keeps 15% of the window free before auto compaction, at least 16,000 tokens
   # above a 32,000-token window (calculateCeiling, packages/core/src/session/compaction.ts
   # of 2.3.2), and keeps OC_KEEP verbatim beside the summary (keep.tokens)
@@ -3400,7 +3413,7 @@ else
   # OpenCode 2 does not read that block at all, and its own "permissions" array must not go
   # into a file 1.x still reads (1.19.5 stops on it, measured 2026-11-14): the v2 array is
   # written only on a box that chose --opencode 2, and taken back out by the rollback above.
-  if [ "${OPENCODE_MAJOR:-1}" = "2" ]; then
+  if [ "${OC_SERVE_MAJOR:-1}" = "2" ]; then
     python3 "$REPO_DIR/oc-merge-limits.py" "$OC_USER_CFG" --deny-permissions || true
   fi
 fi
@@ -3559,14 +3572,14 @@ if [ -n "$OC_FOREIGN" ]; then
   echo "NOTE: an unrelated 'oc' command exists at $OC_FOREIGN; not installing the launcher."
   # OPENCODE_CONFIG as the launcher sets it: without it opencode sends the prompts to its
   # own hosted model when the global config names no provider for this box (2026-09-23)
-  if [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
+  if [ "${OC_SERVE_MAJOR:-1}" = 2 ]; then
     echo "      Launch opencode with:  OPENCODE_CONFIG=$CONFIG_DIR/opencode.json opencode --auto"
     echo "      (OpenCode 2 has no cap to lift: the answer length follows the model's"
     echo "       limit.output, measured on 2.3.0 the 2026-11-14, and --yolo is not a flag of it)"
   else
     echo "      Launch opencode with:  OPENCODE_CONFIG=$CONFIG_DIR/opencode.json OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OC_OUT_CAP opencode --yolo"
   fi
-elif [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
+elif [ "${OC_SERVE_MAJOR:-1}" = 2 ]; then
   mkdir -p "$HOME/.local/bin"
   cat > "$OC_BIN" <<OCWRAP2
 #!/bin/bash
@@ -4093,7 +4106,7 @@ else
       # the PATH. Step 10 is the text path's only, so a box booting this lane kept the opencode
       # it started with until its next boot (the reference box on the FP4-Local lane, 2026-10-22).
       if [ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then
-        OPENCODE_MAJOR="$OPENCODE_MAJOR" "$REPO_DIR/dashboard/install-agent.sh" \
+        OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh" \
           || echo "NOTE: the Agent view did not install; the rest of the cockpit is up (retry: ./dashboard/install-agent.sh)"
       fi
     else
@@ -4452,7 +4465,7 @@ except Exception as e:
         # The Agent tab needs opencode on PATH. Not having it costs one tab, and
         # one missing tab is not a reason to fail an install that is otherwise up.
         if [ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then
-          OPENCODE_MAJOR="$OPENCODE_MAJOR" "$REPO_DIR/dashboard/install-agent.sh" \
+          OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh" \
             || echo "NOTE: the Agent view did not install; the rest of the cockpit is up (retry: ./dashboard/install-agent.sh)"
         elif [ "$OPENCODE" -eq 1 ]; then
           echo "NOTE: opencode is not on your PATH (step 7 did not install it: see its NOTE, or OPENCODE_PIN=0),"
@@ -4728,7 +4741,7 @@ except Exception as e:
       # launcher is skipped when another oc exists, and ~/.local/bin may be new.
       OC_START="oc"
       if ! grep -qs 'dgx-spark-qwen38' "$HOME/.local/bin/oc"; then
-        if [ "${OPENCODE_MAJOR:-1}" = 2 ]; then
+        if [ "${OC_SERVE_MAJOR:-1}" = 2 ]; then
           OC_START="OPENCODE_CONFIG=$CONFIG_DIR/opencode.json opencode --auto"
         else
           OC_START="${OC_OUT_CAP:+OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=$OC_OUT_CAP }opencode --yolo"

@@ -328,7 +328,7 @@ class TheStrayBinaryNeverOptsIn(unittest.TestCase):
                   f'OPENCODE2_VERSION="2.3.0"; OPENCODE2_SHA256="{"0" * 64}"\n'
                   f'_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
                   + (f'OPENCODE_MAJOR="{major_env}"\n' if major_env else "")
-                  + block(whole=True) + 'echo "CHOICE=${OPENCODE_MAJOR:-1}"\n')
+                  + block(whole=True) + 'echo "CHOICE=${OPENCODE_MAJOR:-1} SERVE=${OC_SERVE_MAJOR:-none}"\n')
         path = ":".join([str(self.bin), str(self.brew), "/usr/bin", "/bin"])
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"HOME": str(self.home), "PATH": path, "OC_LOG": str(self.log),
@@ -338,18 +338,136 @@ class TheStrayBinaryNeverOptsIn(unittest.TestCase):
     def test_a_failed_fetch_keeps_the_choice_1_and_writes_no_marker(self):
         rc, out = self.run_home(sha="0" * 64)     # the download answers the wrong bytes
         self.assertEqual(rc, 0, out)
-        self.assertIn("CHOICE=1", out)
+        self.assertIn("CHOICE=1 SERVE=2", out, "the 2.x binary in place is what serves")
         self.assertFalse((self.home / ".config" / "qwen38" / "opencode.major").exists(),
                          "a run that could not download never opts a box into OpenCode 2")
-        self.assertIn("keeps the box on the OpenCode it chose", out)
+        self.assertIn("keeps serving the OpenCode already installed", out)
+        self.assertIn("2.3.0", out)
 
     def test_the_choice_2_box_with_a_1_x_binary_keeps_its_choice_too(self):
         (self.brew / "VERSION").write_text("1.19.0\n")
         rc, out = self.run_home(sha="0" * 64, major_env="2")
         self.assertEqual(rc, 0, out)
-        self.assertIn("CHOICE=2", out)
+        self.assertIn("CHOICE=2 SERVE=1", out, "the 1.x binary in place is what serves")
         self.assertFalse((self.home / ".config" / "qwen38" / "opencode.major").exists(),
                          "no marker for a binary that is not the pinned 2.x either")
+        self.assertIn("keeps serving the OpenCode already installed", out)
+        self.assertIn("1.19.0", out)
+
+
+class TheFailedCrossingServesWhatStands(unittest.TestCase):
+    """A download that fails while the run crosses majors (1 to 2 or 2 to 1) leaves NO mixed
+    state: nothing is written for the major the run was asked to switch to (no marker, no
+    config key, no unit), the message says what really serves (the binary in place), the
+    cloud-metadata and aliyuncs denies stay in the configs of the major that runs, and a
+    re-run repairs. Blind review of 2026-11-20, D2/D3."""
+
+    GEN_V2 = {"compaction": {"keep": {"tokens": 135000}, "background": True},
+              "provider": {"qwen38": {}}, "autoupdate": False}
+    USER_V2 = {"compaction": {"keep": {"tokens": 135000}, "background": True, "prune": False},
+               "theme": "dark",
+               "permissions": [{"action": "shell", "resource": "*aliyuncs.com*", "effect": "deny"},
+                               {"action": "shell", "resource": "*169.254.169.254*", "effect": "deny"},
+                               {"action": "shell", "resource": "*100.100.100.200*", "effect": "deny"}]}
+    DENIES = ["*aliyuncs.com*", "*169.254.169.254*", "*100.100.100.200*"]
+
+    def setUp(self):
+        self.t = pathlib.Path(tempfile.mkdtemp(prefix="oc-xfail-"))
+        self.addCleanup(shutil.rmtree, self.t, True)
+        self.home = self.t / "home"
+        self.cfg = self.home / ".config" / "qwen38"
+        self.cfg.mkdir(parents=True)
+        (self.home / ".config" / "opencode").mkdir(parents=True)
+        (self.home / ".bashrc").write_text("# a user's bashrc\n")
+        self.bin = self.t / "fakebin"
+        self.bin.mkdir()
+        (self.bin / "curl").write_text(FAKE_CURL)
+        (self.bin / "curl").chmod(0o755)
+        self.log = self.t / "calls.log"
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            body = f"#!/bin/sh\n[ \"$1\" = --version ] && echo {PINNED}\n".encode()
+            info = tarfile.TarInfo("opencode"); info.size = len(body); info.mode = 0o755
+            tf.addfile(info, io.BytesIO(body))
+        self.tarball = self.t / "asset.tar.gz"
+        self.tarball.write_bytes(buf.getvalue())
+        self.sha = hashlib.sha256(buf.getvalue()).hexdigest()
+        self.brew = self.t / "brew"
+        self.brew.mkdir()
+        (self.brew / "opencode").write_text(FAKE_OC)
+        (self.brew / "opencode").chmod(0o755)
+
+    def run_crossing(self, *, brew_version, marker=None, want="", v1_sha=None):
+        """The installer's own choice + download + marker + rollback lines, run whole, with a
+        binary of the other major on the PATH and a download that fails its sha256 check."""
+        (self.brew / "VERSION").write_text(brew_version + "\n")
+        if marker:
+            (self.cfg / "opencode.major").write_text("2\n# asked with ./install.sh --opencode 2\n")
+        gen = self.cfg / "opencode.json"
+        gen.write_text(json.dumps(self.GEN_V2, indent=2) + "\n")
+        user = self.home / ".config" / "opencode" / "opencode.json"
+        user.write_text(json.dumps(self.USER_V2, indent=2) + "\n")
+        script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
+                  f'REPO_DIR="{REPO}"\nCONFIG_DIR="{self.cfg}"\n'
+                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{v1_sha or self.sha}"; OPENCODE_PIN="1"\n'
+                  f'OPENCODE2_VERSION="2.3.2"; OPENCODE2_SHA256="{"0" * 64}"\n'
+                  f'_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
+                  f'OPENCODE_MAJOR_WANT="{want}"\n'
+                  + major_choice() + "\n" + block(whole=True)
+                  + '\necho "CHOICE=${OPENCODE_MAJOR:-1} SERVE=${OC_SERVE_MAJOR:-none} OCMAJOR=${OC_MAJOR:-none}"\n')
+        path = ":".join([str(self.bin), str(self.brew), "/usr/bin", "/bin"])
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
+                           env={"HOME": str(self.home), "PATH": path, "OC_LOG": str(self.log),
+                                "OC_TARBALL": str(self.tarball)})
+        marker_file = self.cfg / "opencode.major"
+        return (r.returncode, r.stdout + r.stderr, json.loads(gen.read_text()),
+                json.loads(user.read_text()),
+                marker_file.read_text() if marker_file.exists() else None)
+
+    def test_d2_a_failed_1_x_download_on_a_2_box_keeps_serving_2(self):
+        # marker 2, binary 2.3.2, ./install.sh --opencode 1 while GitHub is unreachable
+        rc, out, gen, user, marker = self.run_crossing(brew_version="2.3.2", marker="2", want="1",
+                                                       v1_sha="0" * 64)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=1 SERVE=2 OCMAJOR=2", out)
+        self.assertIn("could not come down", out)
+        self.assertIn("keeps serving the OpenCode already installed", out)
+        self.assertIn("2.3.2", out)
+        self.assertIn("Re-run ./install.sh --opencode 1", out)
+        self.assertIsNotNone(marker)
+        self.assertEqual(marker.splitlines()[0], "2", "a failed crossing does not touch the marker")
+        # the guard holds: the configs of the major that runs keep the exfiltration denies
+        self.assertEqual([p["resource"] for p in user["permissions"]], self.DENIES)
+        self.assertEqual(gen["compaction"], {"keep": {"tokens": 135000}, "background": True},
+                         "the v2 compaction keys stay while the 2.x binary stands")
+
+    def test_d3_a_failed_2_x_download_on_a_1_x_binary_keeps_serving_1(self):
+        # marker 2, binary back at 1.19.0 (brew, another install, OPENCODE_PIN=0), plain run
+        rc, out, gen, user, marker = self.run_crossing(brew_version="1.19.0", marker="2", want="")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHOICE=2 SERVE=1 OCMAJOR=1", out)
+        self.assertIn("keeps serving the OpenCode already installed", out)
+        self.assertIn("1.19.0", out)
+        self.assertIn("Re-run ./install.sh --opencode 2", out)
+        self.assertIsNotNone(marker)
+        self.assertEqual(marker.splitlines()[0], "2",
+                         "the marker stays 2, so a plain re-run retries the 2.x download and repairs")
+        # 1.x must be able to start: our v2 array is out of the global config, and the v2
+        # compaction keys are out of both configs
+        self.assertNotIn("permissions", user)
+        self.assertNotIn("keep", gen["compaction"])
+        self.assertNotIn("background", gen["compaction"])
+        self.assertNotIn("keep", user["compaction"])
+        self.assertEqual(user["compaction"].get("prune"), False)
+        self.assertEqual(user["theme"], "dark")
+
+    def test_everything_downstream_follows_the_binary_that_stands(self):
+        text = INSTALL.read_text()
+        self.assertIn('OC_MAJOR="${OC_SERVE_MAJOR:-${OPENCODE_MAJOR:-1}}"', text,
+                      "the generated config's OC_MAJOR follows the binary in place")
+        self.assertEqual(text.count('OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh"'),
+                         2, "both install-agent.sh calls hand the served major down (the unit)")
+        self.assertIn('OC_SERVE_MAJOR="${OPENCODE_MAJOR:-1}"', text)
 
 
 class TheRollbackSpeaks(unittest.TestCase):
@@ -415,6 +533,7 @@ class TheRollbackTakesTheV2CompactionKeysOut(unittest.TestCase):
             (cfg / "opencode.major").write_text("2\n# asked with ./install.sh --opencode 2\n")
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
                   f'REPO_DIR="{REPO}"\nCONFIG_DIR="{cfg}"\nOPENCODE=1\nOPENCODE_MAJOR="{major}"\n'
+                  f'OC_SERVE_MAJOR="{major}"\n'
                   f'OC_WAS_2="{1 if was2 else 0}"\n' + rollback())
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
                            env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
