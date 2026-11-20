@@ -107,7 +107,8 @@ unset _v
 # The OpenCode this box serves (./install.sh --opencode 2 wrote the marker): the config
 # merges below write its compaction block in the v2 shape on such a box (oc-merge-limits.py
 # reads OC_MAJOR), exactly as install.sh exports it for its own calls.
-export OC_MAJOR="$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || echo 1)"
+OC_MAJOR="$(head -1 "$CONFIG_DIR/opencode.major" 2>/dev/null || echo 1)"
+export OC_MAJOR
 
 IMAGE_UNIT="/etc/systemd/system/qwen38-image.service"
 IMAGE_UNIT_NAME="qwen38-image.service"
