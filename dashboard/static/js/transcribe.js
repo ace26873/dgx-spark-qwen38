@@ -315,9 +315,9 @@ function wireTranscribe(){
   dz.addEventListener('drop', e => trPickFiles(e.dataTransfer ? e.dataTransfer.files : null));
   $('tcr-run').addEventListener('click', trRun);
   $('tcr-reset').addEventListener('click', () => { TRS.audio = null; TRS.result = null; TRS.touched = false; trShowEmpty(); trCurl(); trSync(); });
-  $('tcr-copy').addEventListener('click', () => { if (TRS.result) copyText(TRS.result.text); });
+  wireCopyButton($('tcr-copy'), () => TRS.result ? TRS.result.text : '', 'Copy the transcript');
   $('tcr-dl').addEventListener('click', trDownload);
-  $('tcr-curl-copy').addEventListener('click', () => copyText($('tcr-curl').textContent));
+  wireCopyButton($('tcr-curl-copy'), () => $('tcr-curl').textContent, 'Copy the command');
   $('tcr-rec').addEventListener('click', trRecordStart);
   $('tcr-rec-stop').addEventListener('click', trRecordStop);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && activeView === 'transcribe') trLane(); });
