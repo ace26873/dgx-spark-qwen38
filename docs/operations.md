@@ -73,6 +73,24 @@ Plugins load when opencode starts (a running session never picks it up). Log at
 `~/.config/qwen38/auto-continue.log`; tune with `AC_THROTTLE_MS`, `AC_IDLE_DELAY_MS`,
 `AC_MAX_CONSECUTIVE`, `AC_SAME_REFUSAL_MAX` (3), `AC_LOG`.
 
+On a box that chose OpenCode 2 (`./install.sh --opencode 2`) copy the v2 port instead and
+take the v1 file out of the plugins directory (OpenCode 2 does not run v1 plugin
+implementations; it wants a default export of `{ id, setup }`):
+
+```bash
+mkdir -p ~/.config/opencode/plugins
+cp extras/opencode/auto-continue-v2.js ~/.config/opencode/plugins/
+rm -f ~/.config/opencode/plugins/auto-continue.js
+```
+
+`extras/opencode/auto-continue-v2.js` keeps the same policy on the v2 event set: it relaunches
+after `session.execution.failed` (the runner's own retries are exhausted by then) unless the
+error is one of the exclusions, or the same 4xx refusal (not 429) comes back a third time;
+after a manual `/compact` (`session.compaction.ended` with reason `manual`), which ends idle
+without resuming. An automatic compaction needs no relaunch in v2: the runner compacts inside
+the running turn and continues, and `compaction.background` (on by default since 2.3.1) has
+the summary precomputed from the cached prefix, so the swap is immediate.
+
 **`extras/gguf/`**: a note, not a lane. What llama.cpp measured on this box against the
 SGLang path (25.6 tok/s on code against 32-40, prose 17.7-18.2 against 17-22, prefill
 about a third), the four traps that make a GGUF benchmark on GB10 lie to you, and what
