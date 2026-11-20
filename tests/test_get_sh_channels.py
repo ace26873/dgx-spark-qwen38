@@ -84,6 +84,25 @@ def curl_shim(base, tag=None):
     return bin_dir
 
 
+def git_shim(base):
+    """A git first on PATH that fails exactly the fetches that bring tags (a tag refspec,
+    --tags): what a shallow clone (a manual git clone --depth) meets when the release's
+    tag cannot be fetched into it. Everything else, the fetch of main included, goes to
+    the real git."""
+    bin_dir = os.path.join(base, "bin")
+    os.makedirs(bin_dir, exist_ok=True)
+    real = shutil.which("git")
+    with open(os.path.join(bin_dir, "git"), "w") as f:
+        f.write('#!/usr/bin/env bash\n'
+                'want=0\n'
+                'for a in "$@"; do\n'
+                '  case "$a" in fetch) want=1 ;; refs/tags/*|--tags*) [ "$want" = 1 ] && exit 128 ;; esac\n'
+                'done\n'
+                f'exec "{real}" "$@"\n')
+    os.chmod(os.path.join(bin_dir, "git"), 0o755)
+    return bin_dir
+
+
 def isolated(base, bin_dir, extra=None):
     """What every run of get.sh here gets: PATH (the shim's folder first) and nothing else of
     this shell's environment, English messages, the fixture's folder for HOME, git with no
@@ -267,6 +286,35 @@ def main() -> None:
         assert state(offbox, "rev-parse", "HEAD") == before, "the offline run moved the clone"
         assert state(offbox, "symbolic-ref", "-q", "--short", "HEAD") == "main", "the clone left main"
         assert not os.path.exists(channel_file), "the offline run wrote the channel file"
+
+        # 13. A shallow clone (a manual git clone --depth) whose release tag cannot be fetched:
+        #     a refusal that says what to do, and nothing touched (B4 of the review, 2026-11-20).
+        #     The old refusal said only "could not find the latest published release". The origin
+        #     is cloned over the file:// transport, which keeps the clone shallow the way a
+        #     network remote does (a plain local path fetch unshallows it); the tag the API
+        #     names is taken out of the clone and its fetches fail, the way a shallow clone
+        #     meets a tag its cut history cannot take.
+        shabox = os.path.join(base, "shallow-box")
+        git("clone", "-q", "--depth", "1", "file://" + origin, shabox, cwd=base)
+        for k, v in (("user.email", "t@t"), ("user.name", "t")):
+            git("config", k, v, cwd=shabox)
+        for line in git("tag", "-l", cwd=shabox).stdout.split():
+            git("update-ref", "-d", "refs/tags/" + line, cwd=shabox)
+        before = state(shabox, "rev-parse", "HEAD")
+        if os.path.exists(channel_file):
+            os.remove(channel_file)
+        bin_dir = curl_shim(base, "v1.55.0")
+        git_shim(base)
+        r = run_get(shabox, bin_dir)
+        assert r.returncode == 1, "a shallow clone that cannot fetch the tag updated anyway"
+        assert "shallow" in r.stderr, r.stderr
+        assert "fetch --unshallow" in r.stderr, r.stderr
+        assert "--edge" in r.stderr, r.stderr
+        assert "Nothing was touched" in r.stderr, r.stderr
+        assert state(shabox, "rev-parse", "HEAD") == before, "the refused run moved the clone"
+        assert state(shabox, "symbolic-ref", "-q", "--short", "HEAD") == "main", "the clone left main"
+        assert not state(shabox, "branch", "--list", "stable"), "a stable branch was created"
+        assert not os.path.exists(channel_file), "the refused run wrote the channel file"
 
         print("test_get_sh_channels: OK")
     finally:

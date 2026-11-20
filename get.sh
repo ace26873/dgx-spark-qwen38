@@ -198,8 +198,17 @@ main() {
     fi
     if [ -z "$TAG" ] || ! git -C "$DIR" rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
       echo "ERROR: could not find the latest published release of this repo (no answer from GitHub's" >&2
-      echo "  release API, none from the remote's tags, none in this clone). Nothing was touched." >&2
-      echo "  try again online, or follow main instead:  bash -s -- --edge" >&2
+      echo "  release API, none from the remote's tags, or the release's tag could not be fetched" >&2
+      echo "  into this clone). Nothing was touched." >&2
+      # a shallow clone (a manual git clone --depth) has its history cut: the tag's fetch into
+      # it is what fails here, and the way out is to fetch the history whole (review, 2026-11-20)
+      if [ "$(git -C "$DIR" rev-parse --is-shallow-repository 2>/dev/null || true)" = true ]; then
+        echo "  this clone is shallow (a git clone --depth): fetch its whole history first:" >&2
+        echo "    git -C $DIR fetch --unshallow" >&2
+        echo "  or follow main instead:  bash -s -- --edge" >&2
+      else
+        echo "  try again online, or follow main instead:  bash -s -- --edge" >&2
+      fi
       exit 1
     fi
     TARGET_BRANCH=stable
