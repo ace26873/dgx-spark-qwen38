@@ -269,17 +269,25 @@ def set_member(text: str, path, key: str, value: str) -> str:
     indent = gap[gap.rindex("\n") + 1:] if "\n" in gap else ""
     member = (json.dumps(key) + ": " + value).replace("\n", nl + indent)
     if clean[first] == "}":
-        return text[:o + 1] + member + text[o + 1:]
+        return text[:o + 1] + member + text[first:]
     if "\n" not in gap:
-        return text[:o + 1] + member + ", " + text[o + 1:]
+        # the gap is whitespace only, so it is consumed, not kept: keeping it made every
+        # insert add the separator's spaces to it, and the file drifted a little more on
+        # each pass (two spaces per pass before the block's first member on the reference
+        # box, 2026-11-20)
+        return text[:o + 1] + member + ", " + text[first:]
     return text[:o + 1] + nl + indent + member + "," + text[o + 1:]
 
 
-def _member_span(clean: str, key_at: int):
+def _member_span(clean: str, key_at: int, text: str = ""):
     """(start, end) of the member whose key opens at key_at, with one separating comma,
     so that text[:start] + text[end:] is still JSON(C); a member alone on its lines
     takes those lines with it. On a blank()ed text, so a comment line between the member
-    and the comma before it hides nothing."""
+    and the comma before it hides nothing. The spaces and tabs around the member go with
+    it (after its comma when it has one, before its key otherwise): left behind, they
+    piled up on every edit and the file drifted (two spaces per pass on the reference
+    box, 2026-11-20). `text` is the file itself, so a comment after the comma stops the
+    horizontal trim instead of being eaten."""
     try:
         i = _skip_ws(clean, _string_end(clean, key_at))
         if clean[i] != ":":
@@ -291,6 +299,8 @@ def _member_span(clean: str, key_at: int):
     j = _skip_ws(clean, end)
     if j < len(clean) and clean[j] == ",":
         end = j + 1
+        while end < len(text) and text[end] in " \t":
+            end += 1
     else:
         k = key_at - 1
         while k >= 0 and clean[k].isspace():
@@ -305,14 +315,17 @@ def _member_span(clean: str, key_at: int):
             if clean[end:end + len(eol)] == eol:
                 start, end = s, end + len(eol)
                 break
-    return start, end
+    # s, not start: the spaces and tabs before the key go with the member, or every
+    # removal leaves them behind and the next insert adds its own beside them (the
+    # compaction block gained two spaces per pass on the reference box, 2026-11-20)
+    return s, end
 
 
 def remove_member(text: str, path) -> str:
     """text without the member at `path`."""
     clean = blank(text)
     m = _locate(clean, path)
-    span = None if m is None or m[0] is None else _member_span(clean, m[0])
+    span = None if m is None or m[0] is None else _member_span(clean, m[0], text)
     if span is None:
         raise ValueError(f"no member at {'/'.join(path)}")
     return text[:span[0]] + text[span[1]:]

@@ -247,6 +247,54 @@ def main() -> None:
         assert open(p).read() == body, "a config without the v2 keys was written"
         assert os.listdir(sub) == ["oc.json"], f"a backup was left beside it: {os.listdir(sub)}"
 
+    # 6d. Writing the same compaction block twice gives the same bytes, in v1 as in v2.
+    #     set_member left the whitespace gap before the object's first member in place when
+    #     it inserted a new member there, so each pass added the separator's spaces to that
+    #     gap: two spaces per pass before "background" on the reference box, 2026-11-20,
+    #     across a v2 install, the rollback to v1 and the next install. Whatever the block
+    #     looks like coming in, pass 2 is byte for byte pass 1, and the v1/v2 alternation
+    #     converges (from the third pass on, each pass repeats two passes before).
+    def compact_m(path, keep, major):
+        r = subprocess.run([sys.executable, SCRIPT, path, "--compaction", str(keep)],
+                           capture_output=True, text=True, env=dict(os.environ, OC_MAJOR=major))
+        return r.returncode, (r.stdout + r.stderr).strip()
+
+    drift_bodies = [
+        '{\n  "compaction": {"preserve_recent_tokens": 135000, "prune": false},\n  "x": 1\n}\n',
+        '{\n  "compaction": {"background": true, "keep": {"tokens": 135000}},\n  "x": 1\n}\n',
+        '{\n  "compaction": {"preserve_recent_tokens": 135000, "prune": false, "background": true,'
+        ' "keep": {"tokens": 135000}\n  },\n  "x": 1\n}\n',
+        '{\n  "compaction": {\n    "keep": {\n      "tokens": 135000\n    },\n    "background": true,'
+        '\n    "auto": true\n  },\n  "x": 1\n}\n',
+        '{\n  "compaction": {},\n  "x": 1\n}\n',
+        '{\n  "x": 1\n}\n',
+    ]
+    for body in drift_bodies:
+        for major in ("1", "2"):
+            sub = tempfile.mkdtemp(dir=tmp)
+            p = write(sub, body)
+            rc, out = compact_m(p, 135000, major)
+            assert rc == 0, out
+            b1 = open(p, "rb").read()
+            rc, out = compact_m(p, 135000, major)
+            assert rc == 0, out
+            b2 = open(p, "rb").read()
+            assert b2 == b1, (f"major={major}: pass 2 differs from pass 1\n"
+                             f"in : {body!r}\n1st: {b1!r}\n2nd: {b2!r}")
+            rc, out = compact_m(p, 135000, major)
+            assert open(p, "rb").read() == b1, f"major={major}: pass 3 differs"
+
+    sub = tempfile.mkdtemp(dir=tmp)
+    p = write(sub, drift_bodies[0])
+    states = []
+    for i in range(6):                       # the box's sequence: v2, v1, v2, v1, v2, v1
+        rc, out = compact_m(p, 135000, "2" if i % 2 == 0 else "1")
+        assert rc == 0, out
+        states.append(open(p, "rb").read())
+    for i in range(2, len(states)):
+        assert states[i] == states[i - 2], \
+            f"pass {i} drifted from pass {i-2}:\n{states[i-2]!r}\n{states[i]!r}"
+
     # 7. --add-providers: the config a box's first install wrote gains the provider of a
     #    lane installed since, and nothing else in it moves. The 27B first and the flash
     #    lane later left the copy with no flashnext: the served model answers under any
