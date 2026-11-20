@@ -233,8 +233,10 @@ class TheWiring(unittest.TestCase):
 
     def test_the_default_is_resolved_after_the_flags_are_parsed(self):
         # It depends on --no-service, so a default computed at the top of the
-        # file (where the old one lived) cannot see it.
-        self.assertLess(self.src.index('for arg in "$@"; do'),
+        # file (where the old one lived) cannot see it. The parser is a while
+        # loop since the --opencode flag took its value (the for loop let the
+        # value fall to the catch-all).
+        self.assertLess(self.src.index('while [ $# -gt 0 ]; do'),
                         self.src.index('if [ -z "$CONTEXT_MODE" ]; then\n  if [ "$LANE" = "flash" ]'))
 
     def test_the_1m_limits_are_fitted_to_the_real_pool_after_boot(self):
