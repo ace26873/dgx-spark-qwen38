@@ -65,8 +65,13 @@ architecture, its tokenizer files and chat template byte for byte (its tokenizer
 nine more tokens special, none of the think or tool tags), and its config loads with
 the lane image's transformers 5.19.0. Its checkpoint declares no KV cache: its switch
 writes the one RadixArk's NVFP4 declares into its config (`patch-kv.py`), so its target's
-cache is fp8 and its draft's bf16, as for `stock`. The measurement on our box remains to be
-done. RadixArk publishes, at xhigh reasoning and temperature 1.0: Terminal-Bench 2.1 at
+cache is fp8 and its draft's bf16, as for `stock`. Measured on the reference box
+(2026-11-19 and 2026-11-20, under a 2,000 MHz GPU clock cap): the cockpit's Load switches to
+it and back without a download when its checkpoint is cached; the 8 real clients answer
+through the proxy; an agent-like conversation over a 40,000-token prompt is served 100 %
+from the prefix cache from its second turn on; and its decode median over three 512-token
+requests is 55.5 tokens/s against 60.6 for `stock` under the same cap. Its quality is not
+measured on our box yet. RadixArk publishes, at xhigh reasoning and temperature 1.0: Terminal-Bench 2.1 at
 75.5 against 73.0 for Qwen3.8-27B, Terminal-Bench 4.1 at 12.0 against 5.6, SWE Bench Pro v2
 at 94.7 against 91.3 and GPQA Diamond at 90.7 against 89.2; several of the Qwen3.8-27B
 scores come from model cards or an article, not a paired run.

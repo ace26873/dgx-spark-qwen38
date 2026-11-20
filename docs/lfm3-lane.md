@@ -168,14 +168,20 @@ Through the proxy on `:30001`, with the box's key, as model `lfm3-1.7b`:
   a request the served name.
 - **opencode** gets an `lfm3` provider, text only (the model reads no image), with two variants, `high` and
   `none`, the two states its template holds. Loading the lane makes it opencode's default, with 205,000 tokens of
-  context and 32,000 of output, the flash lane's pair at the same window ([docs/opencode.md](opencode.md)).
+  context and 32,000 of output, the flash lane's pair at the same window ([docs/opencode.md](opencode.md)). Measured on
+  2026-11-20, a limit this lane ships with: opencode's file-reading task succeeded 19 times in 31 with opencode
+  1.19.6, for the model sometimes asks to read the test file at an invented absolute path (`/hello.txt`, or a
+  parent of the working directory), and opencode refuses a read outside its working directory
+  (`external_directory`). It is the model: opencode 1.19.5, run alternately with 1.19.6 on the lane, succeeded
+  once in 8 tries, against 7 for 1.19.6.
 - **pi** offers `off` and `high` alone, **omp** `high` and `minimal` ([docs/pi.md](pi.md)).
 - **System One** is not served here: vLLM caps `top_logprobs` on every vLLM lane, and the endpoint's option labels
   are measured on the Qwen tokenizer. The proxy says so (400), and the cockpit's Decide view offers a lane that
   serves it.
 
 The matrix of 2026-11-19 ran the clients through the proxy, all eight OK: Claude Code, opencode, Hermes, pi, the
-OpenAI and Anthropic SDKs, fetch under Node and Bun, and LiteLLM.
+OpenAI and Anthropic SDKs, fetch under Node and Bun, and LiteLLM. opencode's OK there was a single try: the
+targeted matrix of 2026-11-20 found it unsure (the limit above), the 7 others OK again.
 
 ## Its licence
 

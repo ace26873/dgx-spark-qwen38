@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.54.0 (date à venir): the cockpit gets a Transcription tab, a sign out and a Traffic view that says what the proxy never saw, the 27B lane gains DaisyRose 27B as a sixth target, opencode moves to 1.19.6, and a local CI run measures what the runner's does
+## v1.54.0 (2026-11-20): the cockpit gets a Transcription tab, a sign out and a Traffic view that says what the proxy never saw, the 27B lane gains DaisyRose 27B as a sixth target, opencode moves to 1.19.6, and a local CI run measures what the runner's does
 
 The cockpit gets a **Transcription** view (in the Create group, after Video) that drives the
 NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video views drive theirs.
@@ -52,6 +52,11 @@ NVIDIA Nemotron Transcribe lane from a browser, the way the Image and Video view
   outside a secure context, the WAV encoding, the whole record flow), red before and green after.
   `docs/cockpit.md` and `docs/transcribe-lane.md` document the view, the formats, the answer and the
   cap.
+- **Proven on the reference box (2026-11-20).** With the lane loaded by the cockpit's Load and the
+  requests sent as the page sends them: the repo's test WAV transcribed in 0.84 s (200, its
+  63-character French sentence) and a 108-second recording in 8.06 s; an `audio/mp4` file and a MIME
+  type carrying an injected header refused (400, with the conversion to make); a second transcription
+  during a running one refused (409) while the status route says busy; then the 27B back on `stock`.
 
 **The cockpit signs out, and its Now view reads at a glance (pull request #73, by x42en).** The login lasted as
 long as its cookie and the page had no way to end it: a red Sign out button now sits at the right of the head
@@ -75,7 +80,9 @@ for plain HTTP is unchanged, and the icons are 44 px under a finger (`dashboard/
 callouts in Decide, Agent, Image and Video keep one rule of distance below themselves. The pull request's eight
 glyphs were the paths of an icon set, and a public repository does not take another's code: they are drawn again
 here in our own lines, the same shapes, and the classes the page and its tests read stay. x42en's seven commits
-keep their author. Thanks to x42en.
+keep their author. Proven on the reference box (2026-11-20) with a browser-like cookie jar: a sign out without
+its CSRF token is refused (403) and leaves the session open; with it, the answer expires the `cockpit` cookie
+(`Max-Age=0`), the next `/api/state` is refused (401), and the audit log records the logout. Thanks to x42en.
 
 **DaisyRose 27B, a sixth target of the 27B lane (`daisyrose`).** RadixArk's reinforcement-learning-only fine-tune
 of Qwen3.8 27B (Apache-2.0, no SFT and no distillation), in RadixArk's own NVFP4 of the 27B
@@ -88,7 +95,15 @@ into its cached config with `patch-kv.py`, after the YaRN step, not as a `--kv-c
 takes it (21.95 GB and the same KV cache as stock, `boxmem.py`). opencode names it "DaisyRose-27B NVFP4 + DFlash2"
 (`oc-point-default.py`), its limits are the 27B's (`oc-limits.sh`), and the cockpit offers it as a sixth version of
 the lane with its recipe, pin and switch; `stock` stays the default, and the first switch downloads about 22 GB.
-Nothing is measured on the reference box yet: RadixArk publishes, at xhigh reasoning and temperature 1.0,
+Measured on the reference box (2026-11-19 and 2026-11-20, under the night's 2,000 MHz GPU clock cap): the
+cockpit's Load switches to it and back to stock without a download when the checkpoint is cached (8 MB received);
+it serves at revision `c4d85c5` with the DFlash2 draft and the FP8 KV cache its config declares; the 8 real
+clients (Claude Code, opencode 1.19.6, Hermes, pi, the OpenAI and Anthropic SDKs, fetch under Node and Bun,
+LiteLLM) all answer through the proxy; an agent-like conversation over a 40,000-token prompt is served 100 % from
+the prefix cache from its second turn on (first token in 0.2 s, against 26.9 s for the first turn); and the
+decode median over the three 512-token requests of the draft study is 55.5 tokens/s against 60.6 for stock
+under the same cap (code 70.6 against 60.6, a French essay 21.4 against 21.3, a math problem 55.5 against
+64.2). Its quality is not measured on the box yet: RadixArk publishes, at xhigh reasoning and temperature 1.0,
 Terminal-Bench 2.1 at 75.5 against 73.0 for Qwen3.8-27B (also Terminal-Bench 4.1 at 12.0 against 5.6, SWE Bench Pro
 v2 at 94.7 against 91.3, GPQA Diamond at 90.7 against 89.2; several of the Qwen3.8-27B scores come from model cards
 or an article, not a paired run). `docs/models/qwen38-27b.md` and the README carry the same facts, and the base
@@ -101,6 +116,22 @@ is refused. Checked against 1.19.5 on 2026-11-18: 1.19.6 compacts and retries on
 large" too and bounds the images a session sends inline, the 21 overflow phrases the proxy answers with are all
 present, and `agent-bench.mjs` passes 34 of 34 on 1.19.6. `OPENCODE_PIN=0` keeps whatever opencode the box already
 runs.
+Measured on the reference box (2026-11-20): with 1.19.6 the 8 clients answer on the 27B, `stock` and `daisyrose`,
+and its requests keep the three role shapes of `tests/fixtures/client-shapes.json` (captured through the roles
+relay; the file does not change).
+
+**LFM3 x opencode is an unsure case, now measured (a limit this version ships with, as LFM2.5's).** The targeted
+matrix of this version (2026-11-20: `daisyrose` and `lfm3`, 8 clients each) saw opencode's file-reading task fail
+5 times in 5 on LFM3 1.7B: the model asks to read the test file at an invented absolute path (`/hello.txt`, or a
+parent of the working directory), and opencode refuses a read outside its working directory
+(`external_directory`). It is the model, not opencode 1.19.6: run alternately with 1.19.5 on the same lane, the
+same task succeeded 7 times in 8 with 1.19.6 and once in 8 with 1.19.5, and over every run of the night 1.19.6
+succeeded 19 times in 31. A working directory inside a git repository (opencode then names it as the workspace
+root, where it says `/` outside one) and a prompt without the 87 skills installed on the reference box (their
+block is 50,847 characters of the 92,738 of the system prompt) did not make it sure either: 5 and 4 times in 6,
+against 3 in 6.
+The v1.53.0 matrix's OK for this case was a single try. The 7 other clients answer on LFM3, and
+`docs/lfm3-lane.md` says the limit.
 
 - Cockpit, UX review of v1.53.0 (2026-11-19): the Now view's memory legend says "GPU allocations" when no lane serves, instead of naming an empty "lane" segment.
 - Cockpit, UX review of v1.53.0: "Copy a test" in Connect a client is offered only when a text lane serves a known model; with none, no curl with a placeholder model is copied.
@@ -126,7 +157,9 @@ details are not in this table", the badge follows the engine's count and its too
 that has not answered counts nothing. The NVIDIA Nemotron Transcribe lane's in-flight requests are now read on its
 own port while it serves (llama.cpp's `/metrics`, `requests_processing` and `requests_deferred`, with the box's key
 in the header, read by the cockpit server and never sent to the browser; the payload carries the counts and the port
-only) and shown beside the table with their port, counted in the badge. **The "sent directly" note now waits for the journal's own pace.** The engine is read every second and the proxy's journal every 5 s, so a request relayed by the proxy is counted by the engine up to 5 s before its line reaches the Requests table, and the gap between the two counts was read as "sent to :30000 directly" in the meantime: the note blinked on every new request. It is now said only when the gap outlived a journal read (a read of the proxy's journal landed while the gap was already there and did not absorb it), across several engine reads, and with the journal source fresh, so it is never wrong; the badge still counts every request in flight meanwhile. **The cockpit's own canary is taken out of that count.** The generation probe the cockpit sends to :30000 every 90 s is a real request the engine counts like a client's, and the Traffic view could name the cockpit itself as "sent directly" while it ran; the fast collector now says when a canary is in flight (`canary_inflight` in the `engine_fast` payload) and the page subtracts it from the engine's count, so neither the note nor the badge counts the box's own probe. **The Transcribe lane's collector runs in a thread of its own.** Its `/metrics` read can wait its whole 4 s timeout on a lane slow to answer, and it shared the metrics collector's thread, so a slow lane could delay the metrics windows' reads by as much; it now has its own tier like the pair's collector.
+only) and shown beside the table with their port, counted in the badge. **The "sent directly" note now waits for the journal's own pace.** The engine is read every second and the proxy's journal every 5 s, so a request relayed by the proxy is counted by the engine up to 5 s before its line reaches the Requests table, and the gap between the two counts was read as "sent to :30000 directly" in the meantime: the note blinked on every new request. It is now said only when the gap outlived a journal read (a read of the proxy's journal landed while the gap was already there and did not absorb it), across several engine reads, and with the journal source fresh, so it is never wrong; the badge still counts every request in flight meanwhile. **The cockpit's own canary is taken out of that count.** The generation probe the cockpit sends to :30000 every 90 s is a real request the engine counts like a client's, and the Traffic view could name the cockpit itself as "sent directly" while it ran; the fast collector now says when a canary is in flight (`canary_inflight` in the `engine_fast` payload) and the page subtracts it from the engine's count, so neither the note nor the badge counts the box's own probe. **The Transcribe lane's collector runs in a thread of its own.** Its `/metrics` read can wait its whole 4 s timeout on a lane slow to answer, and it shared the metrics collector's thread, so a slow lane could delay the metrics windows' reads by as much; it now has its own tier like the pair's collector. Proven on the reference box (2026-11-20): a request sent straight to :30000 while the page's payload was
+read was counted by the engine's reading and not by the proxy's journal, and the page said "sent directly" only
+after a journal read during the gap.
 
 **A local CI run measures what the runner's does (C20).** `./ci-local.sh` now runs every step with a runner's
 environment: the developer's `HF_HOME`, `HF_HUB_CACHE`, `HF_CACHE`, `HF_TOKEN`, `HF_ENDPOINT`, `HF_HUB_OFFLINE`,
