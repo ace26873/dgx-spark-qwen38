@@ -994,10 +994,6 @@ class AFreshBoxGetsAConfigOpencodeCanUse(unittest.TestCase):
         self.assertIn("has no provider for this box", out)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class TheOpencodeMajorFlag(unittest.TestCase):
     """./install.sh --opencode 2|1 is the whole opt-in; the parser must consume its value
     (independent review of the v2 migration, finding 1: the for-loop's shift never did)."""
