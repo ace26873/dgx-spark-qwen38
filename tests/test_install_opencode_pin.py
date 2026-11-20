@@ -503,6 +503,54 @@ class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
         self.assertNotIn("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX", body)
         self.assertIn("--yolo is not a flag of OpenCode 2", body)
 
+    def test_the_v2_launcher_skips_claude_md_and_the_v1_one_does_not(self):
+        # OpenCode 2 reads CLAUDE.md (project dirs without AGENTS.md, and the global
+        # ~/.claude/CLAUDE.md) into every prompt since 2.3.1; measured on 2.3.2 in a sandbox,
+        # both files land in the system message of each request. On a box that is the
+        # owner's private file leaving in every prompt, so the v2 launcher exports the
+        # documented switch (read at server start, server-process.ts of 2.3.2); "0" is not
+        # truthy there, so a user can bring them back. The v1 launcher is unchanged.
+        text = INSTALL.read_text()
+
+        def render(body, fname, version_var, version, major=None):
+            t = pathlib.Path(tempfile.mkdtemp(prefix=f"oc-{fname}-"))
+            (t / "home").mkdir()
+            (t / "bin").mkdir()
+            calls = t / "calls.log"
+            (t / "bin" / "opencode").write_text(
+                '#!/bin/sh\nif [ "$1" = --version ]; then echo "opencode v2.3.0"; exit 0; fi\n'
+                f'env | grep -E "^OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=" >> "{calls}" || echo ABSENT >> "{calls}"\n')
+            (t / "bin" / "opencode").chmod(0o755)
+            pre = (f'OC_BIN="{t}/oc"; OC_OUT_CAP=200000; REPO_DIR=/opt/repo; {version_var}={version}; '
+                   f'CONFIG_DIR="{t}/cfg"\n')
+            if major:
+                pre += f"OPENCODE_MAJOR={major}; "
+            subprocess.run(["bash", "-c", pre + body], check=True)
+            return t, calls
+
+        start = text.index('cat > "$OC_BIN" <<OCWRAP2')
+        body2 = text[start:text.index("\nOCWRAP2\n", start) + len("\nOCWRAP2\n")]
+        t, calls = render(body2, "v2", "OPENCODE2_VERSION", "2.3.2", major=2)
+        base_env = {"HOME": str(t / "home"), "PATH": f"{t}/bin:/usr/bin:/bin"}
+        r = subprocess.run(["bash", str(t / "oc"), "run", "hi"], capture_output=True, text=True, env=base_env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1", calls.read_text(),
+                      "the v2 launcher cuts CLAUDE.md from every prompt")
+        r = subprocess.run(["bash", str(t / "oc"), "run", "hi"], capture_output=True, text=True,
+                           env={**base_env, "OPENCODE_DISABLE_CLAUDE_CODE_PROMPT": "0"})
+        self.assertIn("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=0", calls.read_text(),
+                      "the launcher's default yields to an explicit value")
+
+        start = text.index('cat > "$OC_BIN" <<OCWRAP\n')
+        body1 = text[start:text.index("\nOCWRAP\n", start) + len("\nOCWRAP\n")]
+        t1, calls1 = render(body1, "v1", "OPENCODE_VERSION", PINNED)
+        r = subprocess.run(["bash", str(t1 / "oc"), "run", "hi"], capture_output=True, text=True,
+                           env={"HOME": str(t1 / "home"), "PATH": f"{t1}/bin:/usr/bin:/bin"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ABSENT", calls1.read_text())
+        self.assertNotIn("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT", calls1.read_text(),
+                         "the v1 launcher is unchanged")
+
     def test_the_v2_launcher_says_when_the_binary_is_not_opencode_2(self):
         text = INSTALL.read_text()
         start = text.index('cat > "$OC_BIN" <<OCWRAP2')

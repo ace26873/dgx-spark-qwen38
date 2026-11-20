@@ -216,6 +216,14 @@ if [ "$OC_PROFILE" = 2 ]; then
   CAP_LINE="# OpenCode 2 sends max_completion_tokens from the model's limit.output in the config"
   CAP_LINE="$CAP_LINE"$'\n'"# (measured on 2.3.0 the 2026-11-14): there is no 32000 ceiling to lift here, and"
   CAP_LINE="$CAP_LINE"$'\n'"# OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX is read by nobody of it."
+  # OpenCode 2 reads CLAUDE.md of every directory without AGENTS.md, and ~/.claude/CLAUDE.md
+  # as the global fallback, into every prompt (since 2.3.1; measured on 2.3.2 in a sandbox:
+  # the markers of both files land in the system message of each request). On a box that is
+  # the owner's private file leaving in every Agent tab prompt, so the documented switch
+  # skips every CLAUDE.md (read at server start, packages/cli/src/server-process.ts of
+  # 2.3.2; docs/instructions "OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1"). The 1.x unit is not
+  # touched: v1 keeps reading what it read.
+  CAP_LINE="$CAP_LINE"$'\n'"Environment=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1"
   SERVE_FLAGS="--print-logs --log-level info"
 else
   CAP_LINE="# Same cap as the oc launcher: without it long thinking is cut at 32000 tokens"

@@ -194,6 +194,22 @@ class Render(unittest.TestCase):
         self.assertIn("OPENCODE_SERVER_USERNAME=cockpit", env, "1.x takes its own name")
         self.assertNotIn("not written for", r.stdout + r.stderr)
 
+    def test_the_v2_unit_skips_claude_md_in_every_prompt(self):
+        # OpenCode 2 reads CLAUDE.md of every directory without AGENTS.md and the global
+        # ~/.claude/CLAUDE.md into each prompt (2.3.1; measured on 2.3.2 in a sandbox: both
+        # markers land in the system message of every request). On a box that is the
+        # owner's private file leaving in every Agent tab prompt, so the documented switch
+        # (OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1, read at server start) goes in the unit.
+        r, unit = run_agent(self.t, "opencode v2.3.0", oc2=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Environment=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1", unit)
+
+    def test_the_v1_unit_does_not_carry_the_claude_md_switch(self):
+        # the v1 render is byte-identical to before: v1 keeps reading what it read
+        r, unit = run_agent(self.t, "1.19.5", oc2=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT", unit)
+
     def test_a_page_on_global_health_does_not_pass_for_health_in_v2(self):
         # a 2.x whose /api/info stopped answering (the server is dead or unknown): every
         # probe is a page, and a probe that took any 200 for health would certify it alive.

@@ -3566,6 +3566,13 @@ export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="\${OPENCODE_EXPERIMENTAL_OUTPUT_T
 # says (opencode loads OPENCODE_CONFIG after it). Without this, a config with no
 # provider for this box sent oc's prompts to opencode's own hosted model (2026-09-23).
 [ -f "$CONFIG_DIR/opencode.json" ] && export OPENCODE_CONFIG="\${OPENCODE_CONFIG:-$CONFIG_DIR/opencode.json}"
+# OpenCode 2 reads CLAUDE.md of every directory without AGENTS.md, and ~/.claude/CLAUDE.md
+# as the global fallback, into EVERY prompt (2.3.1; measured on 2.3.2 in a sandbox: both
+# files land in the system message of each request). On a box that is the owner's private
+# file leaving in every prompt, so the documented switch skips every CLAUDE.md (read at
+# server start, packages/cli/src/server-process.ts of 2.3.2; docs/instructions). "0" is not
+# truthy there, so setting it to 0 brings them back.
+export OPENCODE_DISABLE_CLAUDE_CODE_PROMPT="\${OPENCODE_DISABLE_CLAUDE_CODE_PROMPT:-1}"
 OPENCODE_BIN="\$(command -v opencode || true)"
 [ -n "\$OPENCODE_BIN" ] || OPENCODE_BIN="\$HOME/.opencode/bin/opencode"
 if [ ! -x "\$OPENCODE_BIN" ]; then
