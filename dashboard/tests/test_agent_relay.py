@@ -594,8 +594,9 @@ class RelayTests(unittest.TestCase):
         self.assertNotIn("referer", h)
         self.assertEqual(h["host"], f"127.0.0.1:{self.up.server_port}")
         self.assertEqual(h["x-custom"], "kept")
-        self.assertNotIn("accept-encoding", h,
-                         "the relay asks for identity: a gzip answer on a credential route could only be refused (finding 5)")
+        self.assertEqual(h["accept-encoding"], "gzip",
+                         "dropped only on the credential routes, where the scrub reads the answer; "
+                         "everywhere else it passes, as before the v2 migration (D6)")
         self.assertEqual(h["connection"], "close")
 
     def test_response_headers_and_cookie_filter(self):
@@ -946,9 +947,11 @@ class TheScrubCannotBeSpelledAround(unittest.TestCase):
 
 
 class TheRelayAsksForIdentity(unittest.TestCase):
-    """The scrub reads JSON; a gzip answer it cannot verify is a 502. So the relay must not ASK for
-    compression it would then refuse: no Accept-Encoding is forwarded on these GETs (independent
-    review, finding 5)."""
+    """The scrub reads JSON; a gzip answer it cannot verify is a 502. So on the credential
+    routes the relay must not ASK for compression it would then refuse: no Accept-Encoding is
+    forwarded there (independent review, finding 5). On every other route the client's
+    Accept-Encoding passes, as it did before the v2 migration, so a box that never passes
+    --opencode sees no change at the relay (blind review of 2026-11-20, D6)."""
 
     def _get(self, port, path, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
@@ -974,6 +977,17 @@ class TheRelayAsksForIdentity(unittest.TestCase):
         self.assertNotIn(b"sk-live", body)
         seen = next(r for r in SEEN if r["path"] == "/api/config")
         self.assertNotIn("accept-encoding", {k.lower() for k in seen["headers"]})
+
+    def test_accept_encoding_passes_on_every_other_route(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        SEEN.clear()
+        code, body = self._get(relay.server_port, "/echo", headers={"Accept-Encoding": "gzip, br"})
+        self.assertEqual(code, 200, body[:120])
+        seen = next(r for r in SEEN if r["path"] == "/echo")
+        self.assertEqual(seen["headers"].get("Accept-Encoding"), "gzip, br",
+                         "only the credential routes ask for identity (D6)")
 
     def test_a_lying_gzip_answer_is_refused_not_forwarded(self):
         up, relay = make_relay()
@@ -1188,6 +1202,10 @@ class PureHelpers(unittest.TestCase):
             self.assertNotIn(gone, out)
         ws = dict(ar.forward_request_headers([], "u:1", "Basic x", websocket=True))
         self.assertEqual((ws["Connection"], ws["Upgrade"]), ("Upgrade", "websocket"))
+        ae = dict(ar.forward_request_headers([("Accept-Encoding", "gzip")], "u:1", "Basic x"))
+        self.assertEqual(ae["Accept-Encoding"], "gzip", "forwarded by default, as before the v2 migration")
+        aes = dict(ar.forward_request_headers([("Accept-Encoding", "gzip")], "u:1", "Basic x", secret=True))
+        self.assertNotIn("Accept-Encoding", aes, "dropped where the relay reads the answer to scrub it")
         self.assertNotIn("Origin", out, "no origin is made up for a request that named none")
         remote = ar.forward_request_headers([("Origin", "http://100.64.0.1:30091"), ("origin", "http://x")],
                                             "127.0.0.1:4096", "Basic x")

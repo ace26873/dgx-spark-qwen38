@@ -40,11 +40,14 @@ HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriza
 # Request headers the relay never forwards: the cockpit session must not reach
 # opencode, the client's own Authorization is replaced by ours, Host and Origin name
 # the upstream, lengths are re-set, and the referrer says nothing about the cockpit.
-# accept-encoding too: the relay reads the JSON of the credential routes to scrub it, and a gzip
-# answer it cannot verify is a 502 the browser would never understand (measured 2.3.0; independent
-# review of the v2 migration, finding 5: ask for identity, refuse only a server that lies anyway).
-REQUEST_DROP = HOP_BY_HOP | {"host", "origin", "cookie", "authorization", "content-length", "referer",
-                             "accept-encoding"}
+# accept-encoding is not in this set: it is dropped per request (forward_request_headers),
+# only on the credential routes, where the relay reads the JSON of the answer to scrub it and
+# a gzip answer it cannot verify is a 502 the browser would never understand (measured 2.3.0;
+# independent review of the v2 migration, finding 5: ask for identity, refuse only a server
+# that lies anyway). Everywhere else the client's Accept-Encoding passes, as it did before
+# the v2 migration: a box that never passes --opencode sees no change at the relay
+# (blind review of 2026-11-20, D6).
+REQUEST_DROP = HOP_BY_HOP | {"host", "origin", "cookie", "authorization", "content-length", "referer"}
 # Response headers the relay owns (Date and Server come from this server).
 RESPONSE_DROP = HOP_BY_HOP | {"content-length", "date", "server"}
 SESSION_COOKIE = "cockpit"
@@ -167,9 +170,10 @@ def read_credentials(path: Path) -> tuple[str, str] | None:
 
 
 def forward_request_headers(items, upstream_host: str, auth: str,
-                            websocket: bool = False) -> list[tuple[str, str]]:
+                            websocket: bool = False, secret: bool = False) -> list[tuple[str, str]]:
     items = list(items)
-    out = [(k, v) for k, v in items if k.lower() not in REQUEST_DROP]
+    drop = REQUEST_DROP | ({"accept-encoding"} if secret else set())
+    out = [(k, v) for k, v in items if k.lower() not in drop]
     out.append(("Host", upstream_host))
     if any(k.lower() == "origin" for k, _ in items):
         # The browser's origin was held to this relay's own host before anything was
@@ -558,7 +562,8 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
                 # a vanished client shows up as a write error on our side instead
                 conn.sock.settimeout(None)
                 conn.putrequest(self.command, self.path, skip_host=True, skip_accept_encoding=True)
-                for k, v in forward_request_headers(self.headers.items(), cfg.upstream_host, auth):
+                for k, v in forward_request_headers(self.headers.items(), cfg.upstream_host, auth,
+                                                    secret=is_secret_path(self.path)):
                     conn.putheader(k, v)
                 if body or self.command in ("POST", "PUT", "PATCH"):
                     conn.putheader("Content-Length", str(len(body)))
@@ -721,7 +726,8 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
                 up.settimeout(CONNECT_TIMEOUT)
                 lines = [f"{self.command} {self.path} HTTP/1.1"]
                 lines += [f"{k}: {v}" for k, v in forward_request_headers(
-                    self.headers.items(), cfg.upstream_host, auth, websocket=True)]
+                    self.headers.items(), cfg.upstream_host, auth, websocket=True,
+                    secret=is_secret_path(self.path))]
                 up.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1"))
                 head = b""
                 while b"\r\n\r\n" not in head:
