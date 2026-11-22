@@ -7,6 +7,7 @@ that is gone ("bad file reference", opencode 1.18.32, reference box 2026-09-23).
 deletes that file, and since v1.18.4 every fresh box gets such a config. These run the
 uninstaller's own lines, as written, in a throwaway HOME."""
 import json
+import re
 import os
 import pathlib
 import shutil
@@ -146,7 +147,14 @@ class UninstallLeavesOpencodeStartable(unittest.TestCase):
                                        "options": {"baseURL": "http://127.0.0.1:9/v1"}, "models": {"m": {}}}}})
         out, home, cfg, oc = self.run_it(theirs, purge=1)
         binary = shutil.which("opencode") or os.path.expanduser("~/.opencode/bin/opencode")
-        r = subprocess.run([binary, "models", "other"], capture_output=True, text=True, timeout=120,
+        # OpenCode 2 (the default since v1.56.0) takes no provider after `models` and prints its help
+        # for one; it lists every model, other/m among them. Without --standalone it starts its managed
+        # background service (`opencode serve --service`), which outlives the test and holds its port
+        # (measured on 2.3.2 the 2026-11-22); --standalone runs a server that ends with the command
+        ver = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=60).stdout
+        major = (re.findall(r"(\d+)\.\d+\.\d+", ver) or ["1"])[-1]
+        args = [binary, "models", "--standalone"] if major == "2" else [binary, "models", "other"]
+        r = subprocess.run(args, capture_output=True, text=True, timeout=120,
                            cwd=str(home), env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
         self.assertNotIn("bad file reference", r.stdout + r.stderr)
         self.assertIn("other/m", r.stdout, r.stdout + r.stderr)
