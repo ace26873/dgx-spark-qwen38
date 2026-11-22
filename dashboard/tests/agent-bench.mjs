@@ -214,6 +214,11 @@ mkdirSync(cfgDir); mkdirSync(fence);
 const key = randomBytes(24).toString('hex');
 writeFileSync(join(cfgDir, 'api-key'), key + '\n', { mode: 0o600 });
 writeFileSync(join(cfgDir, 'opencode-web.env'), `OPENCODE_SERVER_USERNAME=opencode\nOPENCODE_SERVER_PASSWORD=${password}\n`, { mode: 0o600 });
+// Since v1.56.0 install.sh writes opencode.major on every box it installs ("1" after --opencode 1, "2" otherwise),
+// and the cockpit names the pin of that major; with no marker it names the 2.x pin, the default. A box serving 1.x
+// carries "1": the bench writes the marker of the major it runs (the CI of 449a5015 on 2026-11-22 read 33/34, the
+// line said "this repo tests 2.3.2" beside the 1.19.6 it served, on a config with no marker no box has).
+writeFileSync(join(cfgDir, 'opencode.major'), (Number(UNDER_TEST.split('.')[0]) >= 2 ? '2' : '1') + '\n');
 for (const cmd of ['docker', 'systemctl', 'journalctl', 'nvidia-smi', 'sudo', 'git', 'curl', 'tailscale', 'opencode']) {
   writeFileSync(join(fence, cmd), '#!/bin/sh\nexit 1\n'); chmodSync(join(fence, cmd), 0o755);
 }
