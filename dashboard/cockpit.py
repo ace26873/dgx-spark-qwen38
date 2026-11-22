@@ -2576,6 +2576,17 @@ def opencode_pinned(binary_version: str | None = None) -> str | None:
     return _OC_PIN_CACHE.get("version")
 
 
+def opencode_major_choice() -> str | None:
+    """The OpenCode major this box CHOSE, from install.sh's marker ("1" or "2"), None without one. A box
+    marked 1 (./install.sh --opencode 1) stays on OpenCode 1 at every update while every other box serves
+    OpenCode 2, the default since v1.56.0: the page says it, in an orange banner (decision 1564)."""
+    try:
+        first = (CONFIG_DIR / "opencode.major").read_text().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return None
+    return first if first in ("1", "2") else None
+
+
 def _ocm_module():
     if "mod" not in _OCM:
         try:
@@ -2593,7 +2604,7 @@ def collect_agent():
     out = {"node_id": "local", "enabled": AGENT_PORT > 0, "relay": dict(AGENT),
            "upstream": AGENT_UPSTREAM, "unit": None, "server": None, "binary": None,
            "credentials": AGENT_ENV_FILE.is_file(), "unit_installed": AGENT_UNIT_PATH.is_file(),
-           "pinned": opencode_pinned()}
+           "pinned": opencode_pinned(), "major_choice": opencode_major_choice()}
     if AGENT_PORT <= 0:
         # Not installed: is it because this box has no opencode at all? That changes what
         # to run (install.sh installs the pinned one; install-agent.sh only wires it up).

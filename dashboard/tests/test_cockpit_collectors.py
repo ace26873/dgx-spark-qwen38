@@ -138,6 +138,23 @@ class Base(unittest.TestCase):
                 if n.startswith("collect_") and callable(getattr(self.cp, n))}
 
 
+class TheOpencodeChoiceIsRead(Base):
+    """The major a box chose, from install.sh's marker, for the page's orange banner (decision 1564)."""
+
+    def test_the_marker_names_the_choice_and_anything_else_names_none(self):
+        marker = self.cp.CONFIG_DIR / "opencode.major"
+        self.addCleanup(marker.unlink, True)
+        for text, want in (("1\n# asked with ./install.sh --opencode 1\n", "1"), ("2\n", "2"),
+                           ("3\n", None), ("", None)):
+            with self.subTest(text=text):
+                marker.write_text(text)
+                self.assertEqual(self.cp.opencode_major_choice(), want)
+        marker.unlink()
+        self.assertIsNone(self.cp.opencode_major_choice(), "no marker, no choice")
+        got = self.cp.collect_agent()
+        self.assertIn("major_choice", got.get("data", got), "the agent state carries the choice to the page")
+
+
 class TheUpdateCommand(Base):
     def test_the_update_is_the_one_command_run_from_this_checkout(self):
         # Settings gave cd <repo> && ./install.sh as the update, and install.sh fetches

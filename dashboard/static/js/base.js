@@ -1423,6 +1423,12 @@ function renderBanners(state, errors){
   if (ocf && !ocf.ok && (ocf.autofit === 'started' || ocf.autofit === 'fitting' || ocWaits))
     add('info', 'The cockpit is fitting opencode to this engine.', `opencode's limits were written before ${ocf.served} booted, ${fmtN(ocf.asked)} tokens, and this boot serves ${fmtN(ocf.limit)}: the cockpit lowers them to fit${ocWaits ? ' as soon as the engine is ready' : ''}, and the Agent view's server restarts to read them. Nothing to do.`);
   else if (ocf && !ocf.ok) add('warn', 'opencode asks for more than this engine can hold.', `${ocf.why}: opencode declares ${fmtN(ocf.asked)} tokens, and ${ocf.served} can serve ${fmtN(ocf.limit)}. A session would break when the proxy refuses the prompt. Settings has "Fit the limits to this engine".`);
+  // A box that chose ./install.sh --opencode 1 stays on OpenCode 1 at every update while every other box
+  // serves OpenCode 2, the default since v1.56.0: nobody stays behind without knowing it (decision 1564)
+  if ((F.agent || {}).major_choice === '1')
+    add('orange', 'opencode 1 on this box: behind.',
+      'This box chose ./install.sh --opencode 1, so every update keeps it on OpenCode 1 while the others serve OpenCode 2, '
+      + 'the default since v1.56.0. To move to it (./install.sh --opencode 1 stays the way back), on the box:', './install.sh --opencode 2');
   ((F.life || {}).orphans || []).forEach(o => add('warn', `${LANE_NAME[o.unit] || o.unit} is running outside systemd.`,
     `The container ${o.container} serves, but its unit is not running, so no other engine may start and a reboot will not bring it back. Start it from Lanes to replace it, or remove it:`, `docker rm -f ${o.container}`));
   if (errors.lifecycle) add('warn', 'Engine state unknown.', 'The lifecycle collector failed: ' + String(errors.lifecycle).slice(0, 120));
