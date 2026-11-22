@@ -106,8 +106,11 @@ function arm(ctx, sessionID, s) {
 }
 
 async function onTimer(ctx, sessionID, s) {
-  if (s.busy) return;               // a turn started meanwhile; its own events decide
   if (!s.errPending && !s.compactPending) return;
+  // a turn still runs: wait for it rather than drop what is pending (a manual /compact can end
+  // before its turn does); a turn that STARTS clears the pending flags itself, so this re-arm
+  // never relaunches over it (review of v1.56.0, finding 8)
+  if (s.busy) { arm(ctx, sessionID, s); return; }
   if (s.consecutive >= MAX_CONSECUTIVE) {
     await log(`STOP (${sessionID.slice(0, 12)}): ${MAX_CONSECUTIVE} relaunches without progress`);
     s.errPending = false;
@@ -168,6 +171,7 @@ export default {
               // superseded and inactivity are control flow, not technical errors
               await log(`interrupted (${d.reason ?? "?"}) not relaunched (${sessionID.slice(0, 12)})`);
               const s = getState(sessionID);
+              s.busy = false;               // the projector makes the session idle here too (projector.ts)
               s.errPending = false;
               s.compactPending = false;
               continue;

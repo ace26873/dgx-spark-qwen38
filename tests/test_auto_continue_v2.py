@@ -137,6 +137,17 @@ class TheV2AutoContinuePlugin(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertIn("just compacted", sent[0]["text"])
 
+    # review of v1.56.0, finding 8: an interrupted turn left `busy` set, and a timer that fired while
+    # busy returned without re-arming, so the resume of a manual /compact was dropped for good
+    def test_a_manual_compaction_after_an_interrupted_turn_is_relaunched(self):
+        sent = self.run_steps([E(STARTED), interrupted("user"), compaction_ended("manual"), W])
+        self.assertEqual(len(sent), 1, "the interrupted turn left the session idle, not busy")
+        self.assertIn("just compacted", sent[0]["text"])
+
+    def test_a_manual_compaction_that_ends_before_its_turn_does_is_relaunched_after_it(self):
+        sent = self.run_steps([E(STARTED), compaction_ended("manual"), {"wait": 150}, E(SUCCEEDED), W])
+        self.assertEqual(len(sent), 1, "the timer that fired while busy waits for the turn instead of dropping")
+
     # a turn that started meanwhile decides on its own
     def test_an_execution_started_after_the_error_cancels_the_relaunch(self):
         self.assertEqual(self.run_steps([failed("connection refused"), E(STARTED), W]), [])
