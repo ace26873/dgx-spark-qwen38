@@ -59,6 +59,22 @@ outside the plugins dir so no major loads it, and the install's NOTE names the k
   now writes the `opencode.major` marker of the major it runs, as every installed box carries one,
   and on 2.3.2 lists and removes the terminal where the web app opens it, as a persistent terminal
   of the session (`/api/experimental/session/:id/terminal`). 1.19.6: 34/34, 2.3.2: 34/34.
+- **A box that chose OpenCode 1 is told it is behind.** the marker `1` keeps a box on 1.x at every
+  update while every other box serves OpenCode 2; the cockpit shows it an orange banner on every
+  view, with the command that moves it (`./install.sh --opencode 2`), so nobody stays behind
+  without knowing it (decision 1564).
+- **What the code review fixed before the release.** the relay scrubbed an oddly spelled
+  `/api/credential` (`/api//credential`, `/api/%63redential`) without its `value`, the stored
+  credential itself, and scrubbed only 200 answers: both spellings and every 2xx answer with a body
+  are scrubbed now. A box with an npm or Homebrew opencode 1.x earlier on the PATH than
+  `~/.opencode/bin` kept running that 1.x in the Agent unit and in `oc` after its move to 2: both
+  take the copy the install put in place now. `OPENCODE_PIN=0` with the user's own 2.x wrote no
+  marker, so the tools that read it took the box for a 1.x one: it is marked `2` now. An insert
+  into the user's config dropped a comment between `{` and the first member; the auto-continue v2
+  plugin lost the resume of a manual `/compact` after an interrupted turn; `uninstall.sh --yes`
+  left the copy a fresh v2 install made, emptied of its provider; the rollback's note about a
+  person's own `permissions` array said none of it was this box's. Each has a test that failed on
+  the code before.
 - **Measured on 2.3.2.** the 2.x facts were first measured on 2.3.0 in a sandbox on the reference box (2026-11-13 to 15); the delta to 2.3.2 was
   re-measured in a sandbox before the pin moved.
 - **Proven on the reference box (2026-11-20, 09:05 to 09:14, rc=0 in the proof's
