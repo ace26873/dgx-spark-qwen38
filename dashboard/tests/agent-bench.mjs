@@ -425,14 +425,25 @@ try {
       }
     }
     // v2: what was listed, under which location, and what each DELETE answered, said with the count (the bench's
-    // first 2.3.0 runs read 0 with no error, 2026-11-15: an empty list or a refused DELETE, told apart here)
+    // first 2.3.0 runs read 0 with no error, 2026-11-15: an empty list or a refused DELETE, told apart here).
+    // The web app of 2.3.2 opens its terminal as a persistent one of the session (packages/client/src/solid/pty.ts:
+    // api.experimental.persistentPty), listed by GET /api/experimental/session/:id/terminal and removed by DELETE
+    // /api/experimental/persistent-pty/:id (packages/protocol/src/groups/persistent-pty.ts, read 2026-11-22): the
+    // bench read /api/pty there and listed 0. A 2.x without that route keeps the /api/pty reading below.
     ptys = await t.evalJs(v2
-      ? `fetch(${JSON.stringify('/api/pty?' + locQ)}).then(r => r.json()).then(async j => { let n = 0; const said = [];
+      ? `fetch('/api/experimental/session/${sid}/terminal').then(async r => { if (!r.ok) return null;
+          const j = await r.json(); let n = 0; const said = [];
+          for (const s of (j.data || [])) { if (!(s && s.id)) continue;
+            const d = await fetch('/api/experimental/persistent-pty/' + s.id, { method: 'DELETE' });
+            said.push(d.status); if (d.ok) n++; }
+          ptyWhy = 'listed ' + (j.data || []).length + ' persistent under the session, DELETE ' + (said.join(',') || 'none');
+          return n; }).catch(e => null).then(n => n !== null ? n :
+        fetch(${JSON.stringify('/api/pty?' + locQ)}).then(r => r.json()).then(async j => { let n = 0; const said = [];
           for (const s of (j.data || [])) { if (!(s && s.id)) continue;
             const r = await fetch('/api/pty/' + s.id + ${JSON.stringify('?' + locQ)}, { method: 'DELETE' });
             said.push(r.status); if (r.ok) n++; }
           ptyWhy = 'listed ' + (j.data || []).length + ' under ' + JSON.stringify(j.location) + ', DELETE ' + (said.join(',') || 'none');
-          return n; }).catch(e => -1)`
+          return n; }).catch(e => -1))`
       : `fetch(${JSON.stringify('/pty?' + dirQ)}).then(r => r.json()).then(async l => { let n = 0; for (const s of (l || [])) {
           if (s && s.id && (await fetch('/pty/' + s.id + ${JSON.stringify('?' + dirQ)}, { method: 'DELETE' })).ok) n++; } return n; }).catch(e => -1)`);
     gone = await t.evalJs(v2 ? `fetch('/api/session/${sid}', { method: 'DELETE' }).then(r => r.status).catch(e => 'err ' + e)`
