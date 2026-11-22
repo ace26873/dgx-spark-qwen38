@@ -1750,6 +1750,14 @@ jobs:
           # the phone layer in the page opencode sends, and a terminal with a command run in it.
           node dashboard/tests/agent-bench.mjs
 
+      - name: The Agent tab against the default OpenCode 2 (headless browser, a cockpit and an opencode of its own)
+        timeout-minutes: 15
+        run: |
+          # v1.56.0 installs OpenCode 2 by default, and the step above benches the 1.x pin a box keeps with
+          # --opencode 1: the page 2.3.2 compresses with Brotli passed the relay without the phone layer, and no
+          # step saw it (2026-11-22). The same bench on the 2.x pin install.sh names, checked against its sha256.
+          AGENT_BENCH_PIN=2 node dashboard/tests/agent-bench.mjs
+
       - name: Cockpit unit tests (every tests/test_*.py, discovered)
         run: |
           cd dashboard

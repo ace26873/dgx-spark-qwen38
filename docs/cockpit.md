@@ -606,6 +606,7 @@ with the unit's `--log-level INFO`, found that way on 2026-10-23). `dashboard/te
 
 ```bash
 node dashboard/tests/agent-bench.mjs                                          # its own opencode and cockpit
+AGENT_BENCH_PIN=2 node dashboard/tests/agent-bench.mjs                        # the same, on the 2.x pin (the default)
 node dashboard/tests/agent-check.mjs http://<the box's tailnet address>:30090
 ```
 

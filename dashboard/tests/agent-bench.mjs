@@ -33,10 +33,11 @@ const CHROME = process.env.CHROME || ['/usr/bin/google-chrome', '/usr/bin/chromi
   '/snap/bin/chromium'].find(existsSync);
 // install.sh pins the linux-arm64 asset, the one a DGX Spark runs; the CI runner is x86_64, so the bench
 // carries that asset's digest for the same release (GitHub's digest, checked against the download on
-// 2026-10-23, 1.19.5's on 2026-10-30 and 1.19.6's on 2026-11-18). A new pin in install.sh fails here until its x64 digest is added:
+// 2026-10-23, 1.19.5's on 2026-10-30 and 1.19.6's on 2026-11-18, 2.3.2's on 2026-11-22). A new pin in install.sh fails here until its x64 digest is added:
 // two pins, one release.
 const X64_SHA256 = { '1.19.5': '588310a336fa3b9df36b3f0225b26f679d453efaad0cf3d66c3651ef3ec1647a',
-  '1.19.6': '47734e08968b30cc22a0bffb6d9feeed76ad4aa743213a12122040392d09a057' };
+  '1.19.6': '47734e08968b30cc22a0bffb6d9feeed76ad4aa743213a12122040392d09a057',
+  '2.3.2': '563b5d663637226b6e3bb4bb6803281bc39b0d2cd88db06d674b6420aab009b0' };   // read on the API 2026-11-22
 const checks = [];
 const ok = (name, cond, detail = '') => { checks.push({ name, ok: !!cond, detail: String(detail).slice(0, 220) }); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -81,9 +82,15 @@ setTimeout(() => stop(1, `the bench did not finish within ${RUN_LIMIT_S} s`), RU
 
 // ── the pinned opencode, this machine's asset ────────────────────────────────
 const installSh = readFileSync(join(REPO, 'install.sh'), 'utf8');
-const VERSION = installSh.match(/^OPENCODE_VERSION="\$\{OPENCODE_VERSION:-([0-9.]+)\}"/m)?.[1];
-const ARM64_SHA256 = installSh.match(/^OPENCODE_SHA256="\$\{OPENCODE_SHA256:-([0-9a-f]{64})\}"/m)?.[1];
-if (!VERSION || !ARM64_SHA256) stop(2, 'install.sh names no OPENCODE_VERSION or OPENCODE_SHA256 default');
+// AGENT_BENCH_PIN=2 benches the 2.x pin (OPENCODE2_VERSION and OPENCODE2_SHA256), the OpenCode v1.56.0 installs by
+// default; unset or 1, the 1.x pin a box keeps with --opencode 1. The CI runs both: with only the 1.x pin benched, the
+// 2.3.2 page the relay passed without the phone layer went unseen (2026-11-22).
+const PIN = process.env.AGENT_BENCH_PIN || '1';
+if (PIN !== '1' && PIN !== '2') stop(2, `AGENT_BENCH_PIN is ${PIN}: 1 (the 1.x pin) or 2 (the 2.x pin)`);
+const VAR = PIN === '2' ? 'OPENCODE2' : 'OPENCODE';
+const VERSION = installSh.match(new RegExp(`^${VAR}_VERSION="\\$\\{${VAR}_VERSION:-([0-9.]+)\\}"`, 'm'))?.[1];
+const ARM64_SHA256 = installSh.match(new RegExp(`^${VAR}_SHA256="\\$\\{${VAR}_SHA256:-([0-9a-f]{64})\\}"`, 'm'))?.[1];
+if (!VERSION || !ARM64_SHA256) stop(2, `install.sh names no ${VAR}_VERSION or ${VAR}_SHA256 default`);
 const ASSET = { arm64: 'opencode-linux-arm64.tar.gz', x64: 'opencode-linux-x64.tar.gz' }[process.arch];
 const SHA256 = { arm64: ARM64_SHA256, x64: X64_SHA256[VERSION] }[process.arch];
 if (!ASSET) stop(2, `no opencode release asset for ${process.arch}`);
