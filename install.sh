@@ -3673,7 +3673,10 @@ elif [ "${OC_SERVE_MAJOR:-1}" = 2 ]; then
 # server start, packages/cli/src/server-process.ts of 2.3.2; docs/instructions). "0" is not
 # truthy there, so setting it to 0 brings them back.
 export OPENCODE_DISABLE_CLAUDE_CODE_PROMPT="\${OPENCODE_DISABLE_CLAUDE_CODE_PROMPT:-1}"
-OPENCODE_BIN="\$(command -v opencode || true)"
+# the copy install.sh put in ~/.opencode/bin first: a 1.x from npm or Homebrew earlier on the PATH
+# cannot read this config (review of v1.56.0, finding 5); the PATH only when that copy is absent
+OPENCODE_BIN="\$HOME/.opencode/bin/opencode"
+[ -x "\$OPENCODE_BIN" ] || OPENCODE_BIN="\$(command -v opencode || true)"
 [ -n "\$OPENCODE_BIN" ] || OPENCODE_BIN="\$HOME/.opencode/bin/opencode"
 if [ ! -x "\$OPENCODE_BIN" ]; then
   echo "oc: opencode is not installed. Re-run ./install.sh in $REPO_DIR: it installs the opencode this repo tests ($OPENCODE2_VERSION)." >&2
@@ -4178,7 +4181,7 @@ else
       # the PATH. Step 10 is the text path's only, so a box booting this lane kept the opencode
       # it started with until its next boot (the reference box on the FP4-Local lane, 2026-10-22).
       if [ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then
-        OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh" \
+        OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" OPENCODE_BIN="${OC_FOUND:-}" "$REPO_DIR/dashboard/install-agent.sh" \
           || echo "NOTE: the Agent view did not install; the rest of the cockpit is up (retry: ./dashboard/install-agent.sh)"
       fi
     else
@@ -4537,7 +4540,7 @@ except Exception as e:
         # The Agent tab needs opencode on PATH. Not having it costs one tab, and
         # one missing tab is not a reason to fail an install that is otherwise up.
         if [ "$OPENCODE" -eq 1 ] && command -v opencode >/dev/null 2>&1; then
-          OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh" \
+          OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" OPENCODE_BIN="${OC_FOUND:-}" "$REPO_DIR/dashboard/install-agent.sh" \
             || echo "NOTE: the Agent view did not install; the rest of the cockpit is up (retry: ./dashboard/install-agent.sh)"
         elif [ "$OPENCODE" -eq 1 ]; then
           echo "NOTE: opencode is not on your PATH (step 7 did not install it: see its NOTE, or OPENCODE_PIN=0),"

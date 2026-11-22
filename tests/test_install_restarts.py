@@ -108,7 +108,7 @@ class ABoxBootingAnotherLaneGetsTheAgentTab(unittest.TestCase):
     # the call carries the major that stands after step 7 as an environment prefix (the v2
     # migration passes it; since a failed major crossing it is OC_SERVE_MAJOR, so the unit is
     # never rendered for the major that did not come down), at both sites alike
-    AGENT = 'OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh" \\\n'
+    AGENT = 'OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" OPENCODE_BIN="${OC_FOUND:-}" "$REPO_DIR/dashboard/install-agent.sh" \\\n'
     TEXT = SCRIPTS["dashboard/install-agent.sh"]
 
     def test_its_branch_runs_the_agent_installer_after_the_cockpit_as_step_10_does(self):

@@ -656,7 +656,7 @@ class TheFailedCrossingServesWhatStands(unittest.TestCase):
         text = INSTALL.read_text()
         self.assertIn('OC_MAJOR="${OC_SERVE_MAJOR:-${OPENCODE_MAJOR:-1}}"', text,
                       "the generated config's OC_MAJOR follows the binary in place")
-        self.assertEqual(text.count('OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" "$REPO_DIR/dashboard/install-agent.sh"'),
+        self.assertEqual(text.count('OPENCODE_MAJOR="${OC_SERVE_MAJOR:-1}" OPENCODE_BIN="${OC_FOUND:-}" "$REPO_DIR/dashboard/install-agent.sh"'),
                          2, "both install-agent.sh calls hand the served major down (the unit)")
         self.assertIn('OC_SERVE_MAJOR="${OPENCODE_MAJOR:-1}"', text)
 
@@ -945,6 +945,40 @@ class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
         self.assertEqual(sent, ["run", "hi", "--auto"], "--auto last, no --yolo, no env cap")
         self.assertNotIn("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX", body)
         self.assertIn("--yolo is not a flag of OpenCode 2", body)
+
+    def test_the_v2_launcher_runs_the_box_opencode_before_a_1x_on_the_path(self):
+        # review of v1.56.0, finding 5: an npm or Homebrew 1.x earlier on the PATH than
+        # ~/.opencode/bin was the one oc ran, with --auto and the v2 config it cannot read;
+        # the launcher takes the copy install.sh put in ~/.opencode/bin first
+        text = INSTALL.read_text()
+        start = text.index('cat > "$OC_BIN" <<OCWRAP2')
+        body = text[start:text.index("\nOCWRAP2\n", start) + len("\nOCWRAP2\n")]
+        t = pathlib.Path(tempfile.mkdtemp(prefix="oc-render2-path-"))
+        (t / "home" / ".opencode" / "bin").mkdir(parents=True)
+        (t / "other").mkdir()
+        calls = t / "calls.log"
+        for d, ver, who in ((t / "other", "1.19.6", "OTHER"), (t / "home" / ".opencode" / "bin", "opencode v2.3.2", "BOX")):
+            (d / "opencode").write_text(
+                f'#!/bin/sh\nif [ "$1" = --version ]; then echo "{ver}"; exit 0; fi\necho {who} >> "{calls}"\n')
+            (d / "opencode").chmod(0o755)
+        render = (f'OC_BIN="{t}/oc"; REPO_DIR=/opt/repo; OPENCODE2_VERSION=2.3.2; '
+                  f'OPENCODE_MAJOR=2; CONFIG_DIR="{t}/cfg"\n' + body)
+        subprocess.run(["bash", "-c", render], check=True)
+        r = subprocess.run(["bash", str(t / "oc"), "run", "hi"], capture_output=True, text=True,
+                           env={"HOME": str(t / "home"),
+                                "PATH": f"{t}/other:{t}/home/.opencode/bin:/usr/bin:/bin"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(calls.read_text().split(), ["BOX"], "oc ran the 1.x found first on the PATH")
+        self.assertNotIn("is not OpenCode 2", r.stderr)
+
+    def test_the_agent_tab_installer_gets_the_opencode_the_install_put_in_place(self):
+        # same finding: install-agent.sh took `command -v opencode`, so a 1.x earlier on the PATH
+        # was rendered into the Agent unit over the v2 config; both calls hand it OC_FOUND
+        text = INSTALL.read_text()
+        calls = [l for l in text.splitlines() if '"$REPO_DIR/dashboard/install-agent.sh"' in l and "OPENCODE_MAJOR=" in l]
+        self.assertEqual(len(calls), 2, calls)
+        for line in calls:
+            self.assertIn('OPENCODE_BIN="${OC_FOUND:-}"', line, line)
 
     def test_the_v2_launcher_skips_claude_md_and_the_v1_one_does_not(self):
         # OpenCode 2 reads CLAUDE.md (project dirs without AGENTS.md, and the global
