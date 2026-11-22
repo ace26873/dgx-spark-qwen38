@@ -79,6 +79,36 @@ class UninstallLeavesOpencodeStartable(unittest.TestCase):
                 else:
                     self.assertEqual(json.loads(oc.read_text())["permission"], rules)
 
+    def test_the_copy_a_v2_install_made_goes_with_the_key_too(self):
+        # review of v1.56.0, finding 3: a fresh OpenCode 2 install copies the generated config, with
+        # its v2 keys (permissions, policies, share, websearch, update), as the user's global config;
+        # the purge did not count those keys as ours, so the copy stayed, emptied of its provider.
+        # A value the user changed keeps the file.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ocm", REPO / "oc-merge-limits.py")
+        ocm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ocm)
+        # the values the purge counts as ours are the ones install.sh writes in the generated v2 config
+        install = (REPO / "install.sh").read_text()
+        for line in ('doc["policies"] = [{"action": "provider.use", "resource": "opencode", "effect": "deny"}]',
+                     'doc["share"] = "disabled"', 'doc["websearch"] = False', 'doc["update"] = "disable"'):
+            self.assertIn(line, install, "install.sh and the purge must agree on the v2 keys")
+        for websearch, gone in ((False, True), (True, False)):
+            with self.subTest(gone=gone):
+                mine = lambda k: json.dumps({
+                    "$schema": "https://opencode.ai/config.json", "provider": {"qwen38": box(k)},
+                    "compaction": {"keep": {"tokens": 135000}, "background": True},
+                    "model": "qwen38/qwen3.8-27b", "small_model": "qwen38/qwen3.8-27b",
+                    "permission": RULES, "permissions": ocm.deny_permissions_v2(),
+                    "policies": [{"action": "provider.use", "resource": "opencode", "effect": "deny"}],
+                    "share": "disabled", "websearch": websearch, "update": "disable"}, indent=2)
+                out, home, cfg, oc = self.run_it(mine, purge=1)
+                self.assertEqual(oc.exists(), not gone, out)
+                if gone:
+                    self.assertIn("held only this box's providers (qwen38): moved to", out)
+                else:
+                    self.assertIs(json.loads(oc.read_text())["websearch"], True)
+
     def test_a_users_own_config_keeps_everything_but_the_box(self):
         theirs = lambda k: json.dumps({"model": "qwen38/qwen3.8-27b", "plugin": ["x.js"],
                                        "provider": {"qwen38": box(k), "anthropic": {}}})

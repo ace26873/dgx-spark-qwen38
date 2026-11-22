@@ -1196,10 +1196,17 @@ def remove_providers(path: str, key_file: str) -> int:
     # since v1.40.4 the copy also holds the rules --deny-bash put in it: a "permission" of any other
     # content is the user's, and keeps the file (the copy stayed, emptied of its provider, found in review).
     # OpenCode 2's "permissions" from the same command is ours too, and no reason to keep the copy.
-    if (set(cur) <= {"$schema", "autoupdate", "compaction", "provider", "permission", "permissions"}
+    # A fresh OpenCode 2 install copies the generated config with its v2 keys too (install.sh: policies,
+    # share, websearch, update): ours when they hold exactly what install.sh writes, the user's
+    # otherwise (review of v1.56.0, finding 3: the copy stayed, emptied of its provider).
+    ours_v2 = {"policies": [{"action": "provider.use", "resource": "opencode", "effect": "deny"}],
+               "share": "disabled", "websearch": False, "update": "disable"}
+    if (set(cur) <= {"$schema", "autoupdate", "compaction", "provider", "permission", "permissions",
+                     *ours_v2}
             and not cur.get("provider")
             and cur.get("permission", deny_permission()) == deny_permission()
-            and cur.get("permissions", deny_permissions_v2()) == deny_permissions_v2()):
+            and cur.get("permissions", deny_permissions_v2()) == deny_permissions_v2()
+            and all(cur.get(k, v) == v and type(cur.get(k, v)) is type(v) for k, v in ours_v2.items())):
         saved = backup(path)
         os.unlink(path)
         print(f"{path} held only this box's providers ({', '.join(gone)}): moved to {saved}")
