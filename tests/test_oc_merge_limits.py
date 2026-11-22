@@ -590,6 +590,22 @@ def main() -> None:
         rc, out = deny2(p)
         assert rc == 1 and "refused" in out and open(p).read() == body, f"{value!r}: {rc} {out}"
 
+    # a comment between "{" and the first member (or the "}" of an empty object) survives an insert:
+    # blank() turns it into spaces, and set_member used to splice over that gap (review of v1.56.0,
+    # finding 2: `"compaction": { /* mine */ "prune": false }` lost its comment on a v2 install)
+    m = load_module()
+    for body, note in (('{"compaction": { /* mine */ "prune": false }}', "/* mine */"),
+                       ('{"compaction": { // note\n}}', "// note"),
+                       ('{"compaction": {/* a */}}', "/* a */")):
+        out = m.set_member(body, ["compaction"], "keep", '{"tokens": 1}')
+        assert note in out, f"{body!r}: the comment is gone: {out!r}"
+        doc = m.load(out)
+        assert doc["compaction"]["keep"] == {"tokens": 1}, out
+        assert (doc["compaction"].get("prune") is False) == ("prune" in body), out
+        # and the same insert twice is the same text (no drift)
+        again = m.set_member(out, ["compaction"], "keep", '{"tokens": 1}')
+        assert again == out, f"{body!r}: a second pass changed the text: {again!r}"
+
     print("test_oc_merge_limits: OK")
 
 

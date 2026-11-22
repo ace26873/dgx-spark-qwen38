@@ -268,8 +268,16 @@ def set_member(text: str, path, key: str, value: str) -> str:
     gap = clean[o + 1:first]
     indent = gap[gap.rindex("\n") + 1:] if "\n" in gap else ""
     member = (json.dumps(key) + ": " + value).replace("\n", nl + indent)
+    # a comment between "{" and what follows is spaces in `clean` but text in the file: the two
+    # branches that consume the gap keep it then, the member going before it (review of v1.56.0,
+    # finding 2: { /* mine */ "prune": false } lost its comment on a v2 install)
+    commented = text[o + 1:first].strip() != ""
     if clean[first] == "}":
+        if commented:
+            return text[:o + 1] + member + text[o + 1:]
         return text[:o + 1] + member + text[first:]
+    if "\n" not in gap and commented:
+        return text[:o + 1] + member + ", " + text[o + 1:]
     if "\n" not in gap:
         # the gap is whitespace only, so it is consumed, not kept: keeping it made every
         # insert add the separator's spaces to it, and the file drifted a little more on
