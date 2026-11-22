@@ -284,6 +284,10 @@ class FakeOpencode(http.server.BaseHTTPRequestHandler):
         if path in ("/api/config", "/api/provider", "/api/model", "/api/credential"):
             # the answer of a POST on a secret route carries the key too (blind review
             # 2026-11-20, D5); enc=1 answers it gzipped, which the relay must refuse
+            if "status=201" in (self.path.partition("?")[2] if "?" in self.path else ""):
+                # a 2xx other than 200 with the secrets in its body (review of v1.56.0, finding 10)
+                return self._json({"info": {"providers": {"local": {"options": {"apiKey": "sk-live"}}}},
+                                   "apiKey": "sk-live"}, 201)
             if "enc=1" in (self.path.partition("?")[2] if "?" in self.path else ""):
                 import gzip
                 raw = gzip.compress(b'{"apiKey": "sk-live"}')
@@ -929,6 +933,27 @@ class TheScrubCannotBeSpelledAround(unittest.TestCase):
         finally:
             conn.close()
 
+    CREDENTIAL_SPELLINGS = ("/api//credential", "/./api/credential", "/foo/../api/credential",
+                            "/api/%63redential", "//api/credential")
+
+    def test_secret_keys_for_reads_the_normalized_target(self):
+        # review of v1.56.0, finding 1: is_secret_path normalized the path, secret_keys_for did not,
+        # so an odd spelling of /api/credential was scrubbed WITHOUT its extra key "value"
+        for p in self.CREDENTIAL_SPELLINGS:
+            with self.subTest(path=p):
+                self.assertIn("value", ar.secret_keys_for(p), p)
+
+    def test_an_oddly_spelled_credential_answer_loses_its_values(self):
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        for p in self.CREDENTIAL_SPELLINGS:
+            with self.subTest(path=p):
+                code, body = self._raw_get(relay.server_port, p)
+                self.assertEqual(code, 200, body[:120])
+                self.assertNotIn(b"sk-live", body, "the stored credential reached the browser")
+                self.assertNotIn(b"tok-live", body)
+
     def test_is_secret_path_reads_the_normalized_target(self):
         for p in self.SPELLINGS:
             with self.subTest(path=p):
@@ -1067,6 +1092,18 @@ class TheScrubCoversEveryMethod(unittest.TestCase):
                 code, body = self._req(relay.server_port, method, path, data)
                 self.assertEqual(code, 200, body[:120])
                 self.assertNotIn(b"sk-live", body, "the answer of a non-GET is scrubbed too")
+                self.assertIn(b"***", body, "the shape is kept")
+
+    def test_a_2xx_other_than_200_is_scrubbed_too(self):
+        # review of v1.56.0, finding 10: the scrub ran only on 200, a 201 with the secrets passed as is
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        for path in ("/api/config?status=201", "/api/credential?status=201"):
+            with self.subTest(path=path):
+                code, body = self._req(relay.server_port, "POST", path, b"{}")
+                self.assertEqual(code, 201, body[:120])
+                self.assertNotIn(b"sk-live", body, "a 201 on a secret route is scrubbed like a 200")
                 self.assertIn(b"***", body, "the shape is kept")
 
     def test_a_lying_gzip_answer_to_a_post_is_refused(self):

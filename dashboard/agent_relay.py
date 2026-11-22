@@ -224,23 +224,32 @@ def split_upstream(url: str) -> tuple[str, int]:
     return u.hostname or "127.0.0.1", u.port or 80
 
 
-def is_secret_path(path: str) -> bool:
-    """A path whose JSON answer can carry provider credentials. Classified on the NORMALIZED target:
-    opencode's router answers /./api/config, /api//config and /foo/../api/config as /api/config, so
-    those spellings are exactly as secret (a raw match let them through unscrubbed; independent
-    review of the v2 migration, finding 6).""" 
+def normalized_target(path: str) -> str:
+    """The path opencode's router answers: /./api/config, /api//config, /foo/../api/config and
+    /api/%63onfig all reach /api/config. Both the secret test and the keys to scrub read THIS path,
+    never the raw one (review of v1.56.0, finding 1: the keys read the raw path, so an odd spelling
+    of /api/credential was scrubbed without "value", the credential itself)."""
     p = urllib.parse.unquote(path.split("?", 1)[0])
     if not p.startswith("/"):
         p = "/" + p
     p = posixpath.normpath(p)
-    p = re.sub(r"/{2,}", "/", p)          # normpath keeps a leading "//" (POSIX); the router does not
+    return re.sub(r"/{2,}", "/", p)       # normpath keeps a leading "//" (POSIX); the router does not
+
+
+def is_secret_path(path: str) -> bool:
+    """A path whose JSON answer can carry provider credentials. Classified on the NORMALIZED target:
+    opencode's router answers /./api/config, /api//config and /foo/../api/config as /api/config, so
+    those spellings are exactly as secret (a raw match let them through unscrubbed; independent
+    review of the v2 migration, finding 6)."""
+    p = normalized_target(path)
     return any(p == s or p.startswith(s + "/") for s in SECRET_PATHS)
 
 
 def secret_keys_for(path: str) -> frozenset:
     """The member names to replace on this path: the usual ones, plus the extras of every
-    secret-bearing prefix it falls under (/api/credential and its items, measured 2026-11-14)."""
-    p = path.split("?", 1)[0]
+    secret-bearing prefix it falls under (/api/credential and its items, measured 2026-11-14),
+    on the normalized target, as is_secret_path reads it."""
+    p = normalized_target(path)
     extra = frozenset()
     for prefix, keys in SECRET_KEYS_EXTRA.items():
         if p == prefix or p.startswith(prefix + "/"):
@@ -582,7 +591,11 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
             # every method but HEAD (a HEAD carries no body to leak): a script injected in
             # the tab can POST to a secret route, and the answer of a POST is not less secret
             # (blind review of 2026-11-20, D5)
-            scrub_it = self.command != "HEAD" and resp.status == 200 and is_secret_path(self.path)
+            # every 2xx answer with a body, not only 200: a 201 or 206 carries the same secrets (review of
+            # v1.56.0, finding 10); 204, 205 and an empty body carry none
+            has_body = resp.status not in (204, 205) and resp.length != 0
+            scrub_it = (self.command != "HEAD" and 200 <= resp.status < 300 and has_body
+                        and is_secret_path(self.path))
             if scrub_it:
                 # OpenCode 2 resolves {file:...} in the answers to these routes: the key came
                 # back in clear from /api/config, /api/provider and /api/model on 2.3.0.
