@@ -2843,6 +2843,15 @@ if [ "$OPENCODE_PIN" = "1" ] && [ -n "$OC_HAVE" ] && [ "${OC_HAVE%%.*}" = "${OPE
     OC_MAJOR_NOTE="the default since v1.56.0, written on $(date -u +%Y-%m-%dT%H:%MZ)"
   fi
   printf '%s\n# %s\n' "${OPENCODE_MAJOR:-1}" "$OC_MAJOR_NOTE" > "$OC_STATE_DIR/opencode.major"
+elif [ "$OPENCODE_PIN" != "1" ] && [ -n "$OC_HAVE" ] && [ "${OC_SERVE_MAJOR:-1}" = "2" ]; then
+  # OPENCODE_PIN=0 keeps the user's own opencode: when that is a 2.x, the box serves OpenCode 2, and
+  # the tools that read the marker (the Agent tab's retry, switch-model.sh, vllm-lane.sh,
+  # oc-fit-limits.py) must know it (review of v1.56.0, finding 7). "2" is the default, so it moves
+  # nothing at a later run; a 1.x of the user's gets no marker, which those tools read as 1.
+  OC_STATE_DIR="${CONFIG_DIR:-$HOME/.config/qwen38}"
+  mkdir -p "$OC_STATE_DIR"
+  printf '2\n# %s\n' "OPENCODE_PIN=0: the box serves the user's own opencode $OC_HAVE, written on $(date -u +%Y-%m-%dT%H:%MZ)" \
+    > "$OC_STATE_DIR/opencode.major"
 fi
 # Going back to 1.x takes OUR v2 deny array out of the global config: OpenCode 1.19 refuses
 # to start while a config holds "permissions" ("V2 permissions are not supported by OpenCode

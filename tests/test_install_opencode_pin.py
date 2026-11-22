@@ -349,7 +349,7 @@ class TheDefaultIsTwo(unittest.TestCase):
     def version_of(self, binary):
         return subprocess.run([str(binary), "--version"], capture_output=True, text=True).stdout.strip()
 
-    def run_home(self, *, want="", marker=None, brew_ver=None, v1_sha=None, v2_sha=None, plugins=()):
+    def run_home(self, *, want="", marker=None, brew_ver=None, v1_sha=None, v2_sha=None, plugins=(), pin="1"):
         if marker is not None:
             self.cfg.mkdir(parents=True, exist_ok=True)
             (self.cfg / "opencode.major").write_text(marker)
@@ -366,7 +366,7 @@ class TheDefaultIsTwo(unittest.TestCase):
                 (plugin_dir / name).write_text(content)
         script = ("set -euo pipefail\ndie(){ echo \"DIE: $*\"; exit 1; }\n"
                   f'REPO_DIR="{REPO}"\nCONFIG_DIR="{self.cfg}"\n'
-                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{v1_sha or self.assets[PINNED][1]}"; OPENCODE_PIN="1"\n'
+                  f'OPENCODE_VERSION="{PINNED}"; OPENCODE_SHA256="{v1_sha or self.assets[PINNED][1]}"; OPENCODE_PIN="{pin}"\n'
                   f'OPENCODE2_VERSION="{self.V2}"; OPENCODE2_SHA256="{v2_sha or self.assets[self.V2][1]}"\n'
                   f'_ENV_OPENCODE_VERSION=""; _ENV_OPENCODE_SHA256=""\n'
                   f'OPENCODE_MAJOR_WANT="{want}"\n'
@@ -442,6 +442,32 @@ class TheDefaultIsTwo(unittest.TestCase):
         self.assertEqual(self.version_of(self.home_bin), self.V2)
         self.assertEqual(marker.splitlines()[0], "2")
         self.assertIn("installing", out)
+
+    def test_an_unpinned_box_serving_its_own_2_x_is_marked_2(self):
+        # review of v1.56.0, finding 7: OPENCODE_PIN=0 with the user's own 2.x served 2 but wrote no
+        # marker, so every tool reading the marker (the Agent tab's retry, switch-model.sh, vllm-lane.sh,
+        # oc-fit-limits.py) took the box for a 1.x one; "2" is the default, so writing it moves nothing
+        rc, out, marker, calls = self.run_home(brew_ver="2.3.0", pin="0")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("SERVE=2", out)
+        self.assertEqual(calls, [], "OPENCODE_PIN=0 downloads nothing")
+        self.assertIsNotNone(marker, "the box serves OpenCode 2: the marker says so")
+        self.assertEqual(marker.splitlines()[0], "2")
+        self.assertIn("OPENCODE_PIN=0", marker)
+
+    def test_an_unpinned_box_serving_its_own_1_x_gets_no_marker(self):
+        # a "1" written here would keep a later pinned run on 1.x: no marker, as before
+        rc, out, marker, calls = self.run_home(brew_ver="1.19.6", pin="0")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("SERVE=1", out)
+        self.assertIsNone(marker)
+
+    def test_an_unpinned_box_with_no_opencode_gets_no_marker(self):
+        # the marker records a binary that stands, never the default alone
+        rc, out, marker, calls = self.run_home(pin="0")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, [])
+        self.assertIsNone(marker)
 
     def test_a_stray_2_x_on_a_no_marker_box_is_replaced_by_the_pinned_2(self):
         rc, out, marker, calls = self.run_home(brew_ver="2.3.0")
