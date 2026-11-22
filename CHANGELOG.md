@@ -47,8 +47,18 @@ outside the plugins dir so no major loads it, and the install's NOTE names the k
   `/api/credential` answer the box's API key in clear; the relay scrubs every secret on every method
   of those routes (a POST is scrubbed too), refuses what it cannot read as JSON (compressed,
   oversized, cut) with a 502, classifies a path only after normalizing it (`/api//config`,
-  `/foo/../api/config`), answers 401 without the session cookie, and drops `accept-encoding` only on
-  those secret routes.
+  `/foo/../api/config`), answers 401 without the session cookie, and drops `accept-encoding` on
+  those secret routes and on a page request (a GET whose `Accept` names `text/html`): 2.3.2 sends its
+  page compressed with Brotli when asked (2,278 bytes for 9,156, measured on the release binary),
+  which the relay cannot read to link the phone layer into it; scripts and API calls keep the
+  client's compression. Found by the release CI on 2026-11-22: the Agent bench against 2.3.2 read
+  28/33, the four phone-layer checks among the failures.
+- **The CI benches both pins.** the Agent tab bench (`dashboard/tests/agent-bench.mjs`, a real
+  opencode behind a dry-run cockpit and a headless browser) ran only the 1.x pin; a second step runs
+  it on the 2.x pin with `AGENT_BENCH_PIN=2`, the release asset checked against its sha256. The bench
+  now writes the `opencode.major` marker of the major it runs, as every installed box carries one,
+  and on 2.3.2 lists and removes the terminal where the web app opens it, as a persistent terminal
+  of the session (`/api/experimental/session/:id/terminal`). 1.19.6: 34/34, 2.3.2: 34/34.
 - **Measured on 2.3.2.** the 2.x facts were first measured on 2.3.0 in a sandbox on the reference box (2026-11-13 to 15); the delta to 2.3.2 was
   re-measured in a sandbox before the pin moved.
 - **Proven on the reference box (2026-11-20, 09:05 to 09:14, rc=0 in the proof's
