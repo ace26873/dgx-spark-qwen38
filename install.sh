@@ -2862,8 +2862,8 @@ fi
 if [ "${OPENCODE:-1}" -eq 1 ] && [ "${OC_SERVE_MAJOR:-1}" != 2 ] && [ "${OC_WAS_2:-0}" -eq 1 ] && [ -f "$HOME/.config/opencode/opencode.json" ]; then
   if ! OC_RM="$(python3 "$REPO_DIR/oc-merge-limits.py" "$HOME/.config/opencode/opencode.json" --remove-permissions 2>&1)"; then
     echo "NOTE: $OC_RM"
-    echo "      OpenCode 1.19 refuses to start while a config holds \"permissions\": that array is not the one"
-    echo "      this repo wrote, so it was left alone. Take it out of $HOME/.config/opencode/opencode.json by"
+    echo "      OpenCode 1.19 refuses to start while a config holds \"permissions\": that array holds rules this"
+    echo "      repo did not write, so it was left alone. Take it out of $HOME/.config/opencode/opencode.json by"
     echo "      hand, or stay on OpenCode 2 with ./install.sh --opencode 2 (docs/opencode.md)."
   fi
 fi

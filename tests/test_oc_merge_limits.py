@@ -563,6 +563,16 @@ def main() -> None:
     rc, out = perms_rm(p)
     assert rc == 1 and "not this box's deny array" in out and open(p).read() == before, out
 
+    # the person's rules with ours appended after them (what --deny-permissions makes of their array):
+    # left alone, and the message says whose rules are in it (review of v1.56.0, finding 4)
+    m = load_module()
+    mixed = [{"action": "shell", "resource": "*", "effect": "ask"}] + m.deny_permissions_v2()
+    p = write(tmp, json.dumps({"permissions": mixed}))
+    before = open(p).read()
+    rc, out = perms_rm(p)
+    assert rc == 1 and "holds rules of yours, with this box's deny rules last" in out, out
+    assert open(p).read() == before, "the person's array is not touched"
+
     # an existing v2 array is kept; ours go after its last rule (a "*" before them cannot win),
     # and a comment beside the array survives.
     p = write(tmp, '{\n  // mine\n  "permissions": [\n'

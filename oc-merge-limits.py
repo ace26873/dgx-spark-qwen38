@@ -952,7 +952,14 @@ def remove_permissions(path: str) -> int:
         print("no v2 permissions array here: unchanged")
         return 0
     if doc["permissions"] != deny_permissions_v2():
-        print(f"{path}: its permissions is not this box's deny array; left alone")
+        ours = deny_permissions_v2()
+        perms = doc["permissions"]
+        if isinstance(perms, list) and len(perms) > len(ours) and perms[-len(ours):] == ours:
+            # --deny-permissions put ours after rules of the person's own: the array is theirs, ours ride
+            # last in it (review of v1.56.0, finding 4: the message said none of it was this box's)
+            print(f"{path}: its permissions holds rules of yours, with this box's deny rules last; left alone")
+        else:
+            print(f"{path}: its permissions is not this box's deny array; left alone")
         return 1
     want = copy.deepcopy(doc)
     del want["permissions"]
