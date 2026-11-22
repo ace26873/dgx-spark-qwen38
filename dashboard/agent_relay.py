@@ -170,9 +170,14 @@ def read_credentials(path: Path) -> tuple[str, str] | None:
 
 
 def forward_request_headers(items, upstream_host: str, auth: str,
-                            websocket: bool = False, secret: bool = False) -> list[tuple[str, str]]:
+                            websocket: bool = False, secret: bool = False,
+                            page: bool = False) -> list[tuple[str, str]]:
+    """page: a GET whose Accept names text/html, the document the relay links the phone
+    layer into. OpenCode 2.3.2 compresses it with Brotli when asked (measured 2026-11-22),
+    and the standard library cannot read Brotli to rewrite it: a page asks for identity,
+    like a credential route; scripts and API calls keep the client's compression (D6)."""
     items = list(items)
-    drop = REQUEST_DROP | ({"accept-encoding"} if secret else set())
+    drop = REQUEST_DROP | ({"accept-encoding"} if secret or page else set())
     out = [(k, v) for k, v in items if k.lower() not in drop]
     out.append(("Host", upstream_host))
     if any(k.lower() == "origin" for k, _ in items):
@@ -563,7 +568,9 @@ def make_handler(cfg: RelayConfig) -> type[http.server.BaseHTTPRequestHandler]:
                 conn.sock.settimeout(None)
                 conn.putrequest(self.command, self.path, skip_host=True, skip_accept_encoding=True)
                 for k, v in forward_request_headers(self.headers.items(), cfg.upstream_host, auth,
-                                                    secret=is_secret_path(self.path)):
+                                                    secret=is_secret_path(self.path),
+                                                    page=self.command == "GET"
+                                                    and "text/html" in (self.headers.get("Accept") or "")):
                     conn.putheader(k, v)
                 if body or self.command in ("POST", "PUT", "PATCH"):
                     conn.putheader("Content-Length", str(len(body)))

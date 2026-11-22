@@ -989,6 +989,27 @@ class TheRelayAsksForIdentity(unittest.TestCase):
         self.assertEqual(seen["headers"].get("Accept-Encoding"), "gzip, br",
                          "only the credential routes ask for identity (D6)")
 
+    def test_a_page_request_asks_for_identity(self):
+        # OpenCode 2.3.2 sends its page compressed with Brotli when asked (measured 2026-11-22:
+        # content-encoding: br, 2,278 bytes for 9,156), and the relay, which cannot read Brotli,
+        # passed it untouched, without the phone layer (agent-bench on 2.3.2: 28/33). A request
+        # for a page (a GET whose Accept names text/html, as every browser load of the tab says,
+        # with Sec-Fetch headers or without them on a tailnet address) asks for identity; a
+        # script or an API call keeps the compression the client asked for (D6).
+        up, relay = make_relay()
+        self.addCleanup(relay.shutdown)
+        self.addCleanup(up.shutdown)
+        page = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        for accept, kept in ((page, None), ("*/*", "gzip, deflate, br")):
+            with self.subTest(accept=accept):
+                SEEN.clear()
+                code, body = self._get(relay.server_port, "/echo",
+                                       headers={"Accept": accept, "Accept-Encoding": "gzip, deflate, br"})
+                self.assertEqual(code, 200, body[:120])
+                seen = next(r for r in SEEN if r["path"] == "/echo")
+                got = {k.lower(): v for k, v in seen["headers"].items()}.get("accept-encoding")
+                self.assertEqual(got, kept)
+
     def test_a_lying_gzip_answer_is_refused_not_forwarded(self):
         up, relay = make_relay()
         self.addCleanup(relay.shutdown)
