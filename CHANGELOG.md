@@ -130,6 +130,15 @@ outside the plugins dir so no major loads it, and the install's NOTE names the k
   in that journal; the suites that read this CHANGELOG were re-run on this release's tree, in the gate
   journal of this commit.
 
+**Clients x lanes on the reference box (2026-11-23, this release installed from its branch, opencode 2.3.2).**
+The 8 real clients (Claude Code, opencode, Hermes, pi, the OpenAI and Anthropic SDKs, fetch under Node and
+Bun, LiteLLM) answer on `stock`, `flash-local`, `ornith-122b`, `flash-unsloth`, `lfm25`, `lfm3`, `nemotron` and
+`nemotron-super`: 8 of 8 on each, and opencode 2 passes on all 9 text lanes. On `kolibri` 7 of 8: Claude Code's
+file-reading task failed on the first try and passed 3 of its 4 replays (the model answers without calling the
+read tool). This is the model's own variance, not this release: the same case failed the same way on v1.40.4
+(1 of 5, 2026-10-29), the proxy is unchanged since v1.55.0, and this release changes neither Kolibri's unit
+nor its engine arguments. It is a limit this version ships with, as LFM2.5's and LFM3's opencode case.
+
 ## v1.55.0 (2026-11-20): the one command installs the stable channel, the latest published release, and --edge follows main
 
 Until now `curl -fsSL https://get.alzeo.ai | bash` reset every box to main's tip: a release when
