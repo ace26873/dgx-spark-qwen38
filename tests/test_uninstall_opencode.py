@@ -181,7 +181,12 @@ class UninstallLeavesOpencodeStartable(unittest.TestCase):
         # for one; it lists every model, other/m among them. Without --standalone it starts its managed
         # background service (`opencode serve --service`), which outlives the test and holds its port
         # (measured on 2.3.2 the 2026-11-22); --standalone runs a server that ends with the command
-        ver = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=60).stdout
+        # asked in the throwaway HOME too: OpenCode 2 writes its log file under HOME even for --version
+        # (measured on 2.3.2 the 2026-11-23), and asked with the suite's own HOME it left that file there:
+        # on a box that serves OpenCode 2, "The offline suite touches nothing outside itself" failed (the
+        # release CI of v1.56.0, on the reference box)
+        ver = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=60,
+                             cwd=str(home), env={"HOME": str(home), "PATH": "/usr/bin:/bin"}).stdout
         major = (re.findall(r"(\d+)\.\d+\.\d+", ver) or ["1"])[-1]
         args = [binary, "models", "--standalone"] if major == "2" else [binary, "models", "other"]
         r = subprocess.run(args, capture_output=True, text=True, timeout=120,
