@@ -271,5 +271,58 @@ function renderProxy(){
   b.onclick = () => askAction('unit', {verb: onl ? 'stop' : 'start', unit: PROXY_UNIT},
     onl ? ['Agent clients on :30001 lose the proxy until it is back; the engine itself keeps running.'] : []);
 }
-afterApply(() => { renderLanes(); renderEngineFacts(); renderProxy(); });
+/* The speech lane (v1.58): speech recognition and synthesis on the CPU, beside whichever lane serves. It is no lane
+   of the rack above: it takes no turn on the GPU, has no Load and no boot to follow, so its card says its unit's
+   state and gives the two verbs a unit has, and whether it starts with the box. */
+let SPEECH_CARD = null;
+function speechCard(){
+  if (SPEECH_CARD) return SPEECH_CARD;
+  const root = el('section', 'panel lane-panel'); root.dataset.src = 'speech'; root.id = 'speech-panel';
+  const head = el('header'); const h = el('h2', null, 'Speech'); const state = el('span', 'cap');
+  const who = el('div', 'who'); who.append(h); head.append(who, state);
+  const grid = el('div', 'grid g-7-5');
+  const left = el('div', 'stack'); left.style.gap = 'var(--s-3)';
+  const desc = el('p', 'muted', 'Speech recognition (Qwen3-ASR, 30 languages) and voices (Kokoro, 41 voices in seven languages) behind OpenAI-style audio routes, on the CPU alone: no GPU memory, so it runs beside whichever lane serves.');
+  const why = el('p', 'why-off'); why.hidden = true;
+  const actions = el('div', 'btn-row');
+  const start = el('button', 'btn primary', 'Start Speech'); start.type = 'button';
+  const stop = el('button', 'btn danger', 'Stop Speech'); stop.type = 'button';
+  const boot = el('button', 'btn'); boot.type = 'button';
+  const logs = el('button', 'btn ghost', 'Journal'); logs.type = 'button';
+  actions.append(start, stop, boot, logs);
+  left.append(desc, actions, why);
+  const right = el('dl', 'facts');
+  grid.append(left, right); root.append(head, grid);
+  start.addEventListener('click', () => askAction('unit', {verb: 'start', unit: SPEECH_UNIT}, []));
+  stop.addEventListener('click', () => askAction('unit', {verb: 'stop', unit: SPEECH_UNIT},
+    ['A transcription or a sentence being made right now is lost.']));
+  boot.addEventListener('click', () => askAction('speech_boot', {verb: (F.speech || {}).boot ? 'disable' : 'enable'}, []));
+  logs.addEventListener('click', () => { LOGS_WANT.src = SPEECH_UNIT; showView('logs'); });
+  SPEECH_CARD = {root, state, why, start, stop, boot, logs, right};
+  $('speech-box').append(root);
+  return SPEECH_CARD;
+}
+function renderSpeech(){
+  const d = F.speech; if (!d || !$('speech-box')) return;
+  const c = speechCard(), has = !!d.installed, on = d.active === 'active', moving = d.active === 'activating' || d.active === 'deactivating';
+  const failed = d.active === 'failed', why = busyWhy();
+  cap(c.state, !has ? 'not installed' : on ? 'running' : failed ? 'failed' : d.active === 'activating' ? 'starting' : d.active === 'deactivating' ? 'stopping' : 'stopped',
+      !has ? '' : on ? 'ok' : failed ? 'err' : moving ? 'warn' : '', on);
+  c.start.hidden = !has || on || moving; c.stop.hidden = !has || !(on || moving); c.boot.hidden = !has; c.logs.hidden = !has;
+  setText(c.boot, d.boot ? 'Do not start with the box' : 'Start with the box');
+  [c.start, c.stop, c.boot].forEach(b => { b.disabled = !!why; b.title = why; });
+  c.why.hidden = !failed;
+  setText(c.why, failed ? 'The unit failed: read its journal, then start it again.' : '');
+  const base = `http://${d.host}:${d.port}`;
+  facts(c.right, [
+    ['Routes', has ? `${base}/v1/audio/transcriptions, /v1/audio/speech, /v1/voices` : null, 'code'],
+    ['Reached from', has ? (d.host === '127.0.0.1' || d.host === 'localhost' ? 'this box only, without a key (another machine: an SSH tunnel)' : `${d.host}, without a key`) : null],
+    ['Recognizer', has ? (d.recognizer || null) : null],
+    ['Default voice', has ? (d.voice || null) : null],
+    ['At boot', has ? (d.boot ? 'starts' : 'manual start') : null],
+    ['Memory', has ? 'host memory only, about 2.5 GB with the default recognizer' : null],
+    ['Install', !has ? './install-speech.sh' : null, 'code']]);
+}
+on('speech', d => { F.speech = d; renderSpeech(); });
+afterApply(() => { renderLanes(); renderEngineFacts(); renderProxy(); renderSpeech(); });
 on('busy', () => { if (LCARDS.size) renderLanes(); });

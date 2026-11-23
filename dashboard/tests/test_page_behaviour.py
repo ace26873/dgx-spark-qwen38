@@ -613,10 +613,22 @@ class TheLogsListRefusesTheSourcesTheBoxDoesNotHave(unittest.TestCase):
 
     def test_every_source_stays_offered_on_a_box_that_has_them(self):
         r = run(self, r"""
-        feed({config: CONFIG, units: UNITS, lifecycle: life({})});
+        feed({config: CONFIG, units: UNITS, lifecycle: life({}), speech: {installed: true, active: 'inactive', host: '127.0.0.1', port: 30024}});
         report([...$('log-src').options].filter(o => o.disabled).length);
         """)
         self.assertEqual(r, 0)
+
+    def test_the_speech_lanes_journal_follows_its_own_collector(self):
+        """The speech lane (v1.58.0) is no unit of the units collector: its option is offered when its own
+        collector says the lane is here, and refused with its reason until then."""
+        r = run(self, r"""
+        feed({config: CONFIG, units: UNITS, lifecycle: life({})});
+        const o = $('log-opt-speech'), before = [o.disabled, o.title];
+        feed({config: CONFIG, units: UNITS, lifecycle: life({}), speech: {installed: true, active: 'active', host: '127.0.0.1', port: 30024}});
+        report({before, after: [o.disabled, o.title || '']});
+        """)
+        self.assertEqual(r["before"], [True, "The speech lane is not installed on this box"])
+        self.assertEqual(r["after"], [False, ""])
 
 
 

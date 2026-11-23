@@ -384,6 +384,21 @@ lanes. The key is in neither the page nor any answer; a test asserts it.
   records), refused before it is read, because the cockpit process shares the box's unified memory
   with the lane; one transcription at a time, as the lane serves one request at a time.
 
+## The Speech card: the speech lane, started and stopped from the Lanes view
+
+Under the lanes of the rack, the **Lanes** view has a card for the [speech lane](speech-lane.md)
+since v1.58.0. That lane runs on the CPU beside whichever lane serves, so it is no lane of the
+rack: it takes no turn on the GPU, has no Load and no boot to follow. The card says its unit's
+state (running, stopped, failed, not installed), where its routes listen (`127.0.0.1:30024` unless
+its installer was told otherwise, without a key), its recognizer and its default voice, and
+whether it starts with the box. Its buttons are a unit's: **Start Speech** and **Stop Speech**
+(`systemctl start` and `stop` of `qwen38-speech.service`, never blocked by the lane that serves),
+**Start with the box** or **Do not start with the box** (`systemctl enable` and `disable`: it
+holds about 2.5 GB of host memory once running, so that stays your choice), and **Journal**,
+which opens its journal in the Logs view. Each asks first, with the command in sight, like every
+action of the cockpit. The cockpit relays none of its audio routes: programs on the box reach
+them, another machine through an SSH tunnel ([speech-lane.md](speech-lane.md)).
+
 ## Being told there is a newer version
 
 A box that runs an old release does not know it. The answer existed from v1.6 in the

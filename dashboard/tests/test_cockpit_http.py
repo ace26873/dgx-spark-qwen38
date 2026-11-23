@@ -779,7 +779,9 @@ class ReadRoutes(Base):
             "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
             "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
             "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service", "qwen38-lfm25.service",
-            "qwen38-lfm3.service", "qwen38-keepalive.service", "opencode-web.service"})
+            "qwen38-lfm3.service", "qwen38-keepalive.service", "opencode-web.service",
+            # the speech lane, on the CPU beside any lane (v1.58.0): its journal is read like the others
+            "qwen38-speech.service"})
 
     def test_a_known_log_source_answers_with_bounded_lines(self):
         cookie = self.login()

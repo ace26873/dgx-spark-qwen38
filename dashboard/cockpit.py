@@ -215,7 +215,11 @@ UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service"
          "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
          "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
          "qwen38-lfm25.service", "qwen38-lfm3.service", "qwen38-keepalive.service")
-JOURNAL_UNITS = UNITS + (AGENT_UNIT,)   # what the Logs tab may read (UNITS carries the image, video, Kolibri and Nemotron lanes)
+# The speech lane (install-speech.sh): Qwen3-ASR and Kokoro on the CPU, beside whichever engine serves. It is
+# none of the engines that take the GPU in turn (lifecycle.ENGINE_UNITS, UNITS above): no Load, no boot to
+# follow, no restart owed by an engine's inputs. The page shows it since v1.58.0 and starts or stops its unit.
+SPEECH_UNIT = "qwen38-speech.service"
+JOURNAL_UNITS = UNITS + (AGENT_UNIT, SPEECH_UNIT)   # what the Logs tab may read (UNITS carries the image, video, Kolibri and Nemotron lanes)
 # The SGLang text engines' containers: what their scheduler lines and their abort contract
 # are read from (the Liquid AI LFM2.5 24B-A2B lane's too, SGLang on the 27B's image). The Kolibri and Nemotron
 # lanes' vLLM writes neither, so they are only in CONTAINERS, the list the Logs tab, the diagnostics bundle and the
@@ -268,6 +272,8 @@ def job_phrase(action: str, params: dict) -> str:
         return "delete the stray revisions from the model caches"
     if action == "apply_pending":
         return f"put in place the update {p.get('unit', '')} waited for"
+    if action == "speech_boot":
+        return "start the speech lane with the box" if p.get("verb") == "enable" else "no longer start the speech lane with the box"
     if action == "delete_runtime":
         return f"delete the {p.get('item', '')} runtime"
     if action == "delete_image":
@@ -1427,6 +1433,44 @@ TRANSCRIBE_MIME_OK = frozenset((
     "audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3",
     "audio/flac", "audio/x-flac", "application/flac", "application/x-flac",
 ))
+
+
+SPEECH_UNIT_PATH = SYSTEMD_DIR / SPEECH_UNIT
+SPEECH_LAUNCHER = CONFIG_DIR / "launch-speech.sh"
+
+
+def speech_flag(flag: str, fallback: str) -> str:
+    """What the speech lane's launcher passes for flag, its last word (the recognizer's --host and --port come
+    first in it, the routes' own after them: install-speech.sh's launcher_flag), fallback when it says nothing."""
+    try:
+        text = SPEECH_LAUNCHER.read_text(errors="replace")
+    except OSError:
+        return fallback
+    found = re.findall(rf"(?<!\S){re.escape(flag)}\s+([^\s'\\]+)", "\n".join(
+        ln for ln in text.splitlines() if not ln.lstrip().startswith("#")))
+    return found[-1] if found else fallback
+
+
+@guard
+def collect_speech():
+    """5 s tier: the speech lane as the Lanes view's Speech card reads it. Its unit's state from systemd, and
+    what its launcher serves (the routes' port and address, the recognizer, the default voice). The lane has no
+    key and listens on loopback unless its installer was told otherwise: the address is shown as it is."""
+    out = {"unit": SPEECH_UNIT, "installed": SPEECH_UNIT_PATH.exists(), "active": "inactive", "sub": "dead",
+           "boot": False, "since": "", "port": 30024, "host": "127.0.0.1", "recognizer": "", "voice": ""}
+    if not out["installed"]:
+        return out
+    raw = run(["systemctl", "show", SPEECH_UNIT, "-p", "ActiveState,SubState,UnitFileState,ExecMainStartTimestamp"])
+    d = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
+    out.update(active=d.get("ActiveState", "?"), sub=d.get("SubState", "?"),
+               boot=d.get("UnitFileState") == "enabled", since=d.get("ExecMainStartTimestamp", ""))
+    try:
+        out["port"] = int(speech_flag("--port", "30024"))
+    except ValueError:
+        pass
+    out.update(host=speech_flag("--host", "127.0.0.1"), recognizer=speech_flag("--asr-name", ""),
+               voice=speech_flag("--default-voice", ""))
+    return out
 
 
 def transcribe_status() -> dict:
@@ -4233,7 +4277,7 @@ TIERS = [
     (90.0, {"canary": collect_canary}),
     (3.0, {"gpu": collect_gpu, "decode": collect_decode_telemetry}),
     (5.0, {"units": collect_units, "containers": collect_containers,
-           "feed": collect_feed, "agent": collect_agent}),
+           "feed": collect_feed, "agent": collect_agent, "speech": collect_speech}),
     # its own thread: a /metrics read can wait its whole 4 s on an engine slow to answer,
     # and the units, the feed and the agent must not wait with it
     (5.0, {"metrics": collect_engine_metrics}),
@@ -4344,9 +4388,19 @@ ACTIONS = {
     # dashboard/sudoers-cockpit.template)
     "unit": {
         "danger": "medium",
-        "params": {"verb": sorted(UNIT_VERBS), "unit": sorted(SERVING_UNITS)},
+        # the speech lane's unit too (v1.58.0): started and stopped like any, and none of SERVING_UNITS, whose
+        # updates can wait for a Load
+        "params": {"verb": sorted(UNIT_VERBS), "unit": sorted(SERVING_UNITS | {SPEECH_UNIT})},
         "argv": lambda p: ["sudo", "-n", "/usr/bin/systemctl", p["verb"], p["unit"]],
         "timeout": 90,
+    },
+    # the speech lane with the box, or not: it holds 2.5 GB of host memory once running (docs/speech-lane.md),
+    # so it is the person's choice, the one SPEECH_BOOT=1 makes at install
+    "speech_boot": {
+        "danger": "low",
+        "params": {"verb": ["disable", "enable"]},
+        "argv": lambda p: ["sudo", "-n", "/usr/bin/systemctl", p["verb"], SPEECH_UNIT],
+        "timeout": 30,
     },
     # model switch (repo script: it never starts, stops or restarts an engine)
     "switch": {

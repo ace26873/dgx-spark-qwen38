@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.58.0 (2026-11-23): the one command installs the speech lane, and the cockpit shows it
+
+The speech lane (Qwen3-ASR and Kokoro on the CPU, behind OpenAI-style audio routes on port 30024)
+was installed by its own script only, so a box that ran the one command never had it, and the
+cockpit did not know it existed. Both change (decision 1564: what this repo ships is there for
+everyone).
+
+- **`./install.sh` installs it**, in a step of its own after the other lanes, on a new box and at
+  the first update of a box that lacks it: llama.cpp built for the CPU at its pinned commit, a venv
+  of pinned wheels and 1.4 GB of models checked by sha256, about 3 minutes on the reference box,
+  then its round trip (a sentence spoken, then heard back). On a box that has the lane, a run
+  brings it to the release's version, changes only what moved, keeps its settings (recognizer,
+  voice, port, bind, started with the box or not) and proves nothing twice. `--no-speech` leaves it
+  out of the run that passes it, like every `--no-<lane>` (the keep-as-is command of
+  docs/operations.md names it); `--with-speech` proves it again. A lane that does not install (no
+  room, a download, a compiler) is said in a NOTE and the rest of the install goes on.
+- **It is installed stopped**, as its own installer leaves it: running, it holds about 2.5 GB of
+  host memory (no GPU memory), which a flash lane's long prompts also want. Start it from the
+  cockpit, with `sudo systemctl start qwen38-speech.service`, or with the box
+  (`SPEECH_BOOT=1 ./install-speech.sh`, or the card's button).
+- **The cockpit's Lanes view has a Speech card**: the unit's state, where its routes listen, its
+  recognizer and default voice, whether it starts with the box, and four buttons (Start, Stop, with
+  the box or not, Journal). Starting it is never blocked by the lane that serves: it takes no turn
+  on the GPU. The Logs view reads its journal. The cockpit's sudoers gains the five `systemctl`
+  lines of that unit and nothing else; the cockpit still relays none of the audio routes.
+
+Tests: the installer's step and its summary line against a stub installer, under `set -e`, with an
+installer that fails (tests/test_install_speech_default.py); the collector, the actions and their
+sudoers lines, and the card in the page's own scripts (dashboard/tests/test_speech_card.py, two
+mutants shown red).
+
 ## v1.57.0 (2026-11-23): the opencode guard covers webfetch as well as the shell, on both majors
 
 Security release for the opencode integration. Since v1.40.4 the box's opencode configs deny a

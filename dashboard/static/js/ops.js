@@ -721,12 +721,19 @@ function refreshLogSources(){
   const sel = $('log-src'); if (!sel) return;
   [...sel.options].forEach(o => {
     if (o.id === 'log-opt-agent') return;
+    // the speech lane is no lane of the units collector: its own collector says whether it is here (v1.58)
+    if (o.id === 'log-opt-speech'){
+      const has = !!(F.speech && F.speech.installed);
+      o.disabled = !has; if (has) o.removeAttribute('title'); else o.title = 'The speech lane is not installed on this box';
+      return;
+    }
     const unit = o.value.endsWith('.service') ? o.value : o.value + '.service';
     if (installed(unit)){ o.disabled = false; o.removeAttribute('title'); }
     else { o.disabled = true; o.title = `${LANE_NAME[unit] || unit} is not installed on this box`; }
   });
 }
 on('units', refreshLogSources);
+on('speech', refreshLogSources);
 function wireLogs(){
   refreshLogSources();
   $('log-btn').addEventListener('click', () => { setText('log-view', 'Reading…'); tailLog(); });

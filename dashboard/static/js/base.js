@@ -100,7 +100,9 @@ const U27 = 'qwen38-sglang.service', UFLASH = 'qwen38-flash.service', IMAGE_UNIT
       ORNITH_UNIT = 'qwen38-ornith-122b.service', FLASH_UNSLOTH_UNIT = 'qwen38-flash-unsloth.service',
       IMAGE_H3_UNIT = 'qwen38-image-h3.service', TRANSCRIBE_UNIT = 'qwen38-transcribe.service',
       LFM25_UNIT = 'qwen38-lfm25.service', LFM3_UNIT = 'qwen38-lfm3.service',
-      PROXY_UNIT = 'qwen38-keepalive.service', AGENT_UNIT = 'opencode-web.service';
+      PROXY_UNIT = 'qwen38-keepalive.service', AGENT_UNIT = 'opencode-web.service',
+      // the speech lane, on the CPU beside whichever lane serves: none of LANE_UNITS, which take the GPU in turn (v1.58)
+      SPEECH_UNIT = 'qwen38-speech.service';
 // the order of the Now view's rack and the Lanes view's cards: Ornith before Kolibri and the Nemotron lanes (Hasan, 2026-10-22);
 // the flash model's builds side by side, Unsloth's GGUF after NVIDIA's FP4-Local (v1.48); the speech recognizer after the
 // video lane (v1.51); Liquid AI's LFM2.5 and LFM3 after the other text lanes
@@ -317,6 +319,7 @@ function laneTarget(unit){
 function laneLabel(unit){
   if (unit === AGENT_UNIT) return 'the opencode web server';
   if (unit === PROXY_UNIT) return 'the keepalive proxy';
+  if (unit === SPEECH_UNIT) return 'the speech lane';
   const t = laneTarget(unit);
   return (t && TARGET_NAME[t]) || LANE_NAME[unit] || unit.replace('.service', '');
 }
@@ -678,11 +681,16 @@ function busyWhy(){
 // switch-model.sh restarts opencode-web when the config it reads changed, as fit_opencode says of its own rewrite
 const AGENT_RESTART = 'If the Agent server runs and its config changed, it restarts to read it: a reply it is writing then is cut short.';
 const EXPLAIN = {
+  speech_boot: p => p.verb === 'enable' ? 'systemd enables the speech lane: from the next boot it starts with the box and holds its host memory (about 2.5 GB with the default recognizer) beside whichever lane serves. It does not start it now.'
+    : 'systemd disables the speech lane at boot: it stays as it is now, and after the next boot it is started by hand, here or with systemctl.',
   unit: p => {
     const lane = laneLabel(p.unit);
     if (p.unit === AGENT_UNIT) return {stop: 'systemd stops opencode serve: the Agent view goes dark until the server is started again.',
       start: 'systemd starts opencode serve on loopback; the Agent view is back within seconds.',
       restart: 'systemd restarts opencode serve, which picks up an upgraded binary; the Agent view reconnects by itself.'}[p.verb] || '';
+    if (p.unit === SPEECH_UNIT) return {stop: 'systemd stops the speech lane: its audio routes answer nothing until it is started again, and the host memory it holds comes back. The lane that serves is not touched.',
+      start: 'systemd starts the speech lane on the CPU, beside the lane that serves: it takes no GPU memory, holds about 2.5 GB of host memory with its default recognizer, and answers within seconds.',
+      restart: 'systemd restarts the speech lane: a transcription or a sentence being made right now is lost, and it answers again within seconds.'}[p.verb] || '';
     if (p.unit === PROXY_UNIT) return p.verb === 'stop' ? 'systemd stops the keepalive proxy. The engine keeps running, but agent clients on :30001 lose their door until it is back.' : 'systemd starts the keepalive proxy on :30001.';
     if (p.verb === 'stop') return `systemd stops ${lane}. Its memory comes back at once; no other lane starts by itself.`;
     if (p.verb === 'restart') return `systemd restarts ${lane}; it answers again in ${readyIn(p.unit)}.`;
@@ -755,7 +763,8 @@ EXPLAIN.delete_runtime = p => {
       : `The lane's next Load builds it again, as the user (prepare-lane.sh). What the lane made, in its outputs folder, stays. `)
     + 'Refused while a lane that runs it serves or starts.';
 };
-const TITLE = {unit: p => `${cap1(p.verb)} ${laneLabel(p.unit)}`, switch: p => `Point the boot at ${TARGET_NAME[p.target] || p.target}`,
+const TITLE = {unit: p => `${cap1(p.verb)} ${laneLabel(p.unit)}`,
+  speech_boot: p => p.verb === 'enable' ? 'Start the speech lane with the box' : 'No longer start the speech lane with the box', switch: p => `Point the boot at ${TARGET_NAME[p.target] || p.target}`,
   flush_cache: () => 'Flush the engine cache', abort_all: () => 'Abort every generation in flight', smoke: () => 'Run a smoke generation',
   diag_bundle: () => 'Write a diagnostics bundle', fit_opencode: () => 'Fit the opencode limits',
   delete_strays: () => 'Delete the stray revisions',
@@ -775,6 +784,7 @@ const VERB = {unit: p => cap1(p.verb) + ' ' + (LANE_NAME[p.unit] || laneLabel(p.
 // config); the sheet shows that command, not the job's name, unless this machine has no nvidia-smi (ops.js, GC),
 // where None runs nothing and only forgets the cap kept
 const argvFor = (name, p) => name === 'unit' ? ['sudo', '-n', '/usr/bin/systemctl', p.verb, p.unit]
+  : name === 'speech_boot' ? ['sudo', '-n', '/usr/bin/systemctl', p.verb, SPEECH_UNIT]
   : name === 'switch' ? ['bash', 'switch-model.sh', p.target] : name === 'fetch' ? ['bash', 'switch-model.sh', p.target, '--fetch']
   : name === 'clients' ? ['bash', 'switch-model.sh', p.target, '--clients']
   : name === 'prepare' ? ['bash', 'prepare-lane.sh', laneOfTarget(p.target)].concat(['flash', '27b'].includes(laneOfTarget(p.target)) ? [p.target] : [])

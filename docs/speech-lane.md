@@ -29,7 +29,8 @@ keeping its settings (recognizer, voice, port, bind, started with the box or not
 It is not started at boot unless `SPEECH_BOOT=1`: running, it holds host memory that a
 flash lane's long prompts also want, 2.5 GB resident at rest and 2.7 GB at work with the
 0.6B (4.2 GB with the 1.7B), and no GPU memory at all. At rest it costs 0.01 of a core.
-Start and stop it like any unit: `sudo systemctl start qwen38-speech.service`.
+Start and stop it like any unit: `sudo systemctl start qwen38-speech.service`, or from the
+cockpit's Lanes view, whose Speech card also sets whether it starts with the box (v1.58.0).
 
 ## Using it
 

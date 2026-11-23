@@ -70,14 +70,16 @@ def among(lanes, keep):
 
 
 # The lanes that take the GPU in turn, each unit in Conflicts= with the others: all but the speech lane,
-# which runs on the CPU beside any of them (install-speech.sh, "WHY THE CPU"), and which the cockpit,
-# the sudoers and the switch do not drive.
+# which runs on the CPU beside any of them (install-speech.sh, "WHY THE CPU"), and which the switch does
+# not drive. The cockpit starts and stops its unit since v1.58.0 (its Speech card), with sudoers lines of
+# its own: SPEECH below.
 TURNS = [x for x in LANES if LANES[x]["kind"] != "speech"]
 # the lanes install.sh's --with-<lane> and --no-<lane> name
 FLAGGED = family(flags=True)
 # and the speech lane, which install.sh installs by a step of its own since v1.58.0 (speech_step): it has the
 # two flags and nothing else of the lanes' machinery (no Load, no prepare-lane.sh, no switch target, no marker)
-NAMED = FLAGGED + family(kind="speech")
+SPEECH = family(kind="speech")
+NAMED = FLAGGED + SPEECH
 # among them the side lanes, each installed by its own installer, which install.sh runs (it installs
 # the two SGLang text lanes itself: MODEL_CHOICE's)
 SIDE = [x for x in FLAGGED if LANES[x]["installer"] != "install.sh"]
@@ -1435,7 +1437,8 @@ class TheCockpitSaysTheSame(unittest.TestCase):
     def test_its_page(self):
         p, rel = Problems(), self.JS
         consts = js_units(rel)
-        p.same(f"{rel} its units' constants (const U27 = ..., ...)", set(consts.values()) - {"qwen38-keepalive.service"}, units_of(TURNS))
+        p.same(f"{rel} its units' constants (const U27 = ..., ...)", set(consts.values()) - {"qwen38-keepalive.service"},
+               units_of(TURNS) + units_of(SPEECH))
         value, line = js_const(rel, "LANE_UNITS")
         p.same(f"{rel}:{line} LANE_UNITS", js_resolve(value, consts, rel), units_of(TURNS))
         value, line = js_const(rel, "LANE_NAME")
@@ -1522,7 +1525,7 @@ class TheCockpitSaysTheSame(unittest.TestCase):
         for verb in ("start", "stop", "restart", "enable", "disable"):
             units, where = finds(rel, text, rf"^__USER__ ALL=\(root\) NOPASSWD: /usr/bin/systemctl {verb} (qwen38-[a-z0-9-]+\.service)$")
             p.same(f"{where} systemctl {verb}", [u for u in floor(units, f"{rel} systemctl {verb}") if u != "qwen38-keepalive.service"],
-                   units_of(TURNS))
+                   units_of(TURNS) + units_of(SPEECH))
         p.check(self)
 
 
