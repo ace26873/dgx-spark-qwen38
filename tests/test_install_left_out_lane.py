@@ -359,7 +359,7 @@ def full_run(record, off=(), args=()):
     are not on the box (the release moves both pins), the flash launcher and the keepalive unit on the
     box's own port, cache and proxy bind. docker pulls, runs and builds nothing (it refuses, and says so
     in the calls); the side lanes' installers are there to read, not to run; the cockpit's and the
-    agent's installers, prepare-lane.sh and switch-model.sh only write down their call.
+    agent's installers, prepare-lane.sh, switch-model.sh and install-speech.sh only write down their call.
     (rc, out, calls, units dir, config dir, HF cache)."""
     units = pathlib.Path(wall.units_dir())
     script = pathlib.Path(wall.walled(at=AFTER_SIDE_BOOT, after=True, units=str(units)))
@@ -376,7 +376,10 @@ def full_run(record, off=(), args=()):
                  "install-nemotron-super.sh", "install-flash-local.sh", "install-ornith-122b.sh", "install-flash-unsloth.sh"):
         (script.parent / side).write_text((REPO / side).read_text())
         (script.parent / side).chmod(0o644)
-    for runs in ("dashboard/install-dashboard.sh", "dashboard/install-agent.sh", "prepare-lane.sh", "switch-model.sh"):
+    # install-speech.sh too (since v1.58.0 this run installs the speech lane): copied whole by the loop above, it
+    # ran for real in this bench, its downloads refused (the CI of 2026-11-23); here it writes down its call
+    for runs in ("dashboard/install-dashboard.sh", "dashboard/install-agent.sh", "prepare-lane.sh", "switch-model.sh",
+                 "install-speech.sh"):
         (script.parent / runs).write_text(f'#!/bin/bash\necho "{runs} $*" >> "{calls}"\n')
         (script.parent / runs).chmod(0o755)
     home = wall._tmp("left-out-home-")
@@ -429,6 +432,9 @@ class TheRunOfALaneLeftOutToItsEnd(unittest.TestCase):
         self.assertNotIn("docker refuses", out)
         self.assertEqual(list(hf.rglob("*.safetensors")) + list(hf.rglob("*.incomplete")), [], "a checkpoint fetched")
         self.assertNotIn("ERROR", out)
+        # the speech lane, beside the lane that serves: installed without its round trip, and the end says so
+        self.assertEqual([c for c in calls if c.startswith("install-speech.sh")], ["install-speech.sh --no-smoke"])
+        self.assertIn("  Speech     : installed, its round trip not run beside the lane that serves", out)
 
     def test_the_flash_left_out_by_its_flag_or_not_prepared_after_an_old_marker(self):
         for args, off, why in ((("--no-flash",), (), "left out (--no-flash)"), ((), ("flash",), "not prepared on this box")):
