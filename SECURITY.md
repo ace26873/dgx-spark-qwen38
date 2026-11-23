@@ -249,7 +249,11 @@ discussion, not a disclosure.
   rule of its config files, so its `"*": "allow"` comes after the rules of
   your own `opencode.json`, `deny` included, and overrides them, unless your
   config has a `"*"` of its own: the unit's then takes that key's place, and
-  the rules after it still hold. The unit repeats only this repo's shell
+  the rules after it still hold. That exception is opencode 1.x's, where a
+  merged map keeps a key's place. On OpenCode 2 (the default since v1.56.0)
+  the allow is a rule of a list merged after every config file, and no rule of
+  a file comes after it: it overrides every deny rule of your own configs in
+  the Agent view. On both, the unit repeats only this repo's shell and webfetch
   rules for Alibaba Cloud's hosts and the cloud metadata addresses after it. Without it,
   opencode's own defaults already run shell commands unasked
   ([docs/agents-and-network.md](docs/agents-and-network.md)).

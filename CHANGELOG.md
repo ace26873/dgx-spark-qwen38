@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.57.0 (2026-11-23): the opencode guard covers webfetch as well as the shell, on both majors
+
+Security release for the opencode integration. Since v1.40.4 the box's opencode configs deny a
+shell command that names an Alibaba Cloud host or a cloud metadata address (`*aliyuncs.com*`,
+`*169.254.169.254*`, `*100.100.100.200*`, after Cohere's report of 2026-10-26). On 2026-11-21 the
+same kind of request left this box as a `webfetch` tool call instead, twice, which no shell rule
+sees: the proxy alone named it, in its log of tool targets (decision 1561). `./install.sh` now writes the
+same three patterns for the webfetch tool, on both majors, and nothing else of your configs changes.
+
+- **opencode 1.x.** A second block `"webfetch*"` follows `"bash*"` at the end of `"permission"`, in
+  the generated config and in a global config that is this repo's copy or lists its providers. A box
+  that holds `"bash*"` last already gets `"webfetch*"` after it and nothing else of the file moves.
+  With `AGENT_AUTO=1` the unit's `OPENCODE_PERMISSION` repeats the rules under `"*webfetch"` after
+  its `"*"`, as it does under `"*bash"`. The plain key `"webfetch"` cannot carry them: 1.19.5 refuses
+  to load a config where it is an object. A block you set to one action yourself is yours: `"deny"`
+  is left as it is while no key after it allows the tool again, and anything else is said (the
+  install's output names the key) while the other block is still written.
+- **OpenCode 2.** Three `webfetch` rules follow the three `shell` ones at the end of
+  `"permissions"`, and inside the Agent unit's `OPENCODE_CONFIG_CONTENT` with `AGENT_AUTO=1`. A box
+  that served 2.x on v1.56.0 gets the three new rules once, after the ones it has; going back with
+  `--opencode 1` and `uninstall.sh` recognise both shapes of the array, and leave alone an array
+  that holds rules of yours.
+- **The cockpit's guard line reads both tools.** "The exfiltration guard is NOT in force" is now
+  said when the served rules leave `webfetch` open, not only the shell. A box on v1.56.0 with
+  `AGENT_AUTO=1` reads as not in force until the update renders its unit again, which is the truth.
+- **What it does not change, said more plainly.** With `AGENT_AUTO=1` on OpenCode 2, the Agent
+  tab's wildcard allow is merged after every config file, so it overrides every deny rule of your
+  own configs (a box audit of 2026-11-22 found a denied skill still available there). The install's
+  note said "unless your config has one after it", which no file can have; it now says what happens,
+  and SECURITY.md and docs/agents-and-network.md too. Repeating your own rules inside the unit is
+  the next release's work: a first version was written and taken back out before this release,
+  its review having found it read too few of the files OpenCode 2 loads.
+
+Proved with the real binaries, against a scripted endpoint that asks for a `webfetch` whose URL
+names `aliyuncs.com` and points at 127.0.0.1 (nothing leaves the box): opencode 1.19.5 (2026-11-22)
+and the pinned 1.19.6 (2026-11-23) fetch it with no rule and refuse it with `"webfetch*"` and with
+the unit's `"*webfetch"` (`The user has specified a rule which prevents you from using this specific
+tool call`); 2.3.2 fetches it with the wildcard allow alone and answers `permission.rejected` with
+the rule after it. Tests red on the old code, green now.
+
 ## v1.56.0 (2026-11-23): opencode 2 is the default, pinned at 2.3.2 (`--opencode 1` stays on the 1.x pin, remembered)
 
 Decision 1546 (2026-11-20, replacing the opt-in of decision 445): a plain `./install.sh` installs
