@@ -185,10 +185,11 @@ class TheCard(unittest.TestCase):
         """)
         self.assertEqual(r["state"], "stopped")
         self.assertEqual(r["shown"], ["Start Speech", "Start with the box", "Journal"])
-        self.assertIn("http://127.0.0.1:30024/v1/audio/transcriptions", r["text"])
-        self.assertIn("this box only, without a key", r["text"])
+        self.assertIn("http://127.0.0.1:30024/v1", r["text"])
+        self.assertIn("this box only, no key", r["text"])
         self.assertIn("qwen3-asr-0.6b", r["text"])
         self.assertIn("manual start", r["text"])
+        self.assertIn("about 2.5 GB once running", r["text"])
 
     def test_running_it_offers_stop_and_the_other_boot_choice(self):
         r = page(self, r"""
@@ -198,6 +199,18 @@ class TheCard(unittest.TestCase):
         self.assertEqual(r["state"], "running")
         self.assertEqual(r["shown"], ["Stop Speech", "Do not start with the box", "Journal"])
         self.assertIn("starts", r["text"])
+
+    def test_no_fact_is_longer_than_its_column_and_the_memory_is_the_recognizers(self):
+        """The first capture of the card in a browser (2026-11-23) showed three facts cut with an ellipsis, and
+        2.5 GB said of a box whose 1.7B recognizer holds 4.2 (docs/speech-lane.md)."""
+        r = page(self, r"""
+        feed({config: CONFIG, speech: speech({active: 'active', recognizer: 'qwen3-asr-1.7b', host: '192.168.100.200', port: 30024})});
+        const dd = [...$('speech-box').querySelectorAll('dl.facts dd')].map(e => e.textContent);
+        report({dd, text: card().text});
+        """)
+        self.assertIn("about 4.2 GB once running", r["text"])
+        self.assertTrue(r["dd"], "the facts are read")
+        self.assertLessEqual(max(len(x) for x in r["dd"]), 36, r["dd"])
 
     def test_not_installed_it_says_how_and_offers_nothing(self):
         r = page(self, r"""
@@ -215,7 +228,7 @@ class TheCard(unittest.TestCase):
         feed({config: CONFIG, speech: speech({host: '0.0.0.0'})});
         report({text: card().text});
         """)
-        self.assertIn("0.0.0.0, without a key", r["text"])
+        self.assertIn("0.0.0.0, no key", r["text"])
         self.assertNotIn("this box only", r["text"])
 
     def test_the_buttons_ask_the_right_action_with_the_command_in_sight(self):

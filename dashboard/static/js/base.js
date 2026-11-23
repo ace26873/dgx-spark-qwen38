@@ -681,7 +681,7 @@ function busyWhy(){
 // switch-model.sh restarts opencode-web when the config it reads changed, as fit_opencode says of its own rewrite
 const AGENT_RESTART = 'If the Agent server runs and its config changed, it restarts to read it: a reply it is writing then is cut short.';
 const EXPLAIN = {
-  speech_boot: p => p.verb === 'enable' ? 'systemd enables the speech lane: from the next boot it starts with the box and holds its host memory (about 2.5 GB with the default recognizer) beside whichever lane serves. It does not start it now.'
+  speech_boot: p => p.verb === 'enable' ? 'systemd enables the speech lane: from the next boot it starts with the box and holds its host memory (2.5 GB with the 0.6B recognizer, 4.2 with the 1.7B) beside whichever lane serves. It does not start it now.'
     : 'systemd disables the speech lane at boot: it stays as it is now, and after the next boot it is started by hand, here or with systemctl.',
   unit: p => {
     const lane = laneLabel(p.unit);
@@ -689,7 +689,7 @@ const EXPLAIN = {
       start: 'systemd starts opencode serve on loopback; the Agent view is back within seconds.',
       restart: 'systemd restarts opencode serve, which picks up an upgraded binary; the Agent view reconnects by itself.'}[p.verb] || '';
     if (p.unit === SPEECH_UNIT) return {stop: 'systemd stops the speech lane: its audio routes answer nothing until it is started again, and the host memory it holds comes back. The lane that serves is not touched.',
-      start: 'systemd starts the speech lane on the CPU, beside the lane that serves: it takes no GPU memory, holds about 2.5 GB of host memory with its default recognizer, and answers within seconds.',
+      start: 'systemd starts the speech lane on the CPU, beside the lane that serves: it takes no GPU memory, holds host memory instead (2.5 GB with the 0.6B recognizer, 4.2 with the 1.7B), and answers within seconds.',
       restart: 'systemd restarts the speech lane: a transcription or a sentence being made right now is lost, and it answers again within seconds.'}[p.verb] || '';
     if (p.unit === PROXY_UNIT) return p.verb === 'stop' ? 'systemd stops the keepalive proxy. The engine keeps running, but agent clients on :30001 lose their door until it is back.' : 'systemd starts the keepalive proxy on :30001.';
     if (p.verb === 'stop') return `systemd stops ${lane}. Its memory comes back at once; no other lane starts by itself.`;

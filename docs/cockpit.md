@@ -394,7 +394,7 @@ its installer was told otherwise, without a key), its recognizer and its default
 whether it starts with the box. Its buttons are a unit's: **Start Speech** and **Stop Speech**
 (`systemctl start` and `stop` of `qwen38-speech.service`, never blocked by the lane that serves),
 **Start with the box** or **Do not start with the box** (`systemctl enable` and `disable`: it
-holds about 2.5 GB of host memory once running, so that stays your choice), and **Journal**,
+holds 2.5 to 4.2 GB of host memory once running, by its recognizer, so that stays your choice), and **Journal**,
 which opens its journal in the Logs view. Each asks first, with the command in sight, like every
 action of the cockpit. The cockpit relays none of its audio routes: programs on the box reach
 them, another machine through an SSH tunnel ([speech-lane.md](speech-lane.md)).

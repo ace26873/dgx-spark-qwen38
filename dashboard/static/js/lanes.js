@@ -282,7 +282,7 @@ function speechCard(){
   const who = el('div', 'who'); who.append(h); head.append(who, state);
   const grid = el('div', 'grid g-7-5');
   const left = el('div', 'stack'); left.style.gap = 'var(--s-3)';
-  const desc = el('p', 'muted', 'Speech recognition (Qwen3-ASR, 30 languages) and voices (Kokoro, 41 voices in seven languages) behind OpenAI-style audio routes, on the CPU alone: no GPU memory, so it runs beside whichever lane serves.');
+  const desc = el('p', 'muted', 'Speech recognition (Qwen3-ASR, 30 languages) and voices (Kokoro, 41 voices in seven languages) behind OpenAI-style audio routes (/v1/audio/transcriptions, /v1/audio/speech, /v1/voices), on the CPU alone: no GPU memory, so it runs beside whichever lane serves. Another machine reaches it through an SSH tunnel.');
   const why = el('p', 'why-off'); why.hidden = true;
   const actions = el('div', 'btn-row');
   const start = el('button', 'btn primary', 'Start Speech'); start.type = 'button';
@@ -313,14 +313,15 @@ function renderSpeech(){
   [c.start, c.stop, c.boot].forEach(b => { b.disabled = !!why; b.title = why; });
   c.why.hidden = !failed;
   setText(c.why, failed ? 'The unit failed: read its journal, then start it again.' : '');
-  const base = `http://${d.host}:${d.port}`;
+  // short values: a fact longer than its column is cut with an ellipsis (seen on the first capture of this card)
   facts(c.right, [
-    ['Routes', has ? `${base}/v1/audio/transcriptions, /v1/audio/speech, /v1/voices` : null, 'code'],
-    ['Reached from', has ? (d.host === '127.0.0.1' || d.host === 'localhost' ? 'this box only, without a key (another machine: an SSH tunnel)' : `${d.host}, without a key`) : null],
+    ['Base URL', has ? `http://${d.host}:${d.port}/v1` : null, 'code'],
+    ['Reached from', has ? (d.host === '127.0.0.1' || d.host === 'localhost' ? 'this box only, no key' : `${d.host}, no key`) : null],
     ['Recognizer', has ? (d.recognizer || null) : null],
     ['Default voice', has ? (d.voice || null) : null],
     ['At boot', has ? (d.boot ? 'starts' : 'manual start') : null],
-    ['Memory', has ? 'host memory only, about 2.5 GB with the default recognizer' : null],
+    // what the lane holds once running, as measured (docs/speech-lane.md): 2.5 GB with the 0.6B, 4.2 with the 1.7B
+    ['Host memory', has ? `about ${/1\.7b$/.test(d.recognizer || '') ? '4.2' : '2.5'} GB once running` : null],
     ['Install', !has ? './install-speech.sh' : null, 'code']]);
 }
 on('speech', d => { F.speech = d; renderSpeech(); });
