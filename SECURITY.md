@@ -254,7 +254,12 @@ discussion, not a disclosure.
   the allow is a rule of a list merged after every config file, and no rule of
   a file comes after it: it overrides every deny rule of your own configs in
   the Agent view. On both, the unit repeats only this repo's shell and webfetch
-  rules for Alibaba Cloud's hosts and the cloud metadata addresses after it. Without it,
+  rules for Alibaba Cloud's hosts and the cloud metadata addresses after it.
+  To approve without being asked and keep your own deny rules on OpenCode 2,
+  leave `AGENT_AUTO` off and switch on the web app's own **Auto-accept
+  permissions** (the Agent view's Settings, General): it answers the requests
+  a rule would ask you about and never the calls a rule denies
+  ([docs/agents-and-network.md](docs/agents-and-network.md)). Without it,
   opencode's own defaults already run shell commands unasked
   ([docs/agents-and-network.md](docs/agents-and-network.md)).
 - **The abliterated targets are a policy choice.** `uncensored`,

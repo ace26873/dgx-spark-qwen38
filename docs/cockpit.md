@@ -581,7 +581,9 @@ allow everything, which opencode honours, followed by this repo's shell and webf
 Alibaba Cloud's hosts and the cloud metadata addresses (v1.40.4, webfetch since v1.57.0). opencode merges it after the rules of your
 config, `deny` included, so its `"*"` overrides them, unless your config has a
 `"*"` of its own (that exception is 1.x's: on OpenCode 2 it overrides every deny of your
-configs, SECURITY.md). Your `opencode.json` gets those rules when it
+configs, SECURITY.md). On OpenCode 2 the web app's own **Auto-accept permissions** (its Settings,
+General) approves what would be asked and keeps your deny rules: prefer it to `AGENT_AUTO=1`
+when your configs deny anything ([agents-and-network.md](agents-and-network.md)). Your `opencode.json` gets those rules when it
 is this repo's copy or lists its providers ([agents-and-network.md](agents-and-network.md)).
 The view says which mode the running server applies. Re-runs remember the choice;
 `AGENT_AUTO=0` turns it back off.

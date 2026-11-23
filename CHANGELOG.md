@@ -37,6 +37,14 @@ everyone).
   on the GPU. The Logs view reads its journal. The cockpit's sudoers gains the five `systemctl`
   lines of that unit and nothing else; the cockpit still relays none of the audio routes.
 
+Also in the docs, for OpenCode 2: how to approve without being asked and keep your own deny rules.
+`AGENT_AUTO=1` overrides them (v1.57.0 says so); the web app's own **Auto-accept permissions**
+(the Agent view's Settings, General) does not. Measured on 2.3.2 in a browser the 2026-11-23, with a
+config that asks for every `webfetch` and denies one host: without the setting the page asked and
+the call waited, with it the call ran unasked, and the call to the denied host answered
+`permission.rejected`. SECURITY.md, docs/agents-and-network.md and docs/cockpit.md say when to
+prefer it.
+
 Tests: the installer's step and its summary line against a stub installer, under `set -e`, with an
 installer that fails, a lane never proved, a box booting another lane, the packages asked for and
 the venv step against stub tools (tests/test_install_speech_default.py); the collector, the actions
