@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.56.0 (2026-11-20): opencode 2 is the default, pinned at 2.3.2 (`--opencode 1` stays on the 1.x pin, remembered)
+## v1.56.0 (2026-11-23): opencode 2 is the default, pinned at 2.3.2 (`--opencode 1` stays on the 1.x pin, remembered)
 
 Decision 1546 (2026-11-20, replacing the opt-in of decision 445): a plain `./install.sh` installs
 the pinned OpenCode **2.3.2** (GitHub's release asset `opencode-linux-arm64.tar.gz` with its
@@ -75,6 +75,18 @@ outside the plugins dir so no major loads it, and the install's NOTE names the k
   left the copy a fresh v2 install made, emptied of its provider; the rollback's note about a
   person's own `permissions` array said none of it was this box's. Each has a test that failed on
   the code before.
+- **The speech lane installs again (issue #75).** every new `./install-speech.sh` failed since
+  upstream changed its web UI: llama.cpp's build fetches a prebuilt UI from a Hugging Face bucket by
+  build number, a shallow fetch of the pin has build number 1, which is not there, so it took
+  `latest`, and the pinned commit's own check refused the new files (`UI: missing required
+  asset(s)`). The lane serves an API, never that page: the build asks for no web UI
+  (`-DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_UI=OFF`) and removes `build/tools/ui` first, because
+  a build directory that failed that way would embed the downloaded files again. A box whose install
+  failed runs `./install-speech.sh` again after this update.
+- **A plugin written for OpenCode 1.x is named.** OpenCode 2 skips a 1.x plugin and says so only in
+  its server log (2.3.2 wants a default export with an `id` and a `setup` or `effect` function). On
+  a box that serves OpenCode 2 the install names the files of `~/.config/opencode/plugin` and
+  `plugins` that do not have that shape, and touches none of them.
 - **Measured on 2.3.2.** the 2.x facts were first measured on 2.3.0 in a sandbox on the reference box (2026-11-13 to 15); the delta to 2.3.2 was
   re-measured in a sandbox before the pin moved.
 - **Proven on the reference box (2026-11-20, 09:05 to 09:14, rc=0 in the proof's
