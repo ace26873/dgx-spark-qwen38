@@ -18,10 +18,10 @@
 # small cores, with each engine on cores of its own, the flash lane did not move. So this
 # lane hides the GPU, takes the small cores only, and runs beside any other lane.
 #
-# NOT IN THE ONE COMMAND YET. ./install.sh does not run this: the lane is new, and is
-# installed on purpose, by this script. It is not started at boot unless SPEECH_BOOT=1:
-# running, it holds 2.5 to 2.7 GB of host memory (4.2 with the 1.7B) that a flash lane's
-# long prompts also want.
+# IN THE ONE COMMAND since v1.58.0: ./install.sh runs this (its speech_step; --no-speech
+# leaves it out of a run), whole on a box without the lane, with --no-smoke on one that has
+# it. It is not started at boot unless SPEECH_BOOT=1: running, it holds 2.5 to 2.7 GB of
+# host memory (4.2 with the 1.7B) that a flash lane's long prompts also want.
 set -euo pipefail
 # One spelling of the home, without a trailing slash, as install.sh says why: the cockpit's
 # exact-argv sudoers is rendered from it and has to match the cockpit's own calls (2026-10-22).

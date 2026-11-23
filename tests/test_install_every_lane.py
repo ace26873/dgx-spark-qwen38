@@ -1071,6 +1071,9 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                   f"WANT_TRANSCRIBE={want_tr}; WITH_TRANSCRIBE={with_tr}\n"
                   f"WANT_LFM25={want_lfm25}; WITH_LFM25={with_lfm25}\n"
                   f"WANT_LFM3={want_lfm3}; WITH_LFM3={with_lfm3}\n"
+                  # the speech lane (v1.58.0) is no GPU lane and has its own tests (test_install_speech_default.py):
+                  # left out here, so these runs stay the GPU lanes' alone
+                  "WANT_SPEECH=0; WITH_SPEECH=0\n"
                   f"SECOND_LANE=flash; SECOND_UNIT=qwen38-flash.service; SECOND_STATE={second_state}; SECOND_FRESH={second_fresh}; SECOND_NEW={second_fresh if second_new is None else second_new}\n"
                   + block + '\necho "STATES second=$SECOND_STATE image=$IMAGE_STATE video=$VIDEO_STATE kolibri=$KOLIBRI_STATE'
                   ' nemotron=$NEMOTRON_STATE super=$NEMOTRON_SUPER_STATE flocal=$FLASH_LOCAL_STATE ornith=$ORNITH_122B_STATE'

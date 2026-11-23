@@ -75,6 +75,9 @@ def among(lanes, keep):
 TURNS = [x for x in LANES if LANES[x]["kind"] != "speech"]
 # the lanes install.sh's --with-<lane> and --no-<lane> name
 FLAGGED = family(flags=True)
+# and the speech lane, which install.sh installs by a step of its own since v1.58.0 (speech_step): it has the
+# two flags and nothing else of the lanes' machinery (no Load, no prepare-lane.sh, no switch target, no marker)
+NAMED = FLAGGED + family(kind="speech")
 # among them the side lanes, each installed by its own installer, which install.sh runs (it installs
 # the two SGLang text lanes itself: MODEL_CHOICE's)
 SIDE = [x for x in FLAGGED if LANES[x]["installer"] != "install.sh"]
@@ -970,7 +973,7 @@ class InstallShSaysTheSame(unittest.TestCase):
         arms, line = sh_case_with(sh, '"$arg"', r"WITH_[A-Z0-9_]+=1", rel)
         for word in ("with", "no"):
             got = [x[len(f"--{word}-"):] for x in patterns(arms) if x.startswith(f"--{word}-")]
-            p.same(f"{rel}:{line} the case of its arguments, --{word}-<lane>", [g for g in got if g not in NOT_LANES], FLAGGED)
+            p.same(f"{rel}:{line} the case of its arguments, --{word}-<lane>", [g for g in got if g not in NOT_LANES], NAMED)
         # and each sets its lane's variable, the one the rest of the run reads
         for pats, body, n in arms:
             for flag in pats:
@@ -980,28 +983,28 @@ class InstallShSaysTheSame(unittest.TestCase):
         for word in ("WITH", "NO"):
             got, where = finds(rel, sh, rf"^{word}_([A-Z0-9_]+)=0$")
             p.same(f"{where} its {word}_<LANE>=0", floor([LANE_OF_VAR.get(v, v) for v in got if v.lower() not in NOT_LANES],
-                                                       f"{rel} {word}_<LANE>=0"), FLAGGED)
+                                                       f"{rel} {word}_<LANE>=0"), NAMED)
         # its help, the here-document its -h|--help arm prints, alone, its lines still the file's
         m, _ = one(rel, sh, r"cat <<'HLP'\n(.*?)\nHLP\n", re.S)
         helps = re.sub(r"[^\n]", " ", sh[:m.start(1)]) + m.group(1)
         usage, where = one(rel, helps, r"^Usage: \./install\.sh (.*?)\n\n", re.M | re.S)
         pairs = re.findall(r"\[--no-([a-z0-9-]+) \| --with-([a-z0-9-]+)\]", usage.group(1))
-        p.same(f"{where} its help's Usage", [a for a, b in pairs if a == b and a not in NOT_LANES], FLAGGED)
+        p.same(f"{where} its help's Usage", [a for a, b in pairs if a == b and a not in NOT_LANES], NAMED)
         for word in ("no", "with"):
             got, where = finds(rel, helps, rf"^  --{word}-([a-z0-9-]+) ")
-            p.same(f"{where} its help's --{word}-<lane> lines", [g for g in got if g not in NOT_LANES], FLAGGED)
+            p.same(f"{where} its help's --{word}-<lane> lines", [g for g in got if g not in NOT_LANES], NAMED)
         got, where = finds(rel, sh, r"--no-([a-z0-9-]+) and --with-\1 contradict each other")
-        p.same(f"{where} its checks that --no-<lane> and --with-<lane> contradict each other", [g for g in got if g not in NOT_LANES], FLAGGED)
+        p.same(f"{where} its checks that --no-<lane> and --with-<lane> contradict each other", [g for g in got if g not in NOT_LANES], NAMED)
         # a side lane asked for by name needs the full install: a unit, and a proof that it serves
         got, where = finds(rel, sh, r"--with-([a-z0-9-]+) needs the full install")
-        p.same(f"{where} its refusals of --with-<lane> without the full install", got, SIDE)
+        p.same(f"{where} its refusals of --with-<lane> without the full install", got, SIDE + family(kind="speech"))
         calls, where = finds(rel, sh, r'^\s*lane_wanted ([a-z0-9-]+) "\$NO_([A-Z0-9_]+)" "\$WITH_([A-Z0-9_]+)"; WANT_([A-Z0-9_]+)="\$WANT"$')
-        p.same(f"{where} its lane_wanted calls", [c[0] for c in calls], FLAGGED)
+        p.same(f"{where} its lane_wanted calls", [c[0] for c in calls], NAMED)
         for c in calls:
             if not c[1] == c[2] == c[3] == VAR.get(c[0]):
                 p.append(f"{where} lane_wanted {c[0]}: NO_{c[1]}, WITH_{c[2]}, WANT_{c[3]}, the registry says {VAR.get(c[0])}")
         m, where = one(rel, sh, r"^WANT_[A-Z0-9_]+=0(?:; WANT_[A-Z0-9_]+=0)*$")
-        p.same(f"{where} its WANT_<LANE>=0", [LANE_OF_VAR.get(v, v) for v in re.findall(r"WANT_([A-Z0-9_]+)=0", m.group(0))], FLAGGED)
+        p.same(f"{where} its WANT_<LANE>=0", [LANE_OF_VAR.get(v, v) for v in re.findall(r"WANT_([A-Z0-9_]+)=0", m.group(0))], NAMED)
         p.check(self)
 
     def test_its_tables_of_the_lanes(self):

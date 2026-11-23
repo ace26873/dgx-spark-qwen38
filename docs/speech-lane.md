@@ -4,8 +4,10 @@ Speech recognition (ASR) and speech synthesis (TTS) on the same box as the text 
 behind OpenAI-compatible audio routes, on the CPU alone: no GPU memory, so it runs beside
 whichever lane serves, flash included (discussion
 [#38](https://github.com/hasso5703/alzeo/discussions/38)). Qwen3-ASR hears 30
-languages; Kokoro-82M speaks seven, with 41 voices. Opt-in, and not in the one command
-yet: `./install-speech.sh` installs it, from a clone, on a box where `./install.sh` ran.
+languages; Kokoro-82M speaks seven, with 41 voices. `./install.sh` installs it since
+v1.58.0, as it installs every lane (`--no-speech` leaves it out of the run that passes it,
+`--with-speech` proves it again); `./install-speech.sh` is its own installer, which that
+step runs, and the way to change its settings.
 
 ```bash
 ./install-speech.sh                    # Qwen3-ASR 0.6B and Kokoro-82M, proved before it ends
@@ -21,8 +23,8 @@ box), a venv of pinned wheels (168 MB) and 1.4 GB of models checked by sha256 (2
 the 1.7B). It writes `qwen38-speech.service`, then proves the
 lane: it speaks a sentence and hears it back. The first run took 3 minutes here; a run on
 an installed lane changes only what changed, and restarts the lane if it was running. The
-one command's updates leave this lane as it is: run `./install-speech.sh` again after one,
-to bring the lane to the version it installed.
+one command's updates bring this lane to the version they install, the same way (v1.58.0),
+keeping its settings (recognizer, voice, port, bind, started with the box or not).
 
 It is not started at boot unless `SPEECH_BOOT=1`: running, it holds host memory that a
 flash lane's long prompts also want, 2.5 GB resident at rest and 2.7 GB at work with the

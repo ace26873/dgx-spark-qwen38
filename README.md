@@ -237,7 +237,7 @@ a 64 GB box it installs what fits it, nothing else, and ends its first install o
 |---|---|
 | Nemotron 3.5 Bolt | the lane it serves, with a memory share of its own: 667,874 tokens of KV (2.55 times its 262,144-token window), 110.8 tok/s greedy median on `bench.sh` |
 | Qwen3.8-27B in NVFP4 | a Load away, its native window in a unit sized for 64 GB: two requests at a time, 59,625 tokens of KV, 67.2 tok/s greedy median |
-| Speech (`./install-speech.sh`) | as on any box, on the CPU |
+| Speech | as on any box, on the CPU |
 | the flash lane, `CONTEXT_MODE=1m`, the FP8 targets, images, video, Kolibri-1, Nemotron 3.5 Super VL, Qwen3.8 Flash-Next FP4-Local, Ornith 1.5 122B, the Qwen3.8 Flash-Next Unsloth GGUF lane, the NVIDIA Nemotron Transcribe lane, the two Liquid AI lanes | refused, as they need a 128 GB DGX Spark (no run of the Liquid AI lanes was measured on a 64 GB one) |
 
 Each refusal comes before a byte is fetched or pulled: in `install.sh`, in each lane's installer, in
@@ -735,14 +735,15 @@ Every number, what is not measured yet and why: **[docs/lfm3-lane.md](docs/lfm3-
 
 ## Speech: Qwen3-ASR and Kokoro, on the CPU, beside any lane
 
-Opt-in, and not in the one command yet: speech recognition in 30 languages (Qwen3-ASR) and
-41 voices in seven languages (Kokoro-82M), behind OpenAI-compatible audio routes on
-`127.0.0.1:30024`. It runs on the CPU alone, five small cores for each engine and no GPU
+Installed by the one command since v1.58.0 (`--no-speech` leaves it out of a run): speech
+recognition in 30 languages (Qwen3-ASR) and 41 voices in seven languages (Kokoro-82M), behind
+OpenAI-compatible audio routes on `127.0.0.1:30024`. It runs on the CPU alone, five small cores for each engine and no GPU
 memory, so it sits beside whichever lane serves: with both engines busy, the flash lane's
 decode did not move (47.5 tok/s).
 
 ```bash
-./install-speech.sh    # from a clone, after ./install.sh: about 3 minutes, proved before it ends
+sudo systemctl start qwen38-speech.service    # it is installed stopped: 2.5 GB of host memory once running
+SPEECH_BOOT=1 ./install-speech.sh             # or start it now, and with the box
 ```
 
 It reads any audio ffmpeg reads (a phone's m4a, a browser's webm), cuts long recordings

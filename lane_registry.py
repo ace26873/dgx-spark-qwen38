@@ -21,8 +21,9 @@ TEXT_PORT = 30000
 #   unit       the systemd unit its installer writes (UNIT= in install-<lane>.sh; install.sh's
 #              UNIT_NAME for the two lanes it installs itself)
 #   installer  the script that installs it
-#   flags      whether install.sh installs it, --with-<lane> and --no-<lane> (the speech lane is
-#              installed by its own script only: "./install.sh does not run this", install-speech.sh)
+#   flags      whether install.sh installs it as a lane of the GPU, --with-<lane> and --no-<lane>, prepared at
+#              its first Load (the speech lane has the two flags since v1.58.0 and none of that machinery:
+#              install.sh's speech_step hands it whole to install-speech.sh, so it stays False here)
 #   kind       what it serves: text, image, video, speech or transcribe (speech heard on the GPU, on a port of
 #              its own, by no chat client: install-transcribe.sh)
 #   engine     sglang (lmsysorg/sglang images: install.sh's two lanes, and install-lfm25.sh's on the 27B's

@@ -587,6 +587,8 @@ WITH_IMAGE_H3=0
 NO_IMAGE_H3=0
 WITH_TRANSCRIBE=0
 NO_TRANSCRIBE=0
+WITH_SPEECH=0
+NO_SPEECH=0
 WITH_LFM25=0
 NO_LFM25=0
 WITH_LFM3=0
@@ -641,6 +643,8 @@ while [ $# -gt 0 ]; do
     --no-image-h3) NO_IMAGE_H3=1 ;;
     --with-transcribe) WITH_TRANSCRIBE=1 ;;
     --no-transcribe) NO_TRANSCRIBE=1 ;;
+    --with-speech) WITH_SPEECH=1 ;;
+    --no-speech) NO_SPEECH=1 ;;
     --with-lfm25) WITH_LFM25=1 ;;
     --no-lfm25) NO_LFM25=1 ;;
     --with-lfm3) WITH_LFM3=1 ;;
@@ -664,6 +668,7 @@ Usage: ./install.sh [--no-start] [--no-service] [--no-opencode | --with-opencode
                    [--no-transcribe | --with-transcribe]
                    [--no-lfm25 | --with-lfm25]
                    [--no-lfm3 | --with-lfm3]
+                   [--no-speech | --with-speech]
                    [--all-weights] [--plan] [--recommended]
 
 Run it as yourself. Never with sudo in front: it calls sudo itself for the
@@ -769,6 +774,10 @@ without a terminal.
   --no-lfm3             leave the Liquid AI LFM3 lane (vLLM, 41 GB) out of this run,
                         the same way (./install-lfm3.sh --uninstall)
   --with-lfm3           install it whole now and prove it
+  --no-speech           leave the speech lane out of this run (speech recognition
+                        and synthesis on the CPU, beside any lane, 2 GB; a box
+                        that has it keeps it: ./install-speech.sh --uninstall)
+  --with-speech         install it or bring it up to date, and prove it again
   --all-weights         install every lane whole now (the flash beside the 27B,
                         the image, video, Kolibri, both Nemotron, the Flash
                         FP4-Local, the Ornith, the Unsloth GGUF, the
@@ -1582,6 +1591,9 @@ fi
 if [ "$NO_TRANSCRIBE" -eq 1 ] && [ "$WITH_TRANSCRIBE" -eq 1 ]; then
   printf -- '--no-transcribe and --with-transcribe contradict each other (drop one flag)\n' >&2; exit 1
 fi
+if [ "$NO_SPEECH" -eq 1 ] && [ "$WITH_SPEECH" -eq 1 ]; then
+  printf -- '--no-speech and --with-speech contradict each other (drop one flag)\n' >&2; exit 1
+fi
 if [ "$NO_LFM25" -eq 1 ] && [ "$WITH_LFM25" -eq 1 ]; then
   printf -- '--no-lfm25 and --with-lfm25 contradict each other (drop one flag)\n' >&2; exit 1
 fi
@@ -1634,6 +1646,11 @@ fi
 if [ "$WITH_IMAGE_H3" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
   printf -- '--with-image-h3 needs the full install: it installs a systemd unit and proves it serves.\n' >&2
   printf -- 'Run ./install.sh without --no-start/--no-service, or ./install-image-h3.sh on its own.\n' >&2
+  exit 1
+fi
+if [ "$WITH_SPEECH" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
+  printf -- '--with-speech needs the full install: it installs a systemd unit and proves it serves.\n' >&2
+  printf -- 'Run ./install.sh without --no-start/--no-service, or ./install-speech.sh on its own.\n' >&2
   exit 1
 fi
 if [ "$WITH_TRANSCRIBE" -eq 1 ] && { [ "$NO_START" -eq 1 ] || [ "$NO_SERVICE" -eq 1 ]; }; then
@@ -1727,7 +1744,7 @@ serves_anyway(){ [ "$1" = "$LANE" ] && [ "$SIDE_BOOT" -eq 0 ]; }   # $1 a lane l
 # Said of it, without "brought up to date": on a GPU outside its ATS mode the flash lane that serves
 # gets its units only, and the run then says so (issue #54; both said, found in review, 2026-10-21).
 serves_said(){ echo "The ${1/27b/27B} lane is the one this run serves: --no-$1 leaves nothing out of it."; }
-WANT_IMAGE=0; WANT_VIDEO=0; WANT_FLASH=0; WANT_27B=0; WANT_KOLIBRI=0; WANT_NEMOTRON=0; WANT_NEMOTRON_SUPER=0; WANT_FLASH_LOCAL=0; WANT_ORNITH_122B=0; WANT_FLASH_UNSLOTH=0; WANT_IMAGE_H3=0; WANT_TRANSCRIBE=0; WANT_LFM25=0; WANT_LFM3=0
+WANT_IMAGE=0; WANT_VIDEO=0; WANT_FLASH=0; WANT_27B=0; WANT_KOLIBRI=0; WANT_NEMOTRON=0; WANT_NEMOTRON_SUPER=0; WANT_FLASH_LOCAL=0; WANT_ORNITH_122B=0; WANT_FLASH_UNSLOTH=0; WANT_IMAGE_H3=0; WANT_TRANSCRIBE=0; WANT_LFM25=0; WANT_LFM3=0; WANT_SPEECH=0
 TOO_BIG=()
 if [ -z "$SECONDARY" ]; then
   lane_wanted image "$NO_IMAGE" "$WITH_IMAGE"; WANT_IMAGE="$WANT"
@@ -1744,6 +1761,7 @@ if [ -z "$SECONDARY" ]; then
   lane_wanted transcribe "$NO_TRANSCRIBE" "$WITH_TRANSCRIBE"; WANT_TRANSCRIBE="$WANT"
   lane_wanted lfm25 "$NO_LFM25" "$WITH_LFM25"; WANT_LFM25="$WANT"
   lane_wanted lfm3 "$NO_LFM3" "$WITH_LFM3"; WANT_LFM3="$WANT"
+  lane_wanted speech "$NO_SPEECH" "$WITH_SPEECH"; WANT_SPEECH="$WANT"
 fi
 # The Unsloth GGUF lane's target: its installer keeps the one its unit serves, and UD-Q4_K_XL (flash-unsloth) is what
 # v1.48 installed by default. Such a unit moves to the default since v1.49.0, UD-IQ3_XXS (decision 1376), as an old
@@ -1776,10 +1794,10 @@ unsloth_clients_follow(){
 too_big(){ local l; for l in ${TOO_BIG[@]+"${TOO_BIG[@]}"}; do [ "$l" = "$1" ] && return 0; done; return 1; }   # $1 a lane
 if [ "${#TOO_BIG[@]}" -gt 0 ]; then
   # the lanes that fit, as boxmem.py decides them, rather than a second list of them here (review,
-  # 2026-10-23); the speech lane is installed by its own script
+  # 2026-10-23); the speech lane, on the CPU, is installed by this run too since v1.58.0 (speech_step)
   _fit=(); _speech=""
   for _l in $(fitting_lanes); do
-    if [ "$_l" = speech ]; then _speech=", and the speech lane (./install-speech.sh)"; else _fit+=("$(lane_title "$_l")"); fi
+    if [ "$_l" = speech ]; then _speech=", and the speech lane"; else _fit+=("$(lane_title "$_l")"); fi
   done
   _fits=""; for _i in "${!_fit[@]}"; do
     if [ "$_i" -eq 0 ]; then _fits="${_fit[$_i]}"; elif [ "$_i" -eq $((${#_fit[@]} - 1)) ]; then _fits+=" and ${_fit[$_i]}"; else _fits+=", ${_fit[$_i]}"; fi
@@ -1942,6 +1960,38 @@ side_runtime_waits(){  # $1 lane: prints the runtime lines the lane's update lac
   fi
   [ -n "$lacks" ] || return 0
   printf '%s\n' "$lacks"
+}
+# The speech lane (speech recognition and synthesis on the CPU, docs/speech-lane.md), installed by a plain run since
+# v1.58.0 (decision 1564, 2026-11-22: what this repo ships is there for everyone, nobody left without it). It is no GPU
+# lane, so none of the machinery above applies: no Load, no switch target, no tens of gigabytes. install-speech.sh
+# does it whole (llama.cpp built for the CPU, a venv, 1.4 GB of models checked by sha256) and, on a box that has the
+# lane, changes only what moved and restarts it if it was running. Its round trip (a sentence spoken, then heard back)
+# runs when the lane is new here or was named (--with-speech); it leaves the lane as it found it, stopped on a new box
+# (2.5 GB of host memory at rest: started from the cockpit, or with the box by SPEECH_BOOT=1). A lane that does not
+# install (no room, a download, a compiler) is said, and the rest of the run goes on.
+SPEECH_UNIT_PATH="/etc/systemd/system/qwen38-speech.service"
+SPEECH_STATE=off
+speech_step(){
+  [ "$WANT_SPEECH" -eq 1 ] || return 0
+  local had=0 opt=()
+  [ -f "$SPEECH_UNIT_PATH" ] && had=1
+  if [ "$had" -eq 1 ] && [ "$WITH_SPEECH" -eq 0 ]; then opt=(--no-smoke); fi
+  step "Speech lane (speech recognition and synthesis on the CPU, beside any lane)"
+  if "$REPO_DIR/install-speech.sh" ${opt[@]+"${opt[@]}"}; then
+    if [ "${#opt[@]}" -eq 0 ]; then SPEECH_STATE=proved; else SPEECH_STATE=installed; fi
+  else
+    SPEECH_STATE=failed
+    echo "NOTE: the speech lane did not install or update (the lines above say why); the rest goes on. Retry with ./install-speech.sh"
+  fi
+}
+speech_line(){  # the summary's line for it
+  case "$SPEECH_STATE" in
+    proved)    echo "  Speech     : installed and proved it hears what it says; start it from the cockpit (or: sudo systemctl start qwen38-speech.service); docs/speech-lane.md" ;;
+    installed) echo "  Speech     : installed and up to date$(systemctl is-active --quiet qwen38-speech.service 2>/dev/null && echo ', running')" ;;
+    failed)    echo "  Speech     : NOT ready, see its NOTE above: ./install-speech.sh installs it" ;;
+    off)       if [ -f "$SPEECH_UNIT_PATH" ]; then echo "  Speech     : left as it is, as asked (--no-speech)"
+               else echo "  Speech     : left out of this run, as asked (--no-speech); ./install-speech.sh installs it"; fi ;;
+  esac
 }
 side_mode(){  # $1 lane, $2 --with-<lane> given: the installer's option for this run
   if [ "$ALL_WEIGHTS" -eq 1 ] || [ "$2" -eq 1 ] || side_begun "$1"; then echo --no-smoke; else echo --units-only; fi
@@ -4286,6 +4336,7 @@ else
     side_install lfm3 "$(side_mode lfm3 "$WITH_LFM3")" "$WITH_LFM3" \
       || echo "NOTE: the Liquid AI LFM3 lane did not install or update; retry with ./install-lfm3.sh --no-smoke"
   fi
+  speech_step
   SERVING_LANE=""
   [ "$IMAGE_BOOT" -eq 1 ] && SERVING_LANE="image"
   [ "$VIDEO_BOOT" -eq 1 ] && SERVING_LANE="video"
@@ -4366,6 +4417,7 @@ else
         echo "  back to it: Load on that lane in the cockpit's Lanes view, or ./switch-model.sh $MODEL_CHOICE" ;;
     esac
   fi
+  speech_line
   record_install side-boot
   star_line
   exit 0
@@ -4742,6 +4794,7 @@ except Exception as e:
         echo "NOTE: the Liquid AI LFM3 lane did not install (the lines above say why); the rest goes on."
       fi
     fi
+    speech_step
     # What to prove: what this run installed for the first time, or what was asked for
     # by name (--with-<lane>, which also proves a lane already there).
     SECOND_WITH=0
@@ -4938,6 +4991,7 @@ except Exception as e:
     lane_line "Transcribe " "$TRANSCRIBE_STATE" transcribe transcribe "45 GB" "$TRANSCRIBE_UNIT_PATH"
     lane_line "LFM2.5     " "$LFM25_STATE" lfm25 lfm25 "74 GB" "$LFM25_UNIT_PATH"
     lane_line "LFM3       " "$LFM3_STATE" lfm3 lfm3 "41 GB" "$LFM3_UNIT_PATH"
+    speech_line
     [ "$LANE" = "27b" ] && echo "  Benchmark  : ./bench.sh"
     # A 64 GB DGX Spark serves Nemotron 3.5 Bolt (Hasan, 2026-10-24): there the 27B gets two requests
     # and a pool of 59,625 tokens (measured on a 64 GB budget, 2026-10-24, its Mamba cache taking much

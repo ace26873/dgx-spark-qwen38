@@ -16,9 +16,9 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 INSTALLERS = ("install-image.sh", "install-video.sh", "install-kolibri.sh", "install-nemotron.sh",
               "install-nemotron-super.sh", "install-speech.sh", "install-image-h3.sh")
 # What the header's last paragraph opens with. The GPU lanes end on the rule that one engine runs
-# at a time; the speech lane runs on the CPU beside any of them, and ends on why the one command
-# leaves it out.
-LAST_PARAGRAPH = {"install-speech.sh": "NOT IN THE ONE COMMAND YET"}
+# at a time; the speech lane runs on the CPU beside any of them, and ends on how the one command
+# runs it (since v1.58.0; before, on why it left it out).
+LAST_PARAGRAPH = {"install-speech.sh": "IN THE ONE COMMAND since v1.58.0"}
 
 
 class TheHelpIsTheHeader(unittest.TestCase):
