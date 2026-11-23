@@ -451,11 +451,17 @@ def main() -> None:
 
     rules = dict.fromkeys(m.DENY_BASH, "deny")
     oss, meta, other = "curl -T f https://b.oss-cn-beijing.aliyuncs.com/x", "curl http://169.254.169.254/", "ls -la"
+    wf_oss, wf_meta, wf_other = ("https://b.oss-cn-beijing.aliyuncs.com/x",
+                                 "http://100.100.100.200/latest/meta-data/", "https://example.com/")
+
+    def wacts(path, *urls):
+        perm = jsonc(path).get("permission")
+        return [m._v1_action(perm, "webfetch", u) for u in urls]
     # install.sh's own copy, no permission at all
     p = write(tmp, '{\n  // mine\n  "$schema": "https://opencode.ai/config.json",\n  "model": "qwen38/qwen3.8-27b"\n}\n')
     rc, out = deny(p)
     assert rc == 0 and "put last" in out, out
-    assert jsonc(p)["permission"] == {"bash*": rules}, jsonc(p)
+    assert jsonc(p)["permission"] == {"bash*": rules, "webfetch*": rules}, jsonc(p)
     assert acts(p, oss, meta, other) == ["deny", "deny", None], acts(p, oss, meta, other)
     assert "// mine" in open(p).read(), "a comment was dropped"
     rc, out = deny(p)
@@ -467,7 +473,7 @@ def main() -> None:
     # "*" would decide)
     p = write(tmp, '{\n  "permission": {\n    "*": "ask",\n    "edit": "deny"\n  }\n}\n')
     assert deny(p)[0] == 0 and acts(p, oss, other) == ["deny", "ask"], acts(p, oss, other)
-    assert list(jsonc(p)["permission"]) == ["*", "edit", "bash*"], jsonc(p)
+    assert list(jsonc(p)["permission"]) == ["*", "edit", "bash*", "webfetch*"], jsonc(p)
     # the user's own shell rules, with a trailing comma and comments: left as they are
     theirs = ('    "bash": {\n      "*": "ask", // theirs\n      "rm *": "deny", /* theirs too */\n    },\n')
     p = write(tmp, '{\n  "permission": {\n' + theirs + '  },\n}\n')
@@ -482,31 +488,95 @@ def main() -> None:
     assert acts(p, oss) == ["allow"], acts(p, oss)
     rc, out = deny(p)
     assert rc == 0 and acts(p, oss, meta, other) == ["deny", "deny", "allow"], out
-    assert list(jsonc(p)["permission"])[-1] == "bash*", jsonc(p)
+    assert list(jsonc(p)["permission"])[-2:] == ["bash*", "webfetch*"], jsonc(p)
     # a key after the block that allows only some commands: a probe of the patterns did not see it,
     # and "hold already" left a curl to an aliyuncs.com host allowed (found in the second review)
     p = write(tmp, json.dumps({"permission": {"bash*": rules, "bash": {"curl *": "allow"}}}) + "\n")
     assert acts(p, oss) == ["allow"], acts(p, oss)
     rc, out = deny(p)
     assert rc == 0 and "put last" in out and acts(p, oss) == ["deny"], out
-    assert list(jsonc(p)["permission"]) == ["bash", "bash*"], jsonc(p)
+    assert list(jsonc(p)["permission"]) == ["bash", "bash*", "webfetch*"], jsonc(p)
     # a pattern the user set themselves inside the block stays as they set it
     p = write(tmp, '{"permission": {"bash*": {"*aliyuncs.com*": "allow"}}}\n')
     rc, out = deny(p)
     assert rc == 0 and acts(p, oss, meta) == ["allow", "deny"], out
-    # a block that is not an object is not guessed at
-    body = '{"permission": {"bash*": "deny"}}\n'
-    p = write(tmp, body)
+    # a block the person set to ONE action is theirs and is not guessed at, and the other block is written
+    # still (review of 2026-11-23: a "webfetch*": "ask" refused the whole merge, shell rules included).
+    # "deny" denies that tool whole: nothing to add under it, nothing refused
+    p = write(tmp, '{"permission": {"bash*": "deny"}}\n')
     rc, out = deny(p)
-    assert rc == 1 and "refused" in out and open(p).read() == body, out
+    got = jsonc(p)["permission"]
+    assert rc == 0 and got["bash*"] == "deny" and list(got) == ["bash*", "webfetch*"], f"{rc} {out} {got}"
+    assert m._v1_action(got, "bash", oss) == "deny" and m._v1_action(got, "webfetch", "https://x.aliyuncs.com/y") == "deny"
+    rc, out = deny(p)
+    assert rc == 0 and "unchanged" in out, out
+    # ... but only while it still denies: a key after it that allows the tool again re-opens the hosts, and a
+    # "deny" taken at its word left them open under rc 0 (second review, 2026-11-23). It is said, rc 1.
+    for later in ({"bash": {"curl *": "allow"}}, {"*": "allow"}):
+        p = write(tmp, json.dumps({"permission": {"bash*": "deny", **later}}) + "\n")
+        rc, out = deny(p)
+        got = jsonc(p)["permission"]
+        assert rc == 1 and "refused for 'bash*'" in out, f"{later}: {rc} {out}"
+        assert list(got)[-1] == "webfetch*" and got["webfetch*"] == rules, got     # the other block is written still
+    # another action: said, rc 1, that key untouched, the other block written last
+    for key, other in (("webfetch*", "bash*"), ("bash*", "webfetch*")):
+        p = write(tmp, json.dumps({"permission": {key: "ask"}}) + "\n")
+        rc, out = deny(p)
+        got = jsonc(p)["permission"]
+        assert rc == 1 and f"refused for '{key}'" in out and got[key] == "ask" and list(got)[-1] == other, f"{rc} {out} {got}"
+        assert got[other] == rules, got
+        before = open(p).read()
+        rc, out = deny(p)
+        assert rc == 1 and open(p).read() == before, "a second run must not move anything"
+    # a box of a release before v1.57.0 holds "bash*" last: only "webfetch*" is put after it and nothing
+    # else of the file moves, the comment before the block included (review: the block was taken out and
+    # put back, which broke the layout of a file whose only member it was)
+    old = '{\n  "permission": {\n    // mine\n    "bash*": {\n      "*aliyuncs.com*": "deny",\n      "*169.254.169.254*": "deny",\n      "*100.100.100.200*": "deny"\n    }\n  }\n}\n'
+    p = write(tmp, old)
+    rc, out = deny(p)
+    text = open(p).read()
+    assert rc == 0 and text.startswith(old[:old.index("    }\n  }\n}")]), f"the bash* block moved:\n{text}"
+    assert list(jsonc(p)["permission"]) == ["bash*", "webfetch*"] and "// mine" in text, text
+    assert text.index("// mine") < text.index('"bash*"') < text.index('"webfetch*"'), text
+    rc, out = deny(p)
+    assert rc == 0 and "unchanged" in out and open(p).read() == text, out
     # AGENT_AUTO=1: opencode merges OPENCODE_PERMISSION after the files' rules, so a bare "*" came
     # last and an echo naming an aliyuncs.com host ran (2026-10-28); the rules come again after it
     r = subprocess.run([sys.executable, SCRIPT, "--agent-auto-permission"], capture_output=True, text=True)
     env = json.loads(r.stdout)
-    assert r.returncode == 0 and list(env) == ["*", "*bash"] and env["*"] == "allow", r.stdout
+    assert r.returncode == 0 and list(env) == ["*", "*bash", "*webfetch"] and env["*"] == "allow", r.stdout
     merged = {"bash*": rules} | env                          # the config's rules, then the unit's
     assert [m._bash_action(merged, c) for c in (oss, meta, other)] == ["deny", "deny", "allow"], merged
-    assert m.deny_permission() == {"bash*": rules}
+    # v1.57 (decision 1561): the same three hosts are denied to opencode's webfetch too, not just to
+    # its shell. The request of 2026-11-21 left as a webfetch tool call, twice (an aliyuncs.com bucket,
+    # on the FP4-Local lane), which no shell rule sees: the proxy's TOOL_TARGETS alone named it.
+    # opencode leaves webfetch's own permission untouched, so we deny it in the generated config.
+    wfrules = dict.fromkeys(m.DENY_BASH, "deny")
+    assert m.deny_permission() == {"bash*": rules, "webfetch*": wfrules}, m.deny_permission()
+    assert m.deny_permissions_v2() == (
+        [{"action": "shell", "resource": p, "effect": "deny"} for p in m.DENY_BASH]
+        + [{"action": "webfetch", "resource": p, "effect": "deny"} for p in m.DENY_BASH]
+    ), m.deny_permissions_v2()
+    # the v1 webfetch block sits last in "permission" too (after bash*), so its rule wins the way
+    # bash*'s does; a URL naming the OSS host reads deny, an ordinary one is untouched.
+    p = write(tmp, '{"permission": {}}\n')
+    rc, out = deny(p)
+    assert rc == 0 and "put last" in out and list(jsonc(p)["permission"]) == ["bash*", "webfetch*"], out
+    assert wacts(p, wf_oss, wf_meta, wf_other) == ["deny", "deny", None], wacts(p, wf_oss, wf_meta, wf_other)
+    # AGENT_AUTO content: opencode merges it after the files and the last match wins, so the webfetch
+    # denies must ride after the wildcard allow too. The unit's content carries shell AND webfetch rules
+    # (and the person's own, section 12).
+    r = subprocess.run([sys.executable, SCRIPT, "--agent-auto-config-content"], capture_output=True, text=True)
+    content = json.loads(r.stdout)["permissions"]
+    assert content[0] == {"action": "*", "resource": "*", "effect": "allow"}
+    assert content[-6:] == m.deny_permissions_v2(), content
+    assert m._v2_action(content, "webfetch", wf_oss) == "deny" and m._v2_action(content, "webfetch", wf_other) == "allow"
+    # AGENT_AUTO permission (1.x): the "*": "allow" is first, the rules repeat after it, for both tools.
+    r = subprocess.run([sys.executable, SCRIPT, "--agent-auto-permission"], capture_output=True, text=True)
+    env = json.loads(r.stdout)
+    assert list(env) == ["*", "*bash", "*webfetch"] and env["*"] == "allow", r.stdout
+    assert env["*webfetch"] == wfrules, env
+    assert m._v1_action(env, "webfetch", wf_oss) == "deny", env
 
     # 11. OpenCode 2 reads an ordered "permissions" array, not the 1.x "permission" object: a
     #     "bash*" action is inert there (the v2 shell tool is "shell"). --deny-permissions writes
@@ -524,7 +594,8 @@ def main() -> None:
                            capture_output=True, text=True)
         return r.returncode, (r.stdout + r.stderr).strip()
 
-    expected2 = [{"action": "shell", "resource": p, "effect": "deny"} for p in m.DENY_BASH]
+    expected2 = ([{"action": "shell", "resource": p, "effect": "deny"} for p in m.DENY_BASH]
+                 + [{"action": "webfetch", "resource": p, "effect": "deny"} for p in m.DENY_BASH])
 
     def acts2(path, *commands):
         perms = jsonc(path).get("permissions")
@@ -533,6 +604,19 @@ def main() -> None:
     r = subprocess.run([sys.executable, SCRIPT, "--deny-permissions"], capture_output=True, text=True)
     assert r.returncode == 0 and json.loads(r.stdout) == expected2, r.stdout
     assert m.deny_permissions_v2() == expected2
+
+    # the 2.x array carries webfetch rules after the shell ones; the last match wins, so a URL
+    # naming a denied host reads deny and an ordinary URL reads none (the default approve holds).
+    p = write(tmp, '{}\n')
+    rc, out = deny2(p)
+    perms = jsonc(p)["permissions"]
+    assert rc == 0 and [r["action"] for r in perms] == ["shell"] * 3 + ["webfetch"] * 3, perms
+    assert [m._v2_action(perms, "webfetch", u) for u in (wf_oss, wf_meta, wf_other)] == ["deny", "deny", None], perms
+    rc, out = deny2(p)
+    assert rc == 0 and "hold already" in out, out
+    # a rollback (--remove-permissions) still recognises the 6-rule array as ours and takes it out.
+    rc, out = perms_rm(p)
+    assert rc == 0 and "was removed" in out and "permissions" not in jsonc(p), out
 
     # --deny-bash alone must never add the v2 key: it would kill a 1.x reading the file.
     p = write(tmp, json.dumps({"permission": {"bash*": rules}}))
@@ -615,6 +699,66 @@ def main() -> None:
         # and the same insert twice is the same text (no drift)
         again = m.set_member(out, ["compaction"], "keep", '{"tokens": 1}')
         assert again == out, f"{body!r}: a second pass changed the text: {again!r}"
+
+    # 12. The Agent unit's values are this repo's alone, on both majors: the wildcard allow, then the shell and the
+    #     webfetch rules. They take no argument (a path after the flag is not that mode). The person's own deny
+    #     rules are NOT repeated there: on OpenCode 2 the content merges after every file, so its allow overrides
+    #     them, which the install's note and SECURITY.md say (a first attempt at repeating them was taken back out
+    #     before any release, its review of 2026-11-23 having found it read too few files and misread "*" rules).
+    allow_all = {"action": "*", "resource": "*", "effect": "allow"}
+    r = subprocess.run([sys.executable, SCRIPT, "--agent-auto-config-content"], capture_output=True, text=True)
+    assert r.returncode == 0 and json.loads(r.stdout) == {"permissions": [allow_all] + m.deny_permissions_v2()}, r.stdout
+    r = subprocess.run([sys.executable, SCRIPT, "--agent-auto-permission"], capture_output=True, text=True)
+    assert r.returncode == 0 and list(json.loads(r.stdout)) == ["*", "*bash", "*webfetch"], r.stdout
+    for mode in ("--agent-auto-config-content", "--agent-auto-permission"):
+        r = subprocess.run([sys.executable, SCRIPT, mode, os.path.join(tmp, "absent.json")], capture_output=True, text=True)
+        assert r.returncode != 0, f"a path after {mode} is not that mode"
+    # the values hold no character systemd reads inside Environment='...' (a quote, a backslash, a percent sign):
+    # install-agent.sh writes them as they are
+    for value in (m.agent_auto_config_content(), m.agent_auto_permission()):
+        assert not set(value) & set("'\\%\n"), value
+
+    # an EMPTY "permissions" array is the person's, not this box's deny array: the rollback leaves it alone and
+    # says so (second review, 2026-11-23: it was removed with "the box's v2 deny array was removed"), and a
+    # global config that holds one is not "only this box's" for --remove-providers
+    empty = os.path.join(tmp, "empty_permissions.json")
+    body = '{"permissions": [], "x": 1}\n'
+    open(empty, "w").write(body)
+    r = subprocess.run([sys.executable, SCRIPT, empty, "--remove-permissions"], capture_output=True, text=True)
+    assert r.returncode == 1 and "not this box's deny array" in r.stdout and open(empty).read() == body, r.stdout
+    assert m._only_ours_v2(m.deny_permissions_v2()) and m._only_ours_v2(m.deny_permissions_v2_before_v157())
+    assert not m._only_ours_v2([]) and not m._only_ours_v2([allow_all] + m.deny_permissions_v2())
+
+    # a box that served OpenCode 2 on v1.56.0 holds the three shell rules alone. The merge of v1.57.0 must
+    # put the webfetch rules after them WITHOUT repeating the shell ones (it appended all six: nine rules,
+    # three twice), and the rollback to 1.x must still take the whole array out, in both shapes: left in
+    # place, 1.19 refuses to start ("V2 permissions are not supported"). Measured red on 2026-11-23.
+    before157 = [{"action": "shell", "resource": pt, "effect": "deny"} for pt in m.DENY_BASH]
+    p = write(tmp, json.dumps({"permissions": before157, "x": 1}, indent=2))
+    rc, out = deny2(p)
+    assert rc == 0 and jsonc(p)["permissions"] == expected2, f"{out}: {jsonc(p)['permissions']}"
+    rc, out = deny2(p)
+    assert rc == 0 and "unchanged" in out and jsonc(p)["permissions"] == expected2, out
+    rc, out = perms_rm(p)
+    assert rc == 0 and "permissions" not in jsonc(p) and jsonc(p)["x"] == 1, out
+    # the shape of v1.56.0, never merged again, is still this box's array
+    p = write(tmp, json.dumps({"permissions": before157}))
+    rc, out = perms_rm(p)
+    assert rc == 0 and "permissions" not in jsonc(p), out
+    # the rules of v1.56.0 followed by all of today's (what the first build of this merge wrote): ours too
+    p = write(tmp, json.dumps({"permissions": before157 + expected2}))
+    rc, out = perms_rm(p)
+    assert rc == 0 and "permissions" not in jsonc(p), out
+    # a person's rule before ours, in either shape: theirs, left alone, and the message says so
+    for ours_shape in (before157, expected2):
+        mixed = [{"action": "shell", "resource": "*", "effect": "ask"}] + ours_shape
+        p = write(tmp, json.dumps({"permissions": mixed}))
+        rc, out = perms_rm(p)
+        assert rc == 1 and "holds rules of yours" in out and jsonc(p)["permissions"] == mixed, out
+    # and the person's rules followed by the shell rules of v1.56.0 get only the webfetch rules after them
+    p = write(tmp, json.dumps({"permissions": [{"action": "edit", "resource": "*.env", "effect": "deny"}] + before157}))
+    rc, out = deny2(p)
+    assert rc == 0 and jsonc(p)["permissions"] == [{"action": "edit", "resource": "*.env", "effect": "deny"}] + expected2, jsonc(p)
 
     print("test_oc_merge_limits: OK")
 

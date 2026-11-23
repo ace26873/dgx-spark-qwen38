@@ -158,6 +158,13 @@ class Render(unittest.TestCase):
         self.assertTrue(0 < auto.index('"effect":"allow"') < auto.rindex('"effect":"deny"'),
                         "allow first, denies last: last match wins in 2.x")
         self.assertIn(f"*{GUARD_HOST}*", auto)
+        # v1.57.0: the same hosts are denied to webfetch, after the shell rules (the request of 2026-11-21 left as
+        # a webfetch), and the note says what the allow does to the person's own deny rules
+        for tool in ("shell", "webfetch"):
+            self.assertIn('{"action":"%s","resource":"*%s*","effect":"deny"}' % (tool, GUARD_HOST), auto)
+        self.assertLess(auto.index('"action":"shell"'), auto.index('"action":"webfetch"'))
+        self.assertIn("a shell command or a webfetch naming", r.stdout)
+        self.assertIn("overrides the deny rules of your own configs", r.stdout)
         self.assertIn("AGENT_AUTO=1 on OpenCode 2", r.stdout)
         # the env file now names the username OpenCode 2 hardcodes, password kept
         env = (self.t / ".config" / "qwen38" / "opencode-web.env").read_text()

@@ -29,9 +29,9 @@ Environment=OPENCODE_CONFIG=__HOME__/.config/qwen38/opencode.json
 # (1.x) or --auto (2.x). install-agent.sh renders this line for the OpenCode that
 # runs: 1.x reads OPENCODE_PERMISSION, merged after the config files; 2.x ignores that
 # variable entirely and reads OPENCODE_CONFIG_CONTENT, merged after them too, where the
-# wildcard allow comes first and this repo's shell rules for the hosts of Alibaba Cloud
-# and the cloud metadata addresses come again after it (SECURITY.md, and measured on
-# 2.3.0 the 2026-11-14: the denies hold under the wildcard).
+# wildcard allow comes first and this repo's shell and webfetch rules for the hosts of
+# Alibaba Cloud and the cloud metadata addresses come again after it (SECURITY.md, and
+# measured on 2.3.0 the 2026-11-14: the denies hold under the wildcard).
 __AUTO_LINE__
 # Loopback only: the cockpit relay is the one thing that reaches this server.
 ExecStart=__OPENCODE_BIN__ serve --hostname 127.0.0.1 --port __OPENCODE_PORT__ __SERVE_FLAGS__

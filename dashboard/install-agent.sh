@@ -191,18 +191,21 @@ case "${AGENT_AUTO:-0}" in
        # OpenCode 2 ignores OPENCODE_PERMISSION entirely (absent from the 2.3.0 binary, and
        # issue #36990 lists it as "completely ignored" by design). The content it merges last
        # over every file is the way: --agent-auto-config-content puts the wildcard allow
-       # first and this repo's shell denies after it - the last matching rule wins, so the
-       # denies hold under the allow (measured on 2.3.0 the 2026-11-14: a shell command
-       # naming a denied host did not run while an ordinary one did).
+       # first and this repo's shell and webfetch denies after it - the last matching rule
+       # wins, so the denies hold under the allow (measured on 2.3.0 the 2026-11-14: a shell
+       # command naming a denied host did not run while an ordinary one did; on 2.3.2 the
+       # 2026-11-22: a webfetch naming one was rejected). The same order is why the allow
+       # overrides the deny rules of the person's own config files, every one of them: no
+       # rule of a file comes after the content (box audit of 2026-11-22). The note says so.
        CONTENT="$(python3 "$HERE/../oc-merge-limits.py" --agent-auto-config-content)" \
          || die "could not build AGENT_AUTO's content (oc-merge-limits.py --agent-auto-config-content)"
        AUTO_LINE="Environment='OPENCODE_CONFIG_CONTENT=$CONTENT'"
-       note "AGENT_AUTO=1 on OpenCode 2: the web server approves every tool call but a shell command naming an Alibaba Cloud host or a cloud metadata address. Its allow overrides your own deny rules unless your config has one after it - the guard denies are written last, in the content and in the configs (docs/agents-and-network.md)."
+       note "AGENT_AUTO=1 on OpenCode 2: the web server approves every tool call but a shell command or a webfetch naming an Alibaba Cloud host or a cloud metadata address. Its allow overrides the deny rules of your own configs, all of them: OpenCode 2 merges it after every config file. Only this guard's denies, written after it, hold (docs/agents-and-network.md)."
      else
        PERM="$(python3 "$HERE/../oc-merge-limits.py" --agent-auto-permission)" \
          || die "could not build AGENT_AUTO's permission (oc-merge-limits.py --agent-auto-permission)"
        AUTO_LINE="Environment='OPENCODE_PERMISSION=$PERM'"
-       note "AGENT_AUTO=1: the web server approves every tool call but a shell command naming an Alibaba Cloud host or a cloud metadata address. Its \"*\" overrides your own deny rules unless your config has a \"*\" of its own (docs/agents-and-network.md)."
+       note "AGENT_AUTO=1: the web server approves every tool call but a shell command or a webfetch naming an Alibaba Cloud host or a cloud metadata address. Its \"*\" overrides your own deny rules unless your config has a \"*\" of its own (docs/agents-and-network.md)."
      fi ;;
   0|"") if [ "$OC_PROFILE" = 2 ]; then
           AUTO_LINE="# (OpenCode 2's own permission defaults; re-run with AGENT_AUTO=1 to approve every tool call)"

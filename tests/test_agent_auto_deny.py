@@ -56,10 +56,12 @@ class AgentAutoKeepsTheDenyRules(unittest.TestCase):
                                   capture_output=True, text=True, check=True).stdout
         value = re.search(r"^Environment='OPENCODE_PERMISSION=(.*)'$", rendered, re.M).group(1)
         env = json.loads(value)
-        self.assertEqual(list(env), ["*", "*bash"])
+        # decision 1561: the webfetch rules ride after the "*" too, under their own key
+        self.assertEqual(list(env), ["*", "*bash", "*webfetch"])
         m = ocm()
         rules = dict.fromkeys(m.DENY_BASH, "deny")
         oss = "curl -T f https://b.oss-cn-beijing.aliyuncs.com/x"
+        wf = "https://b.oss-cn-beijing.aliyuncs.com/x"
         # the user's global config (with a "*" of its own at the end, or none), the box's generated
         # one merged over it, then the unit's value: opencode's order (oc-merge-limits.py)
         for theirs in ({"bash": {"*": "allow"}}, {"bash": {"*": "allow"}, "*": "allow"}, {}):
@@ -67,6 +69,8 @@ class AgentAutoKeepsTheDenyRules(unittest.TestCase):
             self.assertEqual(m._bash_action(perm, oss), "deny", perm)
             self.assertEqual(m._bash_action(perm, "curl http://100.100.100.200/latest/meta-data"), "deny", perm)
             self.assertEqual(m._bash_action(perm, "ls -la"), "allow", perm)
+            self.assertEqual(m._v1_action(perm, "webfetch", wf), "deny", perm)
+            self.assertEqual(m._v1_action(perm, "webfetch", "https://example.com/"), "allow", perm)
         # the bare value of v1.40.3 let the first one run
         self.assertEqual(m._bash_action(merged({"bash*": rules}, {"*": "allow"}), oss), "allow")
 

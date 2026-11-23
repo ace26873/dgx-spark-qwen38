@@ -584,8 +584,11 @@ class TheGeneratedConfigCarriesTheShellRules(unittest.TestCase):
 
     def test_the_rules_are_in_it_under_their_own_key(self):
         d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"), doc=True)
-        self.assertEqual(d["permission"], {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny",
-                                                     "*100.100.100.200*": "deny"}})
+        self.assertEqual(d["permission"],
+                         {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny",
+                                    "*100.100.100.200*": "deny"},
+                          "webfetch*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny",
+                                        "*100.100.100.200*": "deny"}})
 
 
 class TheV2CompactionBlock(unittest.TestCase):
@@ -628,8 +631,9 @@ class TheGeneratedConfigFollowsTheBinaryThatStands(unittest.TestCase):
         d = generate("27b", "1m", unit_ctx=1010000, pair=("551000", "160000"),
                      doc=True, major="1", serve_major="2")
         self.assertEqual(d["compaction"], {"keep": {"tokens": 132000}, "background": True})
-        self.assertEqual([p["resource"] for p in d["permissions"]],
-                         ["*aliyuncs.com*", "*169.254.169.254*", "*100.100.100.200*"])
+        self.assertEqual([(p["action"], p["resource"]) for p in d["permissions"]],
+                         [(a, r) for a in ("shell", "webfetch")
+                          for r in ("*aliyuncs.com*", "*169.254.169.254*", "*100.100.100.200*")])
         self.assertEqual(d["policies"],
                          [{"action": "provider.use", "resource": "opencode", "effect": "deny"}])
         self.assertEqual(d["share"], "disabled")

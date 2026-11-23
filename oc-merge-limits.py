@@ -88,7 +88,7 @@ permissions takes OUR array back out when a box rolls back to 1.x. deny_permissi
 is the array for the config install.sh generates.
 --agent-auto-permission prints the OPENCODE_PERMISSION the Agent tab's 1.x unit takes with
 AGENT_AUTO=1: opencode merges it after every rule of the files, so the same rules come again
-after its {"*": "allow"}, under "*bash", a key the files do not have. OpenCode 2 ignores
+after its {"*": "allow"}, under "*bash" and "*webfetch", keys the files do not have. OpenCode 2 ignores
 OPENCODE_PERMISSION; its --auto approves what no rule denies, so the "permissions" rules
 above are what hold there. serve has no such flag: there, --agent-auto-config-content prints
 the OPENCODE_CONFIG_CONTENT the 2.x unit takes with AGENT_AUTO=1 (the content is merged after
@@ -707,19 +707,24 @@ def deny_probes() -> list:
     return [pt.replace("*", "x") for pt in DENY_BASH]
 
 
-def _bash_action(permission, command: str):
-    """The action the config's own rules give a shell command, the last rule that matches
-    winning as in opencode; None when none of them matches."""
+def _v1_action(permission, action: str, resource: str):
+    """The action the config's own 1.x rules give an (action, resource) pair, the last rule that
+    matches winning as in opencode; None when none of them matches."""
     if isinstance(permission, str):
         return permission
-    action = None
+    eff = None
     for name, rules in (permission or {}).items():
-        if not _wild("bash", name):
+        if not _wild(action, name):
             continue
         for pattern, act in (rules.items() if isinstance(rules, dict) else (("*", rules),)):
-            if _wild(command, pattern):
-                action = act
-    return action
+            if _wild(resource, pattern):
+                eff = act
+    return eff
+
+
+def _bash_action(permission, command: str):
+    """The action the config's own rules give a shell command (1.x)."""
+    return _v1_action(permission, "bash", command)
 
 
 def append_member(text: str, path, key: str, value: str) -> str:
@@ -748,16 +753,30 @@ def append_member(text: str, path, key: str, value: str) -> str:
 # two wildcards that match the bash tool, and two keys, because opencode merges the value into the
 # config and a key already there keeps its place, before the value's "*".
 DENY_KEY, AUTO_KEY = "bash*", "*bash"
+# Decision 1561 (2026-11-22): the same hosts are denied to webfetch, not only to the shell. The
+# request of 2026-11-21 (the kind Cohere reported) left as a webfetch tool call to an aliyuncs.com
+# bucket, twice; opencode leaves webfetch's permission alone, and the proxy's TOOL_TARGETS is the second
+# net, not the first. Read from the 1.19.6 binary: webfetch asserts {action: "webfetch",
+# resources: [url]} and the map keys match the action as wildcards, same shape as bash.
+WEBFETCH_KEY, AUTO_WEBFETCH_KEY = "webfetch*", "*webfetch"
+DENY_BLOCKS = ((DENY_KEY, "bash"), (WEBFETCH_KEY, "webfetch"))
 
 
 def deny_permission() -> dict:
-    """The "permission" of the config install.sh generates: the rules, under their own key."""
-    return {DENY_KEY: {p: "deny" for p in DENY_BASH}}
+    """The "permission" of the config install.sh generates: the rules, under their own keys,
+    last and in this order (opencode keeps the last matching rule of the merged map)."""
+    return {DENY_KEY: {p: "deny" for p in DENY_BASH}, WEBFETCH_KEY: {p: "deny" for p in DENY_BASH}}
 
 
 def merge_deny_bash_v1(path: str) -> int:
-    """Make the DENY_BASH rules hold in a 1.x "permission": under DENY_KEY, after every other
-    key of it, keeping the user's own rules and their own setting of any of these patterns."""
+    """Make the DENY_BASH rules hold in a 1.x "permission": the bash and the webfetch block under
+    their own keys, after every other key of it, since opencode's last matching rule wins. The
+    user's own rules stay as they wrote them, including their own setting of any of these patterns.
+    A block already last and intact is not rewritten: on a box of a release before v1.57.0, which
+    holds "bash*" last, only "webfetch*" is put after it and nothing of the file moves. A block whose
+    key the person set to one action is theirs: "deny" denies that tool whole while no key after it
+    allows it again; otherwise its rules cannot be written under it, which is said (rc 1), the other
+    block being written still."""
     opened = _open(path)
     if opened is None:
         return 1
@@ -765,33 +784,62 @@ def merge_deny_bash_v1(path: str) -> int:
     perm = doc.get("permission")
     want = copy.deepcopy(doc)
     probe = lambda p: p.replace("*", "x")
+    refused = []
+
+    def said_refused() -> int:
+        for key in refused:
+            print(f"{path}: refused for {key!r}, which is one action there, not an object: "
+                  f"the rules for the hosts of Cohere's report are not written under it")
+        return 1 if refused else 0
     try:
         if perm is None or isinstance(perm, str):
             # one action for every tool stays the action of every other command
             want["permission"] = ({} if perm is None else {"*": perm}) | deny_permission()
             new = set_member(text, [], "permission", json.dumps(want["permission"], indent=2))
-            mine = list(DENY_BASH)
+            checked = [(key, action, list(DENY_BASH)) for key, action in DENY_BLOCKS]
         elif not isinstance(perm, dict):
             print(f"{path}: refused, its permission is neither an action nor an object; unchanged")
             return 1
         else:
-            have = perm.get(DENY_KEY, {})
-            if not isinstance(have, dict):
-                print(f"{path}: refused, its {DENY_KEY!r} permission is not an object; unchanged")
-                return 1
-            mine = [p for p in DENY_BASH if have.get(p, "deny") == "deny"]
-            # last, as the check after a write requires: a key after the block that matches only some
-            # commands ("bash": {"curl *": "allow"}) wins for those, whatever a probe says (found in review)
-            if (all(p in have for p in DENY_BASH) and list(perm)[-1] == DENY_KEY
-                    and all(_bash_action(perm, probe(p)) == "deny" for p in mine)):
-                print("the deny rules for the hosts of Cohere's report hold already: unchanged")
-                return 0
-            # missing, or a key added after them overrides them: the block goes (back) to the end
-            value = dict(have) | {p: "deny" for p in DENY_BASH if p not in have}
-            new = remove_member(text, ["permission", DENY_KEY]) if DENY_KEY in perm else text
-            new = append_member(new, ["permission"], DENY_KEY, json.dumps(value, indent=2))
-            want["permission"].pop(DENY_KEY, None)
-            want["permission"][DENY_KEY] = value
+            checked = []
+            ours = [key for key, _ in DENY_BLOCKS]
+            for key, action in DENY_BLOCKS:
+                have = perm.get(key, {})
+                if have == "deny" and not any(_wild(action, k) and perm[k] != "deny"
+                                              for k in list(perm)[list(perm).index(key) + 1:] if k not in ours):
+                    continue          # the whole tool is denied, and no key after it speaks for that tool again
+                if not isinstance(have, dict):
+                    # one action, under which no rule can be written; "deny" comes here too once a key
+                    # after it allows the tool again (second review, 2026-11-23: it was taken as denied)
+                    refused.append(key)
+                    continue
+                checked.append((key, action, [p for p in DENY_BASH if have.get(p, "deny") == "deny"]))
+            complete = lambda blocks: all(key in perm and all(p in perm[key] for p in DENY_BASH) for key, _, _ in blocks)
+            denies = lambda blocks: all(_v1_action(perm, action, probe(p)) == "deny"
+                                        for _, action, mine in blocks for p in mine)
+            last = lambda blocks: list(perm)[len(perm) - len(blocks):] == [key for key, _, _ in blocks]
+            # last, as the check after a write requires: a key added after the blocks overrides them,
+            # whatever a probe of the patterns says (found in the reviews of the two blocks)
+            if not checked or (complete(checked) and last(checked) and denies(checked)):
+                if not refused:
+                    print("the deny rules for the hosts of Cohere's report hold already: unchanged")
+                return said_refused()
+            # missing, or a key added after them overrides them: the blocks go (back) to the end, but for
+            # the leading ones that end the map intact already, which stay where they are
+            todo = checked
+            for i in range(len(checked) - 1, 0, -1):
+                head, rest = checked[:i], checked[i:]
+                if complete(head) and last(head) and denies(head) and all(key not in perm for key, _, _ in rest):
+                    todo = rest
+                    break
+            new = text
+            for key, action, mine in todo:
+                have = dict(perm.get(key, {}) or {})
+                value = have | {p: "deny" for p in DENY_BASH if p not in have}
+                new = remove_member(new, ["permission", key]) if key in perm else new
+                new = append_member(new, ["permission"], key, json.dumps(value, indent=2))
+                want["permission"].pop(key, None)
+                want["permission"][key] = value
     except ValueError as e:
         print(f"{path}: refused, {e}; unchanged")
         return 1
@@ -799,18 +847,21 @@ def merge_deny_bash_v1(path: str) -> int:
     if bad:
         print(f"{path}: refused, {bad}; unchanged.")
         return 1
+    keys = [key for key, _, _ in checked]
     try:
         got = _reread(path).get("permission")
-        wrong = [p for p in mine if _bash_action(got, probe(p)) != "deny"]
-        if list(got)[-1] != DENY_KEY:
-            wrong.append(f"{DENY_KEY} is not the last key")
+        wrong = [f"{action} {p}" for key, action, mine in checked for p in mine
+                 if _v1_action(got, action, probe(p)) != "deny"]
+        if list(got)[len(got) - len(keys):] != keys:
+            wrong.append(f"{', '.join(keys)} are not the last keys")
     except (ValueError, TypeError) as e:
         wrong = [str(e)]
     if not _landed(path, saved, f"not denied in the end: {', '.join(wrong)}" if wrong else "",
                    "the deny rules"):
         return 1
-    print(f"bash deny rules for {', '.join(DENY_BASH)} put last in its permission (backup {saved})")
-    return 0
+    print(f"{' and '.join(action for _, action, _ in checked)} deny rules for {', '.join(DENY_BASH)} "
+          f"put last in its permission (backup {saved})")
+    return said_refused()
 
 
 def _array_elements(clean: str, i: int):
@@ -852,8 +903,39 @@ def append_array(text: str, path, value: str) -> str:
 
 
 def deny_permissions_v2() -> list:
-    """The "permissions" entries OpenCode 2 reads: the rules, as an ordered array."""
+    """The "permissions" entries OpenCode 2 reads: the rules for the shell and the webfetch tool,
+    as an ordered array (decision 1561: the request of 2026-11-21 left as a webfetch call, and
+    the 2.3.2 source checks webfetch's own permission for the URL and for every redirect it
+    follows, core/tool/plugin/webfetch.ts:133-171)."""
+    return ([{"action": "shell", "resource": p, "effect": "deny"} for p in DENY_BASH]
+            + [{"action": "webfetch", "resource": p, "effect": "deny"} for p in DENY_BASH])
+
+
+def deny_permissions_v2_before_v157() -> list:
+    """What deny_permissions_v2() was up to v1.56.0, the shell rules alone: a box that served OpenCode 2
+    on v1.56.0 holds exactly these, and they are still this box's."""
     return [{"action": "shell", "resource": p, "effect": "deny"} for p in DENY_BASH]
+
+
+def _strip_ours_v2(perms) -> list:
+    """The array without the trailing rules this repo wrote, today's or those of v1.56.0 that today's were
+    put after, taken off repeatedly; [] when nothing else is in it."""
+    rest = list(perms)
+    tails = (deny_permissions_v2(), deny_permissions_v2_before_v157())
+    changed = True
+    while changed and rest:
+        changed = False
+        for tail in tails:
+            if len(rest) >= len(tail) and rest[-len(tail):] == tail:
+                rest, changed = rest[:-len(tail)], True
+                break
+    return rest
+
+
+def _only_ours_v2(perms) -> bool:
+    """Whether the array holds this repo's rules and nothing else. An empty array is not ours: no
+    release wrote one (second review, 2026-11-23: it was removed as "this box's deny array")."""
+    return isinstance(perms, list) and bool(perms) and _strip_ours_v2(perms) == []
 
 
 def _v2_action(permissions, action: str, resource: str):
@@ -873,13 +955,18 @@ def _v2_action(permissions, action: str, resource: str):
 
 
 def _deny_permissions_wrong(permissions) -> list:
-    """The DENY_BASH patterns the array does not deny for the v2 shell tool, named by their pattern."""
-    return [pat for pat, probe in zip(DENY_BASH, deny_probes())
-            if _v2_action(permissions, "shell", probe) != "deny"]
+    """The DENY_BASH patterns the array does not deny for the v2 shell or webfetch tool, named by
+    their tool and pattern."""
+    probes = deny_probes()
+    wrong = [f"shell {pat}" for pat, probe in zip(DENY_BASH, probes)
+             if _v2_action(permissions, "shell", probe) != "deny"]
+    wrong += [f"webfetch {pat}" for pat, probe in zip(DENY_BASH, probes)
+              if _v2_action(permissions, "webfetch", probe) != "deny"]
+    return wrong
 
 
 def _verify_deny_permissions(path: str) -> str:
-    """'' when the file on disk really denies these hosts to OpenCode 2's shell."""
+    """'' when the file on disk really denies these hosts to OpenCode 2's shell and webfetch."""
     try:
         doc = _reread(path)
     except ValueError as e:
@@ -910,13 +997,20 @@ def merge_deny_permissions(path: str) -> int:
                          for r in perms)):
             print(f"{path}: refused, its permissions is not an array of rules; unchanged")
             return 1
-        elif not _deny_permissions_wrong(perms):
-            print("the shell deny rules for the hosts of Cohere's report hold already: unchanged")
+        elif not (wrong := _deny_permissions_wrong(perms)):
+            print("the shell and webfetch deny rules for the hosts of Cohere's report hold already: unchanged")
             return 0
         else:
-            want["permissions"] = list(perms) + deny_permissions_v2()
+            ours, before = deny_permissions_v2(), deny_permissions_v2_before_v157()
+            add = ours
+            # a box that served OpenCode 2 on v1.56.0: its shell rules end the array and still deny, only
+            # the webfetch rules lack. Just those go after them, so the array ends with today's rules and
+            # nothing is there twice (all six appended made nine, and the rollback no longer knew the array)
+            if perms[-len(before):] == before and all(w.startswith("webfetch ") for w in wrong):
+                add = [r for r in ours if r not in before]
+            want["permissions"] = list(perms) + add
             new = text
-            for rule in deny_permissions_v2():
+            for rule in add:
                 new = append_array(new, ["permissions"],
                                    json.dumps(rule, separators=(", ", ": ")))
     except ValueError as e:
@@ -926,9 +1020,9 @@ def merge_deny_permissions(path: str) -> int:
     if bad:
         print(f"{path}: refused, {bad}; unchanged.")
         return 1
-    if not _landed(path, saved, _verify_deny_permissions(path), "the shell deny rules"):
+    if not _landed(path, saved, _verify_deny_permissions(path), "the deny rules"):
         return 1
-    print(f"shell deny rules for {', '.join(DENY_BASH)} put last in its permissions (backup {saved})")
+    print(f"shell and webfetch deny rules for {', '.join(DENY_BASH)} put last in its permissions (backup {saved})")
     return 0
 
 
@@ -951,10 +1045,9 @@ def remove_permissions(path: str) -> int:
     if "permissions" not in doc:
         print("no v2 permissions array here: unchanged")
         return 0
-    if doc["permissions"] != deny_permissions_v2():
-        ours = deny_permissions_v2()
-        perms = doc["permissions"]
-        if isinstance(perms, list) and len(perms) > len(ours) and perms[-len(ours):] == ours:
+    perms = doc["permissions"]
+    if not _only_ours_v2(perms):
+        if isinstance(perms, list) and _strip_ours_v2(perms) != perms:
             # --deny-permissions put ours after rules of the person's own: the array is theirs, ours ride
             # last in it (review of v1.56.0, finding 4: the message said none of it was this box's)
             print(f"{path}: its permissions holds rules of yours, with this box's deny rules last; left alone")
@@ -975,8 +1068,11 @@ def remove_permissions(path: str) -> int:
 def agent_auto_permission() -> str:
     """OPENCODE_PERMISSION for AGENT_AUTO=1. opencode merges it into the config after every rule of
     the files, so its "*" would win over DENY_KEY's rules (an echo naming an aliyuncs.com host ran
-    under a bare {"*": "allow"} on 2026-10-28): the same rules come again after it, under AUTO_KEY."""
-    return json.dumps({"*": "allow", AUTO_KEY: {p: "deny" for p in DENY_BASH}}, separators=(",", ":"))
+    under a bare {"*": "allow"} on 2026-10-28): the same rules come again after it, under AUTO_KEY,
+    and for webfetch under AUTO_WEBFETCH_KEY (measured on 1.19.5 the 2026-11-22 and on 1.19.6 the
+    2026-11-23: the fetch denied by the rule *webfetch)."""
+    return json.dumps({"*": "allow", AUTO_KEY: {p: "deny" for p in DENY_BASH},
+                       AUTO_WEBFETCH_KEY: {p: "deny" for p in DENY_BASH}}, separators=(",", ":"))
 
 
 def agent_auto_config_content() -> str:
@@ -984,7 +1080,7 @@ def agent_auto_config_content() -> str:
     serve has no --auto flag (the run one approves only what no rule denies), so the approval
     comes from the config: opencode merges this content after every rule of the files (its last
     matching rule wins, checked on 2.3.0: a wildcard allow in the content overrode a file's
-    deny), so the wildcard "allow" comes first and the same shell rules come again after it."""
+    deny), so the wildcard "allow" comes first and the shell and webfetch rules deny after it."""
     return json.dumps({"permissions": [{"action": "*", "resource": "*", "effect": "allow"}]
                        + deny_permissions_v2()}, separators=(",", ":"))
 
@@ -1211,8 +1307,9 @@ def remove_providers(path: str, key_file: str) -> int:
     if (set(cur) <= {"$schema", "autoupdate", "compaction", "provider", "permission", "permissions",
                      *ours_v2}
             and not cur.get("provider")
-            and cur.get("permission", deny_permission()) == deny_permission()
-            and cur.get("permissions", deny_permissions_v2()) == deny_permissions_v2()
+            # ours in today's shape or in the one of a release before v1.57.0 (the shell rules alone)
+            and cur.get("permission", deny_permission()) in (deny_permission(), {DENY_KEY: deny_permission()[DENY_KEY]})
+            and ("permissions" not in cur or _only_ours_v2(cur["permissions"]))
             and all(cur.get(k, v) == v and type(cur.get(k, v)) is type(v) for k, v in ours_v2.items())):
         saved = backup(path)
         os.unlink(path)

@@ -585,7 +585,10 @@ class TheFailedCrossingServesWhatStands(unittest.TestCase):
                "theme": "dark",
                "permissions": [{"action": "shell", "resource": "*aliyuncs.com*", "effect": "deny"},
                                {"action": "shell", "resource": "*169.254.169.254*", "effect": "deny"},
-                               {"action": "shell", "resource": "*100.100.100.200*", "effect": "deny"}]}
+                               {"action": "shell", "resource": "*100.100.100.200*", "effect": "deny"},
+                               {"action": "webfetch", "resource": "*aliyuncs.com*", "effect": "deny"},
+                               {"action": "webfetch", "resource": "*169.254.169.254*", "effect": "deny"},
+                               {"action": "webfetch", "resource": "*100.100.100.200*", "effect": "deny"}]}
     DENIES = ["*aliyuncs.com*", "*169.254.169.254*", "*100.100.100.200*"]
 
     def setUp(self):
@@ -654,7 +657,8 @@ class TheFailedCrossingServesWhatStands(unittest.TestCase):
         self.assertIsNotNone(marker)
         self.assertEqual(marker.splitlines()[0], "2", "a failed crossing does not touch the marker")
         # the guard holds: the configs of the major that runs keep the exfiltration denies
-        self.assertEqual([p["resource"] for p in user["permissions"]], self.DENIES)
+        self.assertEqual([(p["action"], p["resource"]) for p in user["permissions"]],
+                         [(a, r) for a in ("shell", "webfetch") for r in self.DENIES])
         self.assertEqual(gen["compaction"], {"keep": {"tokens": 135000}, "background": True},
                          "the v2 compaction keys stay while the 2.x binary stands")
 
@@ -708,9 +712,11 @@ class TheRollbackSpeaks(unittest.TestCase):
         return r.returncode, r.stdout + r.stderr, left
 
     def test_our_array_is_taken_out_in_silence(self):
-        ours = {"permissions": [{"action": "shell", "resource": "*" + "aliyuncs" + ".com*", "effect": "deny"},
-                                {"action": "shell", "resource": "*169.254.169.254*", "effect": "deny"},
-                                {"action": "shell", "resource": "*100.100.100.200*", "effect": "deny"}]}
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ocm", REPO / "oc-merge-limits.py")
+        ocm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ocm)
+        ours = {"permissions": ocm.deny_permissions_v2()}
         rc, out, left = self.run_rollback(ours)
         self.assertEqual(rc, 0, out)
         self.assertNotIn("permissions", left)
@@ -1314,7 +1320,8 @@ class AFreshBoxGetsAConfigOpencodeCanUse(unittest.TestCase):
         # from a shell it was given. opencode runs every shell command unasked by default, so
         # this box's config denies the hosts of the report: the copy carries the rules of the
         # generated config, and an existing config of this box gets them last.
-        rules = {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny", "*100.100.100.200*": "deny"}}
+        rules = {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny", "*100.100.100.200*": "deny"},
+                 "webfetch*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny", "*100.100.100.200*": "deny"}}
         generated = json.dumps({"provider": {"qwen38": {}}, "model": "qwen38/qwen3.8-27b", "permission": rules})
         rc, out, user = self.run_it(generated=generated)
         self.assertEqual(rc, 0, out)

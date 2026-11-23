@@ -27,7 +27,8 @@ def purge_block() -> str:
 
 
 # what --deny-bash puts in the copy: the rules under their own key (oc-merge-limits.py deny_permission)
-RULES = {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny", "*100.100.100.200*": "deny"}}
+RULES = {"bash*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny", "*100.100.100.200*": "deny"},
+         "webfetch*": {"*aliyuncs.com*": "deny", "*169.254.169.254*": "deny", "*100.100.100.200*": "deny"}}
 
 
 def box(key):
@@ -108,6 +109,25 @@ class UninstallLeavesOpencodeStartable(unittest.TestCase):
                     self.assertIn("held only this box's providers (qwen38): moved to", out)
                 else:
                     self.assertIs(json.loads(oc.read_text())["websearch"], True)
+
+    def test_the_copy_of_a_release_before_v157_goes_with_the_key_too(self):
+        # up to v1.56.0 the copy held the shell rules alone ("bash*" in 1.x, three shell rules in 2.x): a box
+        # uninstalled with this release's script, without an install of it in between, still holds that
+        # shape, and it is still this repo's copy, not the person's
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ocm", REPO / "oc-merge-limits.py")
+        ocm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ocm)
+        shell_only = {"bash*": dict.fromkeys(ocm.DENY_BASH, "deny")}
+        for extra in ({"permission": shell_only},
+                      {"permission": shell_only, "permissions": ocm.deny_permissions_v2_before_v157()}):
+            with self.subTest(keys=sorted(extra)):
+                mine = lambda k: json.dumps({"$schema": "https://opencode.ai/config.json", "autoupdate": False,
+                                             "provider": {"qwen38": box(k)}, "model": "qwen38/qwen3.8-27b",
+                                             **extra}, indent=2)
+                out, home, cfg, oc = self.run_it(mine, purge=1)
+                self.assertFalse(oc.exists(), out)
+                self.assertIn("held only this box's providers (qwen38): moved to", out)
 
     def test_a_users_own_config_keeps_everything_but_the_box(self):
         theirs = lambda k: json.dumps({"model": "qwen38/qwen3.8-27b", "plugin": ["x.js"],
