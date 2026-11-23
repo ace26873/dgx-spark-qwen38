@@ -588,7 +588,7 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
         return block(self.TEXT, "HOST_PKGS=()\n# --no-start and --no-service",
                      '|| host_packages "$_pk_reason" "${HOST_PKGS[@]}" || true')
 
-    def run_step(self, want_image, want_video, headers, no_start=0, no_service=0, want_image_h3=0):
+    def run_step(self, want_image, want_video, headers, no_start=0, no_service=0, want_image_h3=0, want_speech=0):
         box = Box(sudo_n=0)
         inc = box.d / "include"
         inc.mkdir()
@@ -596,8 +596,10 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
             (inc / "Python.h").write_text("/* */\n")
         (box.bin / "python3").write_text(f'#!/bin/bash\ncase "$*" in *sysconfig*) echo "{inc}" ;; esac\nexit 0\n')
         (box.bin / "python3").chmod(0o755)
+        # the speech lane (v1.58.0) asks for its build tools in this step too: left out of these runs, which are
+        # the image and video lanes' (its own: tests/test_install_speech_default.py); one test below lets it in
         rc, out, err = box.bash(f"WANT_IMAGE={want_image}; WANT_VIDEO={want_video}; WANT_IMAGE_H3={want_image_h3}; "
-                                f"NO_START={no_start}; NO_SERVICE={no_service}\n" + self.step())
+                                f"WANT_SPEECH={want_speech}; NO_START={no_start}; NO_SERVICE={no_service}\n" + self.step())
         self.assertEqual(rc, 0, err)
         return [c for c in box.called() if "apt-get" in c]
 
@@ -613,12 +615,25 @@ class InstallShPutsThemInBeforeTheCockpitNeedsThem(unittest.TestCase):
     def test_a_box_that_has_them_is_asked_nothing(self):
         self.assertEqual(self.run_step(1, 0, headers=True), [])
 
+    def test_the_speech_lanes_tools_come_in_the_same_single_request(self):
+        """host_packages asks once per run: what the speech lane builds with rides this request, after the other
+        lanes' packages and without a package named twice (ffmpeg, which the video lane asks for too)."""
+        apt = self.run_step(1, 1, headers=False, want_speech=1)
+        self.assertEqual(len(apt), 1, apt)
+        asked = apt[0].split("install ", 1)[1].split()
+        self.assertEqual(asked[:2], ["python3-dev", "ffmpeg"], asked)
+        self.assertEqual(asked.count("ffmpeg"), 1, asked)
+        self.assertIn("cmake", asked)
+
     def test_the_reason_names_the_lanes_that_asked(self):
         # host_packages says which lanes need the packages; with the MiniMax-H3-Image lane in the
         # run it must be said by its name too (found in review of v1.50)
         t = self.TEXT
         self.assertIn('_pk_why+=("MiniMax-H3-Image")', t)
-        self.assertIn('_pk_reason="the ${_pk_why[0]}, ${_pk_why[1]} and ${_pk_why[2]} lanes"', t)
+        # and by every name, however many asked: the sentence is built from the list since v1.58.0, which added
+        # the speech lane as a fourth (its wording for one to four lanes is run in test_install_speech_default.py)
+        self.assertIn('[ "${#SPEECH_PKGS[@]}" -gt 0 ] && _pk_why+=("speech")', t)
+        self.assertIn('_pk_reason="${_pk_reason%, } and ${_pk_why[$_pk_last]} lanes"', t)
 
     def test_the_minimax_h3_image_lane_alone_needs_the_headers_too(self):
         # sglang[diffusion] builds xatlas against them at its first Load, as for the Qwen-Image 2.1 lane (v1.50)

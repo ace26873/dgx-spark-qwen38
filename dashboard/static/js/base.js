@@ -600,6 +600,7 @@ function copyIconButton(text, label){
 const gpuCapName = cap => cap === 'none' ? 'no cap' : `${fmtN(Number(cap))} MHz`;
 // Same vocabulary as the server's event feed: an action reads as a sentence.
 const ACTION_PHRASE = {
+  speech_boot: p => p.verb === 'enable' ? 'start the speech lane with the box' : 'no longer start the speech lane with the box',
   unit: p => `${p.verb || 'act on'} ${laneLabel(String(p.unit || ''))}`,
   switch: p => `point the boot at ${TARGET_NAME[p.target] || p.target || 'a target'}`,
   flush_cache: () => 'flush the engine cache', abort_all: () => 'abort every generation in flight',
@@ -775,7 +776,8 @@ const TITLE = {unit: p => `${cap1(p.verb)} ${laneLabel(p.unit)}`,
   clients: p => `Set the clients for the window of ${TARGET_NAME[p.target] || p.target}`,
   prepare: p => `Build the ${laneOfTarget(p.target)} lane's runtime`,
   gpu_clock: p => p.cap === 'none' ? 'Lift the GPU clock cap' : `Cap the GPU clock at ${gpuCapName(p.cap)}`};
-const VERB = {unit: p => cap1(p.verb) + ' ' + (LANE_NAME[p.unit] || laneLabel(p.unit)), switch: () => 'Point the boot', flush_cache: () => 'Flush',
+const VERB = {unit: p => cap1(p.verb) + ' ' + (LANE_NAME[p.unit] || laneLabel(p.unit)),
+  speech_boot: p => p.verb === 'enable' ? 'Start it with the box' : 'Stop starting it with the box', switch: () => 'Point the boot', flush_cache: () => 'Flush',
   abort_all: () => 'Abort all', smoke: () => 'Run the probe', diag_bundle: () => 'Write the bundle', fit_opencode: () => 'Fit the limits',
   delete_strays: () => 'Delete them', delete_repo: p => p.lose === 'yes' ? 'Delete it anyway' : 'Delete it',
   delete_image: p => p.lose === 'yes' ? 'Delete it anyway' : 'Delete it', delete_runtime: () => 'Delete it', fetch: () => 'Download', clients: () => 'Set the clients', prepare: () => 'Build it',

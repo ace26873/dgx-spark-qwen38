@@ -15,7 +15,18 @@ everyone).
   voice, port, bind, started with the box or not) and proves nothing twice. `--no-speech` leaves it
   out of the run that passes it, like every `--no-<lane>` (the keep-as-is command of
   docs/operations.md names it); `--with-speech` proves it again. A lane that does not install (no
-  room, a download, a compiler) is said in a NOTE and the rest of the install goes on.
+  room, a download, a compiler) is said in a NOTE and the rest of the install goes on, and the next
+  plain run proves it again (a marker, `~/.config/qwen38/speech.unproved`, says the lane has not
+  proved it serves; a failed update of a lane that was there leaves that lane as it was, and the
+  summary says so). The tools it builds with (cmake, a compiler, ffmpeg, python3-venv) are asked
+  for with the other lanes' packages, at the start of the run, while the terminal can give sudo its
+  password. On a box that boots another lane than its text lane, the round trip is not run beside
+  the lane that serves: the summary says it, and `--with-speech` runs it.
+- **An update asks PyPI nothing for a lane already at the release's pins.** The speech installer
+  upgraded pip at every run, with nothing to say its failure: now that every update runs it, an
+  update made while PyPI did not answer would have ended it on a lane that was serving. The venv
+  is stamped with the sha256 of its requirements file and left alone while that has not moved; the
+  lane is restarted only when a package did.
 - **It is installed stopped**, as its own installer leaves it: running, it holds about 2.5 GB of
   host memory (no GPU memory), which a flash lane's long prompts also want. Start it from the
   cockpit, with `sudo systemctl start qwen38-speech.service`, or with the box
@@ -27,9 +38,12 @@ everyone).
   lines of that unit and nothing else; the cockpit still relays none of the audio routes.
 
 Tests: the installer's step and its summary line against a stub installer, under `set -e`, with an
-installer that fails (tests/test_install_speech_default.py); the collector, the actions and their
-sudoers lines, and the card in the page's own scripts (dashboard/tests/test_speech_card.py, two
-mutants shown red).
+installer that fails, a lane never proved, a box booting another lane, the packages asked for and
+the venv step against stub tools (tests/test_install_speech_default.py); the collector, the actions
+and their sudoers lines, and the card in the page's own scripts (dashboard/tests/test_speech_card.py,
+mutants shown red). On the reference box: the card seen in a browser on a cockpit of its own, and
+the real installer run twice on the lane while it served (the second run asked PyPI nothing, the
+lane was not restarted, its health answered 200).
 
 ## v1.57.0 (2026-11-23): the opencode guard covers webfetch as well as the shell, on both majors
 

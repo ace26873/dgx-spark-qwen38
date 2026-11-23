@@ -89,7 +89,7 @@ class TheCollector(unittest.TestCase):
                              ExecMainStartTimestamp="Mon 2026-11-23 03:31:59 CET")
         out = cp.collect_speech()
         self.assertEqual(asked[0][:3], ["systemctl", "show", UNIT])
-        self.assertEqual((out["installed"], out["active"], out["sub"], out["boot"]), (True, "active", "running", True))
+        self.assertEqual((out["installed"], out["active"], out["boot"]), (True, "active", True))
         # the ROUTES' port and address: the launcher's last --port, not the recognizer's before it nor a comment's
         self.assertEqual((out["host"], out["port"]), ("127.0.0.1", 30124))
         self.assertEqual((out["recognizer"], out["voice"]), ("qwen3-asr-0.6b", "af_heart"))
@@ -105,6 +105,29 @@ class TheCollector(unittest.TestCase):
         systemd_says(cp, ActiveState="inactive", SubState="dead", UnitFileState="disabled")
         out = cp.collect_speech()
         self.assertEqual((out["host"], out["port"], out["recognizer"], out["voice"]), ("127.0.0.1", 30024, "", ""))
+
+    def test_the_launcher_is_read_once_a_round(self):
+        """Four reads and four scans of one file every five seconds, on the thread the units, the feed and the
+        agent share, for values that move when the installer runs (review of v1.58.0)."""
+        cp = load("speech_once")
+        systemd_says(cp, ActiveState="active", UnitFileState="enabled")
+        reads = []
+        real = cp.Path.read_text
+
+        def counting(self, *a, **k):
+            if self.name == "launch-speech.sh":
+                reads.append(1)
+            return real(self, *a, **k)
+        cp.Path.read_text = counting
+        try:
+            cp.collect_speech()
+        finally:
+            cp.Path.read_text = real
+        self.assertEqual(len(reads), 1)
+
+    def test_its_journal_is_in_the_diagnostics_bundle(self):
+        src = (DASH / "cockpit.py").read_text()
+        self.assertIn('(tdp / "journal-speech.txt").write_text(run(["journalctl", "-u", SPEECH_UNIT', src)
 
     def test_it_is_served_to_the_page(self):
         cp = load("speech_tier")
@@ -248,7 +271,15 @@ class TheCard(unittest.TestCase):
         const unboot = {cmd: $('sh-cmd').textContent};
         $('sh-cancel').click();
         const opt = $('log-opt-speech');
-        report({start, boot, stop, unboot, opt: opt.disabled});
+        // the sheet's button and the phrases the toast and the dock say (review of v1.58.0: "speech_boot verb enable")
+        const phrases = [actionPhrase('speech_boot', {verb: 'enable'}), actionPhrase('speech_boot', {verb: 'disable'}),
+                         VERB.speech_boot({verb: 'enable'}), VERB.speech_boot({verb: 'disable'})];
+        // Journal opens the speech lane's own journal, with the 27B serving (it opened the 27B's container log)
+        feed({config: CONFIG, speech: speech({active: 'active'}),
+              lifecycle: {engines: {'qwen38-sglang.service': {state: 'ready', target: 'stock', elapsed: 60}}, events: [], blocked: {}}});
+        card().btn('Journal').click();
+        const want = $('log-src').value;
+        report({start, boot, stop, unboot, opt: opt.disabled, phrases, want});
         """)
         self.assertEqual(r["start"]["title"], "Start the speech lane")
         self.assertEqual(r["start"]["cmd"], f"sudo -n /usr/bin/systemctl start {UNIT}")
@@ -259,6 +290,9 @@ class TheCard(unittest.TestCase):
         self.assertIn("is lost", r["stop"]["warns"])
         self.assertEqual(r["unboot"]["cmd"], f"sudo -n /usr/bin/systemctl disable {UNIT}")
         self.assertIs(r["opt"], False, "its journal can be read")
+        self.assertEqual(r["phrases"], ["start the speech lane with the box", "no longer start the speech lane with the box",
+                                        "Start it with the box", "Stop starting it with the box"])
+        self.assertEqual(r["want"], UNIT)
 
 
 if __name__ == "__main__":

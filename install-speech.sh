@@ -133,7 +133,8 @@ if [ "$ACTION" = uninstall ]; then
     sudo rm -f "$INSTALLED"; sudo systemctl daemon-reload
     echo "unit removed"
   fi
-  rm -f "$LAUNCHER"
+  # and install.sh's marker of a lane that had not proved it serves, beside the launcher
+  rm -f "$LAUNCHER" "${LAUNCHER%/*}/speech.unproved"
   # Only what this script put there: LANE_DIR can be shared with other work. The models
   # stay, as the image and video lanes keep their weights: the reclaim command is printed.
   if [ -d "$LANE_DIR" ]; then
@@ -222,14 +223,32 @@ fi
 LLAMA_SERVER="$LLAMA_DIR/build/bin/llama-server"
 
 step "3/6 Python runtime ($VENV)"
+NEW_VENV=0
 if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -m pip --version >/dev/null 2>&1; then
   python3 -m venv --clear "$VENV" || die "could not make the venv at $VENV"
+  NEW_VENV=1
 fi
-"$VENV/bin/python" -m pip install --quiet --upgrade pip >/dev/null
-# Wheels only: every pin has an aarch64 wheel, so nothing is compiled and no header or
-# compiler is needed (the image and video lanes learned that the hard way with python3-dev).
-"$VENV/bin/pip" install --quiet --only-binary :all: -r "$HERE/speech-requirements.txt" \
-  || die "the venv's packages did not install. Causes: no internet, or PyPI without a wheel for this Python (python3 --version should say 3.12)."
+# The pins this venv was filled from, by the sha256 of the requirements file: a venv already at them asks PyPI
+# nothing. install.sh runs this at every update since v1.58.0, and "pip install --upgrade pip" asked the index each
+# time, with nothing to say its failure: an update made while PyPI did not answer ended this installer on a lane
+# that was installed and serving (review of v1.58.0, 2026-11-23).
+REQ_SHA="$(sha256sum "$HERE/speech-requirements.txt" | cut -d' ' -f1)"; REQ_STAMP="$VENV/.qwen38-requirements"
+if [ "$NEW_VENV" -eq 0 ] && [ "$(cat "$REQ_STAMP" 2>/dev/null || true)" = "$REQ_SHA" ]; then
+  echo "packages already at this release's pins"
+else
+  # (a freeze that fails is an empty list, not the end of this script under pipefail)
+  pkgs(){ { "$VENV/bin/python" -m pip freeze 2>/dev/null || true; } | sha256sum; }
+  PKGS_BEFORE="$(pkgs)"
+  # pip's own upgrade is a convenience on a new venv, never a reason to stop
+  [ "$NEW_VENV" -eq 0 ] || "$VENV/bin/python" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+  # Wheels only: every pin has an aarch64 wheel, so nothing is compiled and no header or
+  # compiler is needed (the image and video lanes learned that the hard way with python3-dev).
+  "$VENV/bin/pip" install --quiet --only-binary :all: -r "$HERE/speech-requirements.txt" \
+    || die "the venv's packages did not install. Causes: no internet, or PyPI without a wheel for this Python (python3 --version should say 3.12)."
+  printf '%s\n' "$REQ_SHA" > "$REQ_STAMP"
+  # a running lane serves the packages it loaded: restarted only when one moved
+  [ "$PKGS_BEFORE" = "$(pkgs)" ] || CHANGED=1
+fi
 cmp -s "$HERE/speech-server.py" "$LANE_DIR/speech-server.py" \
   || { install -m 644 "$HERE/speech-server.py" "$LANE_DIR/speech-server.py"; CHANGED=1; }
 echo "venv ready: kokoro-onnx $("$VENV/bin/python" -c 'import importlib.metadata as m; print(m.version("kokoro-onnx"))')"
@@ -355,6 +374,8 @@ if [ -r "$CG/cpu.stat" ]; then
   echo "   memory : $(awk -v k="$RSS_KB" 'BEGIN { printf "%.1f GiB", k / 1048576 }') resident"
 fi
 
+# proved: install.sh's marker of a lane that had not proved it serves goes (its speech_step)
+rm -f "$CONFIG_DIR/speech.unproved"
 step "Done: the speech lane is installed and proved it hears what it says, on $BIND:$PORT"
 echo "  transcribe : curl http://$BIND:$PORT/v1/audio/transcriptions -F file=@audio.wav -F language=en"
 echo "  speak      : curl http://$BIND:$PORT/v1/audio/speech -H 'Content-Type: application/json' \\"

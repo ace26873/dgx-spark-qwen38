@@ -1439,16 +1439,21 @@ SPEECH_UNIT_PATH = SYSTEMD_DIR / SPEECH_UNIT
 SPEECH_LAUNCHER = CONFIG_DIR / "launch-speech.sh"
 
 
-def speech_flag(flag: str, fallback: str) -> str:
-    """What the speech lane's launcher passes for flag, its last word (the recognizer's --host and --port come
-    first in it, the routes' own after them: install-speech.sh's launcher_flag), fallback when it says nothing."""
+def speech_flags(*flags: str) -> dict:
+    """What the speech lane's launcher passes for each of these flags, its last word (the recognizer's --host and
+    --port come first in it, the routes' own after them: install-speech.sh's launcher_flag). The launcher is read
+    once for all of them; a flag it does not pass, or a launcher that cannot be read, is absent from the answer."""
     try:
         text = SPEECH_LAUNCHER.read_text(errors="replace")
     except OSError:
-        return fallback
-    found = re.findall(rf"(?<!\S){re.escape(flag)}\s+([^\s'\\]+)", "\n".join(
-        ln for ln in text.splitlines() if not ln.lstrip().startswith("#")))
-    return found[-1] if found else fallback
+        return {}
+    text = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+    out = {}
+    for flag in flags:
+        found = re.findall(rf"(?<!\S){re.escape(flag)}\s+([^\s'\\]+)", text)
+        if found:
+            out[flag] = found[-1]
+    return out
 
 
 @guard
@@ -1456,20 +1461,20 @@ def collect_speech():
     """5 s tier: the speech lane as the Lanes view's Speech card reads it. Its unit's state from systemd, and
     what its launcher serves (the routes' port and address, the recognizer, the default voice). The lane has no
     key and listens on loopback unless its installer was told otherwise: the address is shown as it is."""
-    out = {"unit": SPEECH_UNIT, "installed": SPEECH_UNIT_PATH.exists(), "active": "inactive", "sub": "dead",
-           "boot": False, "since": "", "port": 30024, "host": "127.0.0.1", "recognizer": "", "voice": ""}
+    out = {"unit": SPEECH_UNIT, "installed": SPEECH_UNIT_PATH.exists(), "active": "inactive",
+           "boot": False, "port": 30024, "host": "127.0.0.1", "recognizer": "", "voice": ""}
     if not out["installed"]:
         return out
-    raw = run(["systemctl", "show", SPEECH_UNIT, "-p", "ActiveState,SubState,UnitFileState,ExecMainStartTimestamp"])
+    raw = run(["systemctl", "show", SPEECH_UNIT, "-p", "ActiveState,UnitFileState"])
     d = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
-    out.update(active=d.get("ActiveState", "?"), sub=d.get("SubState", "?"),
-               boot=d.get("UnitFileState") == "enabled", since=d.get("ExecMainStartTimestamp", ""))
+    out.update(active=d.get("ActiveState", "?"), boot=d.get("UnitFileState") == "enabled")
+    said = speech_flags("--port", "--host", "--asr-name", "--default-voice")
     try:
-        out["port"] = int(speech_flag("--port", "30024"))
+        out["port"] = int(said.get("--port", "30024"))
     except ValueError:
         pass
-    out.update(host=speech_flag("--host", "127.0.0.1"), recognizer=speech_flag("--asr-name", ""),
-               voice=speech_flag("--default-voice", ""))
+    out.update(host=said.get("--host", "127.0.0.1"), recognizer=said.get("--asr-name", ""),
+               voice=said.get("--default-voice", ""))
     return out
 
 
@@ -6661,6 +6666,8 @@ def job_diag_bundle(job: Job):
         (tdp / "journal-transcribe.txt").write_text(run(["journalctl", "-u", TRANSCRIBE_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-lfm25.txt").write_text(run(["journalctl", "-u", LFM25_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-lfm3.txt").write_text(run(["journalctl", "-u", LFM3_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
+        # the speech lane's too (v1.58.0): units.txt said it failed, and the bundle did not hold why
+        (tdp / "journal-speech.txt").write_text(run(["journalctl", "-u", SPEECH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-opencode-web.txt").write_text(run(["journalctl", "-u", AGENT_UNIT, "-n", "200", "--no-pager", "-o", "short-iso"], timeout=15))
         for cont in CONTAINERS:
             (tdp / f"docker-{cont}.txt").write_text(run(["docker", "logs", "--tail", "600", cont], timeout=15, merge_err=True))

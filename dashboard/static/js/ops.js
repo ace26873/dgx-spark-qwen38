@@ -749,7 +749,8 @@ function wireLogs(){
 function defaultLogSource(){
   const s = servingEngine(); const u = LOGS_WANT.src || (s ? s[0] : enabledUnit());
   const e = engines()[u] || {};
-  if (isImageLane(u) || u === VIDEO_UNIT || u === PROXY_UNIT || e.state === 'failed' || e.restarting) return u;
+  // the speech lane has a journal and no container (v1.58: its card's Journal button opened the 27B's container log)
+  if (isImageLane(u) || u === VIDEO_UNIT || u === PROXY_UNIT || u === SPEECH_UNIT || e.state === 'failed' || e.restarting) return u;
   return u === UFLASH ? 'qwen38-flash' : u === KOLIBRI_UNIT ? 'qwen38-kolibri' : u === NEMOTRON_UNIT ? 'qwen38-nemotron'
     : u === NEMOTRON_SUPER_UNIT ? 'qwen38-nemotron-super' : u === FLASH_LOCAL_UNIT ? 'qwen38-flash-local'
     : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth'

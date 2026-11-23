@@ -1970,17 +1970,34 @@ side_runtime_waits(){  # $1 lane: prints the runtime lines the lane's update lac
 # (2.5 GB of host memory at rest: started from the cockpit, or with the box by SPEECH_BOOT=1). A lane that does not
 # install (no room, a download, a compiler) is said, and the rest of the run goes on.
 SPEECH_UNIT_PATH="/etc/systemd/system/qwen38-speech.service"
-SPEECH_STATE=off
-speech_step(){
+# Written when the lane's installer fails, removed when its round trip passes: a lane whose first proof failed has
+# its unit, and a later run that took the unit for "installed" passed --no-smoke for good and called it up to date
+# (review of v1.58.0, 2026-11-23). While the marker is there, a plain run proves the lane again.
+SPEECH_UNPROVED="$CONFIG_DIR/speech.unproved"
+SPEECH_STATE=off; SPEECH_HAD=0
+speech_step(){  # $1 "beside" on a box that boots another lane than its text lane: nothing is proved beside what serves
   [ "$WANT_SPEECH" -eq 1 ] || return 0
-  local had=0 opt=()
-  [ -f "$SPEECH_UNIT_PATH" ] && had=1
-  if [ "$had" -eq 1 ] && [ "$WITH_SPEECH" -eq 0 ]; then opt=(--no-smoke); fi
+  local opt=()
+  SPEECH_HAD=0; [ -f "$SPEECH_UNIT_PATH" ] && SPEECH_HAD=1
+  if [ "${1:-}" = beside ] && [ "$WITH_SPEECH" -eq 0 ]; then
+    # as for every lane on that path: its round trip starts two engines on the CPU beside a lane that may be at work
+    opt=(--no-smoke)
+  elif [ "$SPEECH_HAD" -eq 1 ] && [ "$WITH_SPEECH" -eq 0 ] && [ ! -e "$SPEECH_UNPROVED" ]; then
+    opt=(--no-smoke)
+  fi
   step "Speech lane (speech recognition and synthesis on the CPU, beside any lane)"
   if "$REPO_DIR/install-speech.sh" ${opt[@]+"${opt[@]}"}; then
-    if [ "${#opt[@]}" -eq 0 ]; then SPEECH_STATE=proved; else SPEECH_STATE=installed; fi
+    if [ "${#opt[@]}" -eq 0 ]; then
+      SPEECH_STATE=proved; rm -f "$SPEECH_UNPROVED"
+    elif [ "$SPEECH_HAD" -eq 0 ] || [ -e "$SPEECH_UNPROVED" ]; then
+      # installed and never proved (a box booting another lane): said, and the next plain run of a box back on its
+      # text lane proves it
+      SPEECH_STATE=unproved; : > "$SPEECH_UNPROVED"
+    else
+      SPEECH_STATE=installed
+    fi
   else
-    SPEECH_STATE=failed
+    SPEECH_STATE=failed; : > "$SPEECH_UNPROVED"
     echo "NOTE: the speech lane did not install or update (the lines above say why); the rest goes on. Retry with ./install-speech.sh"
   fi
 }
@@ -1988,7 +2005,10 @@ speech_line(){  # the summary's line for it
   case "$SPEECH_STATE" in
     proved)    echo "  Speech     : installed and proved it hears what it says; start it from the cockpit (or: sudo systemctl start qwen38-speech.service); docs/speech-lane.md" ;;
     installed) echo "  Speech     : installed and up to date$(systemctl is-active --quiet qwen38-speech.service 2>/dev/null && echo ', running')" ;;
-    failed)    echo "  Speech     : NOT ready, see its NOTE above: ./install-speech.sh installs it" ;;
+    unproved)  echo "  Speech     : installed, its round trip not run beside the lane that serves: ./install.sh --with-speech (or ./install-speech.sh) proves it" ;;
+    # an update that failed leaves the lane that was there as it was: not the same news as a lane that never came
+    failed)    if [ "$SPEECH_HAD" -eq 1 ]; then echo "  Speech     : its update did NOT go through, see its NOTE above; the lane installed before is as it was: ./install-speech.sh tries again"
+               else echo "  Speech     : NOT ready, see its NOTE above: ./install-speech.sh installs it"; fi ;;
     off)       if [ -f "$SPEECH_UNIT_PATH" ]; then echo "  Speech     : left as it is, as asked (--no-speech)"
                else echo "  Speech     : left out of this run, as asked (--no-speech); ./install-speech.sh installs it"; fi ;;
   esac
@@ -2369,16 +2389,32 @@ if [ "$NO_START" -eq 0 ] && [ "$NO_SERVICE" -eq 0 ] && [ "$WANT_VIDEO" -eq 1 ] \
    && ! { command -v ffmpeg && command -v ffprobe; } >/dev/null 2>&1; then
   HOST_PKGS+=(ffmpeg)
 fi
+# The speech lane (v1.58.0) builds llama.cpp for the CPU, makes a venv and reads audio with ffmpeg: the tools its own
+# installer asks for at its step 1, asked for here too. host_packages asks once per run, and it is this call: that
+# installer's own request, later in the run, is refused, and it stopped on "cmake is missing" on a box without a
+# compiler (review of v1.58.0, 2026-11-23).
+SPEECH_PKGS=()
+if [ "$NO_START" -eq 0 ] && [ "$NO_SERVICE" -eq 0 ] && [ "$WANT_SPEECH" -eq 1 ]; then
+  for _t in git:git curl:curl cmake:cmake c++:build-essential taskset:util-linux; do
+    command -v "${_t%%:*}" >/dev/null 2>&1 || SPEECH_PKGS+=("${_t#*:}")
+  done
+  command -v ffmpeg >/dev/null 2>&1 || SPEECH_PKGS+=(ffmpeg)
+  python3 -c 'import venv, ensurepip' 2>/dev/null || SPEECH_PKGS+=(python3-venv)
+fi
+for _t in ${SPEECH_PKGS[@]+"${SPEECH_PKGS[@]}"}; do
+  case " ${HOST_PKGS[*]-} " in *" $_t "*) ;; *) HOST_PKGS+=("$_t") ;; esac
+done
 # name the lanes that asked, as the README promises it does (found in review of v1.50); no
 # `if [ "$WANT_<lane>" -eq 1 ]; then` shape here: the lane registry reads those blocks as the
 # installs themselves (one per lane, each running its installer)
 _pk_why=(); [ "$WANT_IMAGE" -eq 1 ] && _pk_why+=("image"); [ "$WANT_VIDEO" -eq 1 ] && _pk_why+=("video")
 [ "$WANT_IMAGE_H3" -eq 1 ] && _pk_why+=("MiniMax-H3-Image")
+[ "${#SPEECH_PKGS[@]}" -gt 0 ] && _pk_why+=("speech")
 case "${#_pk_why[@]}" in
   0) _pk_reason="" ;;
   1) _pk_reason="the ${_pk_why[0]} lane" ;;
-  2) _pk_reason="the ${_pk_why[0]} and ${_pk_why[1]} lanes" ;;
-  *) _pk_reason="the ${_pk_why[0]}, ${_pk_why[1]} and ${_pk_why[2]} lanes" ;;
+  *) _pk_last=$(( ${#_pk_why[@]} - 1 ))
+     _pk_reason="the $(printf '%s, ' "${_pk_why[@]:0:$_pk_last}")"; _pk_reason="${_pk_reason%, } and ${_pk_why[$_pk_last]} lanes" ;;
 esac
 [ "${#HOST_PKGS[@]}" -eq 0 ] || host_packages "$_pk_reason" "${HOST_PKGS[@]}" || true
 
@@ -4336,7 +4372,7 @@ else
     side_install lfm3 "$(side_mode lfm3 "$WITH_LFM3")" "$WITH_LFM3" \
       || echo "NOTE: the Liquid AI LFM3 lane did not install or update; retry with ./install-lfm3.sh --no-smoke"
   fi
-  speech_step
+  speech_step beside
   SERVING_LANE=""
   [ "$IMAGE_BOOT" -eq 1 ] && SERVING_LANE="image"
   [ "$VIDEO_BOOT" -eq 1 ] && SERVING_LANE="video"
