@@ -927,6 +927,65 @@ class TheCockpitNamesThePin(Scratch, unittest.TestCase):
         self.assertIn("./install.sh brings it in line", js)
 
 
+class A1xPluginIsNamedOnABoxThatServes2(unittest.TestCase):
+    """OpenCode 2 skips a plugin written for 1.x and says so only in its server log (plugin/module.ts of
+    2.3.2 wants a default definition with an id and a setup or effect function; found on the reference
+    box on 2026-11-22, where a plugin of its owner's had been silent since the move to 2). The install
+    names those files on a box that serves OpenCode 2, and touches none of them."""
+
+    V1_NAMED = 'export const Briefing = async ({ client }) => ({ event: async () => {} })\n'
+    V1_DEFAULT = 'export default async function (ctx) { return {} }\n'
+    V2_INLINE = 'export default {\n  id: "me.x",\n  async setup(ctx) { return () => {} },\n}\n'
+    V2_BY_NAME = 'const plugin = { id: "me.y", effect: (host) => host }\nexport default plugin\n'
+    V1_TALKING_ABOUT_V2 = '// a 2.x plugin has id: and setup(\nexport const A = async () => ({})\n'
+
+    def block(self):
+        text = INSTALL.read_text()
+        start = text.index("oc_v1_shaped_plugins() {")
+        end = text.index("# The rest of this run (the Agent tab's unit, the oc launcher)", start)
+        return text[start:end]
+
+    def run_block(self, files, major):
+        home = pathlib.Path(tempfile.mkdtemp(prefix="oc-plug-"))
+        self.addCleanup(shutil.rmtree, home, True)
+        for rel, body in files.items():
+            f = home / ".config" / "opencode" / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+        before = {rel: (home / ".config" / "opencode" / rel).read_bytes() for rel in files}
+        r = subprocess.run(["bash", "-c", f"set -euo pipefail\nOC_SERVE_MAJOR={major}\n" + self.block()],
+                           capture_output=True, text=True, timeout=60, env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel, body in before.items():
+            self.assertEqual((home / ".config" / "opencode" / rel).read_bytes(), body, "the run touched a plugin")
+        return r.stdout + r.stderr
+
+    def test_the_1x_shapes_are_named_and_the_2x_ones_are_not(self):
+        out = self.run_block({
+            "plugins/briefing.js": self.V1_NAMED, "plugins/old-default.ts": self.V1_DEFAULT,
+            "plugin/in-the-other-dir.js": self.V1_NAMED, "plugins/talks.js": self.V1_TALKING_ABOUT_V2,
+            "plugins/good.js": self.V2_INLINE, "plugins/good-by-name.ts": self.V2_BY_NAME,
+            "plugins/auto-continue-v2.js": (REPO / "extras" / "opencode" / "auto-continue-v2.js").read_text(),
+            "plugins/notes.txt": "not a plugin\n", "plugins/a-package/index.js": self.V1_NAMED,
+        }, major=2)
+        self.assertIn("NOTE: these plugins do not look written for OpenCode 2", out)
+        named = [l.strip() for l in out.splitlines() if l.startswith("        ")]
+        self.assertEqual(sorted(pathlib.Path(n).name for n in named),
+                         ["briefing.js", "in-the-other-dir.js", "old-default.ts", "talks.js"], out)
+        self.assertIn("./install.sh --opencode 1 goes back", out)
+
+    def test_the_repos_own_1x_plugin_would_be_named(self):
+        # the witness that the reading tells the two apart on real files: this repo ships both
+        out = self.run_block({"plugins/auto-continue.js": (REPO / "extras" / "opencode" / "auto-continue.js").read_text()}, 2)
+        self.assertIn("auto-continue.js", out)
+
+    def test_nothing_is_said_without_such_a_plugin_or_on_a_1x_box(self):
+        self.assertEqual(self.run_block({"plugins/good.js": self.V2_INLINE}, major=2), "")
+        self.assertEqual(self.run_block({}, major=2), "")
+        self.assertEqual(self.run_block({"plugins/briefing.js": self.V1_NAMED}, major=1), "",
+                         "1.x runs a 1.x plugin: nothing to say")
+
+
 class AMissingOpencodeIsSaidPlainly(Scratch, unittest.TestCase):
     """A first-time user with no opencode must read what is missing and what to run, in
     the installer's last lines, from the oc launcher and in the cockpit's Agent tab."""

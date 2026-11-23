@@ -2925,6 +2925,41 @@ elif [ "${OC_SERVE_MAJOR:-1}" != "2" ] && [ "${OC_WAS_2:-0}" -eq 1 ] && [ -f "$O
     echo "NOTE: could not restore the 1.x auto-continue plugin; by hand: cp $REPO_DIR/extras/opencode/auto-continue.js $OC_PLUGIN_DIR/ && take $OC_PLUGIN_DIR/auto-continue-v2.js out"
   fi
 fi
+# A 1.x plugin of the person's own is skipped by OpenCode 2 without a word outside its server log:
+# 2.3.2 loads a plugin only when its default export is a definition with an id and an effect or setup
+# function (plugin/module.ts of v2.3.2: "Plugin must export a default definition with an id and an
+# effect or setup function"), and a 1.x plugin exports a function. Found on the reference box on
+# 2026-11-22: a plugin of its owner's had been silent since the move to 2. On a box that serves
+# OpenCode 2 the run names the files of the two plugin directories 2.3.2 scans (plugin/ and plugins/,
+# plugin/source-directory.ts) that do not have that shape, read as text; it touches none of them.
+oc_v1_shaped_plugins() {  # the .js/.ts files of the config's plugin dirs with no v2 default definition
+  python3 - "$HOME/.config/opencode" <<'OCPLUG'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+for d in ("plugin", "plugins"):
+    for f in (sorted((root / d).iterdir()) if (root / d).is_dir() else ()):
+        if not (f.is_file() and f.suffix in (".js", ".ts")):
+            continue
+        try:
+            code = re.sub(r"/\*.*?\*/|//[^\n]*", "", f.read_text(errors="replace"), flags=re.S)
+        except OSError:
+            continue
+        if not (re.search(r"\bexport\s+default\b", code) and re.search(r"\bid\s*:", code)
+                and re.search(r"\b(setup|effect)\s*[:(]", code)):
+            print(f)
+OCPLUG
+}
+if [ "${OC_SERVE_MAJOR:-1}" = "2" ]; then
+  OC_V1_PLUGINS="$(oc_v1_shaped_plugins 2>/dev/null || true)"
+  if [ -n "$OC_V1_PLUGINS" ]; then
+    echo "NOTE: these plugins do not look written for OpenCode 2, which would skip them and say so only in"
+    echo "      its server log (a 2.x plugin default-exports a definition with an id and a setup or effect"
+    echo "      function; a 1.x one exports a function):"
+    printf '%s\n' "$OC_V1_PLUGINS" | sed 's/^/        /'
+    echo "      Port them (extras/opencode/auto-continue-v2.js shows the shape) or move them out of that"
+    echo "      directory; ./install.sh --opencode 1 goes back to the OpenCode that runs them."
+  fi
+fi
 # The rest of this run (the Agent tab's unit, the oc launcher) finds opencode on PATH, and
 # a first install puts it in the shell's PATH the way opencode's own installer does.
 if [ -n "$OC_FOUND" ] && [ "$OC_FOUND" -ef "$OC_HOME_BIN" ]; then
