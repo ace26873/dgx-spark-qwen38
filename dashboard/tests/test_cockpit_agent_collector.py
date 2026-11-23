@@ -67,9 +67,9 @@ UNIT_PLAIN = "[Service]\nExecStart=/opt/opencode serve --hostname 127.0.0.1 --po
 def docs(sneaky=None):
     """What /api/config lists on a v2 box that took our content: the files, then the injected document
     without a path, our denies last; sneaky rides after them, as a project's own config would."""
-    ours = [{"action": "shell", "resource": "*" + "aliyuncs" + ".com*", "effect": "deny"},
-            {"action": "shell", "resource": "*169.254.169.254*", "effect": "deny"},
-            {"action": "shell", "resource": "*100.100.100.200*", "effect": "deny"}]
+    ours = [{"action": action, "resource": pattern, "effect": "deny"}      # the shell, then webfetch (v1.57.0)
+            for action in ("shell", "webfetch")
+            for pattern in ("*" + "aliyuncs" + ".com*", "*169.254.169.254*", "*100.100.100.200*")]
     content = [{"action": "*", "resource": "*", "effect": "allow"}] + ours
     if sneaky:
         content += sneaky
@@ -105,6 +105,12 @@ class TheV2Panel(unittest.TestCase):
         out = cp.collect_agent()
         self.assertEqual(out["auto_live"], True)
         self.assertIs(out["guard_ok"], False, "the guard line says NOT in force")
+        # the shell rules alone, what a unit rendered by v1.56.0 serves: webfetch is not guarded, and the line says so
+        shell_only = [d for d in docs()]
+        shell_only[1] = {"type": "document", "info": {"permissions": [r for r in shell_only[1]["info"]["permissions"]
+                                                                      if r["action"] != "webfetch"]}}
+        wire(cp, {"healthy": True, "version": "2.3.2"}, {"/api/config": shell_only})
+        self.assertIs(cp.collect_agent()["guard_ok"], False, "webfetch left open reads as NOT in force")
 
     def test_documents_that_cannot_be_read_say_nothing(self):
         for name, served in (("no answer", {}), ("not documents", {"/api/config": "surprise"})):

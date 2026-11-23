@@ -427,6 +427,9 @@ def _v2_rule_matches(rule, action: str, resource: str) -> bool:
     return _v2_wild(action, a) and _v2_wild(resource, r)
 
 
+GUARDED_ACTIONS = ("shell", "webfetch")   # the OpenCode 2 actions the guard's patterns are denied to
+
+
 def config_docs_auto_state(entries, deny_patterns=None) -> dict | None:
     """What OpenCode 2's served /api/config says about tool calls, for the Agent line.
     The documents merge in the order the server lists them and the last matching rule
@@ -463,7 +466,10 @@ def config_docs_auto_state(entries, deny_patterns=None) -> dict | None:
 
     auto = evaluate("shell", "echo x") == "allow"
     # no pattern to check (the guard's list could not be read) proves nothing: None, never True
-    deny_ok = all(evaluate("shell", p) == "deny" for p in deny_patterns) if deny_patterns else None
+    # for the shell and for webfetch (v1.57.0, decision 1561: the fetches of 2026-11-21 left through webfetch,
+    # which the shell rules never saw): the guard is in force only when both are denied these hosts
+    deny_ok = (all(evaluate(action, p) == "deny" for action in GUARDED_ACTIONS for p in deny_patterns)
+               if deny_patterns else None)
     return {"auto": auto, "deny_ok": deny_ok}
 
 

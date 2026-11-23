@@ -1183,7 +1183,18 @@ class PureHelpers(unittest.TestCase):
     def test_config_docs_auto_state(self):
         d = lambda perms, path="/f.json": {"type": "document", "path": path,
                                            "info": {"permissions": perms}}
-        guard = [{"action": "shell", "resource": "*a.example*", "effect": "deny"}]
+        guard = [{"action": "shell", "resource": "*a.example*", "effect": "deny"},
+                 {"action": "webfetch", "resource": "*a.example*", "effect": "deny"}]
+        # the guard covers the shell AND webfetch since v1.57.0 (decision 1561: the fetches of 2026-11-21 left
+        # through webfetch): shell rules alone, the shape of v1.56.0, no longer read as "in force"
+        self.assertEqual(ar.config_docs_auto_state(
+            [d([{"action": "*", "resource": "*", "effect": "allow"}] + guard[:1], path=None)],
+            ["*a.example*"]), {"auto": True, "deny_ok": False})
+        # and a later allow of the host for webfetch alone re-opens it
+        self.assertEqual(ar.config_docs_auto_state(
+            [d([{"action": "*", "resource": "*", "effect": "allow"}] + guard
+               + [{"action": "webfetch", "resource": "*a.example*", "effect": "allow"}], path=None)],
+            ["*a.example*"]), {"auto": True, "deny_ok": False})
         # the unit's injected content (the document with no path) allows all, its own
         # denies come last: auto, and the guard holds
         entries = [d(guard, path="/f.json"),
