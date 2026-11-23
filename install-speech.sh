@@ -204,8 +204,15 @@ else
   # memory edge is the one place a compile could hurt it.
   JOBS=$(( $(awk '/^MemAvailable:/ { print int($2 / 1048576) }' /proc/meminfo) / 3 ))
   [ "$JOBS" -ge 1 ] || JOBS=1; [ "$JOBS" -le "${#CORE_LIST[@]}" ] || JOBS=${#CORE_LIST[@]}
+  # And no web UI: llama.cpp's build downloads a prebuilt one from a Hugging Face bucket by build number,
+  # and a shallow fetch has build number 1, which is not there, so it took "latest". The day upstream's
+  # UI changed its files, this commit's own check refused them ("UI: missing required asset(s)") and
+  # every new install failed (issue #75, 2026-11-22). The lane serves an API, never that page. A build
+  # directory that failed that way keeps the downloaded files and would embed them again: they go first.
+  rm -rf "$LLAMA_DIR/build/tools/ui"
   cmake -S "$LLAMA_DIR" -B "$LLAMA_DIR/build" -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF \
-    -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF > "$BUILD_LOG" 2>&1 \
+    -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+    -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_UI=OFF > "$BUILD_LOG" 2>&1 \
     && taskset -c "$ASR_CPUS,$TTS_CPUS" cmake --build "$LLAMA_DIR/build" -j "$JOBS" --target llama-server \
        >> "$BUILD_LOG" 2>&1 \
     || { tail -20 "$BUILD_LOG"; die "the llama.cpp build failed; the lines above and $BUILD_LOG say why."; }

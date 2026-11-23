@@ -211,6 +211,20 @@ class TheGuards(unittest.TestCase):
         self.assertIn("-DGGML_CUDA=OFF", SCRIPT)
         self.assertNotRegex(SCRIPT, r"GGML_CUDA=ON")
 
+    def test_the_build_downloads_no_web_ui(self):
+        # issue #75 (2026-11-22): llama.cpp's build fetches a prebuilt web UI from a Hugging Face bucket, by
+        # build number, and a shallow fetch of the pin has build number 1, which is not there, so it took
+        # "latest": the day upstream's UI changed its files, the pinned commit's own check refused them
+        # ("UI: missing required asset(s)") and every new install of the lane failed. The lane serves an API,
+        # never that page: the build asks for no prebuilt UI, and none is built with npm either.
+        build = SCRIPT[SCRIPT.index('cmake -S "$LLAMA_DIR"'):SCRIPT.index("--target llama-server")]
+        self.assertIn("-DLLAMA_USE_PREBUILT_UI=OFF", build)
+        self.assertIn("-DLLAMA_BUILD_UI=OFF", build)
+        # a build directory that failed on those files keeps them, and the build embeds what it finds
+        # there even with the download off (measured 2026-11-23: "embedding stale assets", same error):
+        # they are removed before the configure step
+        self.assertLess(SCRIPT.index('rm -rf "$LLAMA_DIR/build/tools/ui"'), SCRIPT.index('cmake -S "$LLAMA_DIR"'))
+
     def test_it_is_not_started_at_boot_unless_asked(self):
         self.assertIn('if [ "${SPEECH_BOOT:-0}" = "1" ]; then sudo systemctl enable', SCRIPT)
         self.assertEqual(len(re.findall(r"systemctl enable", SCRIPT)), 1)
