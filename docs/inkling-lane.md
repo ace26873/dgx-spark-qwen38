@@ -8,13 +8,13 @@ counts 26.4B parameters with 3.4B active, 5.4B "effective" with the two extra pa
 which SGLang's DSpark speculative decoding drafts with. This lane serves `thinkingmachines/Inkling-2-Mini` at its
 pinned revision on the same port and behind the same proxy and key as the other text lanes, as model `inkling-2-mini`.
 
-It is the light text lane: about 60 % of the 27B lane's GPU memory, with the model's own window. The 27B stays the lane
-a box serves by default, and the faster one on this box, as measured below.
+The lane serves it at the 27B lane's memory share, 0.76, where the cookbook's recipe gives 0.45: at 0.76 its KV cache
+holds the model's whole window. The 27B stays the lane a box serves by default.
 
-What is measured of it is the bench of 2026-11-22 and the quality runs of 2026-11-23, on the reference box (an ASUS
-Ascent GX10, 128 GB): the recipe this lane runs, in its image, from a container of the bench's own on a port of its own,
-with no key, the 27B stopped; the 27B measured the same evening by the same tools. The lane's own unit (the key by
-`--config`, the scheduler parked when idle, the caches it keeps) has not served on a box yet.
+What is measured of it, on the reference box (an ASUS Ascent GX10, 128 GB): the recipe at the lane's share of 0.76 on
+2026-11-24, from a container of its own, its memory and its pool; and at the recipe's share of 0.45, the bench of
+2026-11-22 against the 27B lane the same evening by the same tools, and the quality runs of 2026-11-22 to 24. The
+quality does not depend on the share; the memory and the pool do.
 
 ## Why SGLang, and this image
 
@@ -22,7 +22,7 @@ Inkling 2 Mini is in no SGLang release yet. SGLang's cookbook serves it from the
 (its support is pull request sgl-project/sglang#51926) and gives a recipe for each platform, the DGX Spark's among
 them, with and without DSpark. The lane pins the arm64 build of that image by its digest (its build label says
 `nightly-dev-20261120-03fde9cc`), 38.6 GB unpacked and 16.4 GB to download, and runs the cookbook's DGX Spark recipe
-with DSpark, word for word.
+with DSpark, word for word but for its memory share.
 
 ## The serving command
 
@@ -31,7 +31,7 @@ with DSpark, word for word.
 ```
 python3 -m sglang.launch_server --model-path thinkingmachines/Inkling-2-Mini --revision <pinned sha> --tp 1 --ep 1 \
   --served-model-name inkling-2-mini --attention-backend fa4 --dtype bfloat16 --page-size 128 \
-  --context-length 1048576 --mem-fraction-static 0.45 --max-running-requests 48 \
+  --context-length 1048576 --mem-fraction-static 0.76 --max-running-requests 48 \
   --speculative-algorithm DSPARK --speculative-num-draft-tokens 8 --grammar-backend xgrammar --enable-multimodal \
   --sleep-on-idle --enable-metrics --enable-cache-report --reasoning-parser inkling --tool-call-parser inkling2 \
   --config /out/engine-secrets.yaml --host 127.0.0.1 --port 30000
@@ -40,15 +40,17 @@ python3 -m sglang.launch_server --model-path thinkingmachines/Inkling-2-Mini --r
 with `MAX_JOBS=4` and the recipe's four `SGLANG_OPT_*` variables of its DSpark arm in its environment.
 
 - **The recipe's own**: tensor and expert parallelism of one, the FA4 attention backend, bfloat16, pages of 128
-  tokens, a static memory share of 0.45, xgrammar, the 8 draft tokens DSpark verifies per step, and `MAX_JOBS=4`, the
-  cap on the kernels the engine compiles at its start.
+  tokens, xgrammar, the 8 draft tokens DSpark verifies per step, and `MAX_JOBS=4`, the cap on the kernels the engine
+  compiles at its start.
+- **The memory share, 0.76**, the 27B lane's (decision of Hasan, 2026-11-24: the most context and speed the box
+  gives), where the recipe gives 0.45. At 0.45 the KV cache held 490,496 tokens (2026-11-22), under half the window; at
+  0.76 it holds 1,091,200 (2026-11-24), the window whole, which decides the clients' limits below.
 - **The draft is in the checkpoint**: SGLang takes `mtp.safetensors` from the model's own repository ("DSpark draft
   weights are bundled in the target checkpoint", its journal), by the model's name and with no revision, so through
   `refs/main`, which the lane's fetch pins at the revision it downloads.
-- **The window**, 1,048,576 tokens, is the model's (its config's `model_max_length`): SGLang took it by itself at the
-  bench, and the unit says it so that no later default moves it. The KV cache that boot held at the share of 0.45 is
-  490,496 tokens, under half the window: one request fits in that pool, which decides the clients' limits below.
-- **`--max-running-requests 48`** is the number SGLang set by itself at the bench, written down for the same reason.
+- **The window**, 1,048,576 tokens, is the model's (its config's `model_max_length`): SGLang takes it by itself, and
+  the unit says it so that no later default moves it.
+- **`--max-running-requests 48`** is the number SGLang sets by itself at both shares, written down for the same reason.
 - **Reasoning, by effort.** The checkpoint's template reads a request's `chat_template_kwargs.reasoning_effort`: a
   number from 0.0 to 0.99, or a level by name (`none` 0.0, `minimal` 0.1, `low` 0.2, `medium` 0.7, `high` 0.9, `xhigh`
   and `max` 0.99). With none given, it reasons at 0.9, `high`. The engine refuses a value out of bounds (400, measured
@@ -68,10 +70,14 @@ with `MAX_JOBS=4` and the recipe's four `SGLANG_OPT_*` variables of its DSpark a
 
 ## Measured on the reference box
 
-The bench of 2026-11-22 (`banc-inkling.sh`, its DSpark arm against the 27B lane's unit, the same tools, one after the
-other):
+At the lane's share of 0.76, on 2026-11-24 (`essai-076.log`): ready in 237 s, its kernels already compiled; 86,455
+MiB (84.4 GiB) of GPU memory once ready; MemAvailable 24.37 GiB at its lowest while it loaded; a KV cache of 1,091,200
+tokens, and 109,056 in its sliding window; 48 requests and a window of 1,048,576 in SGLang's own `server_info`.
 
-| | Inkling 2 Mini, this recipe | Qwen3.8 27B, its unit |
+At the recipe's share of 0.45, the bench of 2026-11-22 (`banc-inkling.sh`, its DSpark arm against the 27B lane's
+unit, the same tools, one after the other):
+
+| | Inkling 2 Mini, the recipe at 0.45 | Qwen3.8 27B, its unit |
 |---|---|---|
 | ready, its `/health` answering | 222 s (379 s at its first start) | 213 s |
 | GPU memory at its peak (nvidia-smi) | 53.1 GiB | 89.0 GiB |
@@ -93,8 +99,8 @@ it scores higher than the highest effort with shorter answers (574 tokens on ave
 highest effort did not finish in time (13 of 164 problems in 10 minutes). The 27B lane scores 99.2 % on the same 250 questions
 ([BENCHMARKS.md](../BENCHMARKS.md)).
 
-Not measured yet: the lane's own unit, a prompt past 32,015 tokens, more than 8 requests at once, an image in, the
-prefix cache under an agent, and the clients through the proxy.
+Not measured yet at 0.76: its speed, a prompt past 32,015 tokens, more than 8 requests at once, an image in, the prefix
+cache under an agent, and the clients through the proxy.
 
 ## Clients
 
@@ -103,9 +109,9 @@ Through the proxy on `:30001`, with the box's key, as model `inkling-2-mini`:
 - **OpenAI** and **Anthropic** routes, SGLang's own, as on the 27B lane.
 - **opencode** gets an `inkling` provider that takes images, with five variants, each a level of the template by its
   name in `chat_template_kwargs.reasoning_effort`: `high` (its default) first, then `none`, `low`, `medium` and `xhigh`
-  (`minimal` left out: 0.1 against `low`'s 0.2). Its limits are 374,000 tokens of context and 32,000 of output: the
+  (`minimal` left out: 0.1 against `low`'s 0.2). Its limits are 871,000 tokens of context and 32,000 of output: the
   pool decides at this window, and the pair fits the pool measured less the 8 % the proxy keeps and 10 % for a boot
-  that gets less (`374,000 + 32,000 <= 490,496 x 0.92 x 0.90`). After a boot, the fit to the engine's pool keeps the
+  that gets less (`871,000 + 32,000 <= 1,091,200 x 0.92 x 0.90 = 903,513`). After a boot, the fit to the engine's pool keeps the
   32,000 of output as this lane's ceiling: its card recommends limits on output tokens, as the model can loop in its
   reasoning ([docs/opencode.md](opencode.md)). Loading the lane makes it opencode's default.
 - **pi** sends its level as the top-level field, its `off` as `none`, and starts at `high`; **omp** offers `high`,

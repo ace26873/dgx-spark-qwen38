@@ -155,7 +155,7 @@ from 0.0 to 0.99 or a level by name (`none` 0.0, `minimal` 0.1, `low` 0.2, `medi
 there (v6.62), where on the Qwen lanes it becomes `enable_thinking` false. Its card says the lowest effort does not turn
 the reasoning off, and `/v1/systemone` is not served on it. SGLang's `inkling` parser takes its reasoning apart from the
 answer and its `inkling2` parser turns its tool calls into OpenAI `tool_calls` (three of three on the reference box, on
-the engine alone). Its window is 1,048,576 tokens, and its KV cache held 490,496 at its share: one request fits in that.
+the engine alone). Its window is 1,048,576 tokens, and its KV cache holds 1,091,200 at its share of 0.76: the window whole.
 No client has run on the lane through the proxy yet.
 
 The Nemotron lanes (vLLM, [docs/nemotron-lane.md](nemotron-lane.md) and

@@ -57,7 +57,7 @@ flash lane's quality in about half its disk, with twice its KV cache), Ornith AI
 a mixture of experts with vision and a 1M-token window (42 tok/s alone, 90 in all at 8 streams),
 **MiniMax-H3** video with sound, Liquid AI's **LFM2.5 24B-A2B** with its own draft and its small **LFM3 1.7B**
 (87.7 tok/s alone and 3,912 in all at 128 requests, measured before its memory share was set), Thinking
-Machines' **Inkling 2 Mini**, the light text lane (about 60 % of the 27B's GPU memory, a 1M-token window, images in), **speech** on
+Machines' **Inkling 2 Mini** (a looped mixture of experts, its KV cache holding its whole 1M-token window, images in), **speech** on
 the CPU (Qwen3-ASR hears 30 languages, Kokoro speaks seven), and a **System One** endpoint that answers with calibrated
 probabilities instead of text.
 
@@ -737,29 +737,30 @@ through the proxy, it was ready in 133 s with 20 GiB available at its lowest, on
 Every number, what is not measured yet and why: **[docs/lfm3-lane.md](docs/lfm3-lane.md)** and
 **[docs/lfm25-lane.md](docs/lfm25-lane.md)**.
 
-## Inkling 2 Mini: the light text lane, on SGLang
+## Inkling 2 Mini: a looped mixture of experts and its 1M window, on SGLang
 
 Since v1.59.0 a plain install includes Thinking Machines' [Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini)
 (Apache-2.0), a looped mixture of experts: 26.4B parameters with 3.4B active, its middle twelve layers run three times
 per token, text and images in, a window of 1,048,576 tokens. It serves on SGLang, from the `inkling-2-mini` image
 SGLang's cookbook gives it (it is in no SGLang release yet), with the cookbook's DGX Spark recipe and the DSpark draft
-head of its checkpoint, on the text port behind the same proxy and key, as model `inkling-2-mini`. It reasons at the
+head of its checkpoint, at the 27B lane's memory share (0.76), whose KV cache holds the whole window (1,091,200 tokens
+measured), on the text port behind the same proxy and key, as model `inkling-2-mini`. It reasons at the
 effort a request asks (`none` to `xhigh`, `high` by default). It needs 75 GB (21 checkpoint, 54 for its image while
 it is pulled): `--with-inkling` or `--all-weights` does it at install, `--no-inkling` leaves it out. On the cockpit's
 Lanes view, pick **Inkling 2 Mini** and press **Load**; from a terminal, `./prepare-lane.sh inkling` the first time,
 then `./switch-model.sh inkling`.
 
-The 27B stays the lane a box serves by default. Inkling 2 Mini is the lighter one, measured on the reference box on
-2026-11-22 against the 27B lane the same evening, by the same tools:
+The 27B stays the lane a box serves by default. At its share of 0.76 (2026-11-24) the lane was ready in 237 s with
+84.4 GiB of GPU memory once ready. At the recipe's share of 0.45 it was measured on the reference box on 2026-11-22,
+against the 27B lane the same evening by the same tools (the quality from 2026-11-22 to 24, which the share does not
+change):
 
-| | Inkling 2 Mini, its recipe | Qwen3.8 27B, its unit |
+| | Inkling 2 Mini, the recipe at 0.45 | Qwen3.8 27B, its unit |
 |---|---|---|
-| GPU memory at its peak | 53.1 GiB | 89.0 GiB |
 | `bench.sh`, greedy median | 64.7 tok/s | 72.3 tok/s |
 | one stream / 8 at once, in all | 30.3 / 89.2 tok/s | 34.0 / 119.0 tok/s |
 | GSM8K (250) | 0.980 at its default effort, 0.972 at its highest | 99.2 % |
 | HumanEval (164), pass@1 | 0.976 at its default effort | 97.6 % at temperature 0 ([asus-gx10.md](docs/asus-gx10.md)) |
-| ready | 222 s (379 s at its first start) | 213 s |
 
 A 64 GB DGX Spark leaves it out until a 64 GB run measures it. Every number, what is not measured yet and why:
 **[docs/inkling-lane.md](docs/inkling-lane.md)**.
