@@ -139,6 +139,15 @@ def lane_cap(served: str) -> tuple[int, int] | None:
     return int(parts[0]), int(parts[1])
 
 
+def cap_for(served: str, window: int) -> tuple[int, int] | None:
+    """The ceiling fit() keeps for the lane that serves at this window: its pair (lane_cap) on a native window, or on any
+    window for a lane of ANSWER_CAPPED; none past a native window otherwise, where the pool decides. main() and the
+    cockpit's automatic fit (autofit_pair) both ask here: the cockpit kept the native-window rule alone, so on a boot of
+    the Inkling 2 Mini lane whose pool did not hold its pair, its fit gave the answer 200,000 tokens, read that as raising
+    a declared limit and fitted nothing, where the Settings button fitted it (code review of v1.59.0, 2026-11-24)."""
+    return lane_cap(served) if 0 < window <= NATIVE_WINDOW or served in ANSWER_CAPPED else None
+
+
 def restart_agent() -> str:
     """Make the Agent tab's opencode server run the limits just written.
 
@@ -333,7 +342,7 @@ def main(argv: list[str]) -> int:
                          capture_output=True, text=True).stdout
     window = int(info.get("context_length") or 0)
     ceiling = ceiling_from_env(env, served, window)
-    cap = lane_cap(served) if 0 < window <= NATIVE_WINDOW or served in ANSWER_CAPPED else None
+    cap = cap_for(served, window)
     context, output = fit(pool, ceiling, window, cap)
     # Rounding to the kilo bottoms out at zero on an implausibly small pool, and
     # writing "context": 0 into opencode's config would break it far more loudly

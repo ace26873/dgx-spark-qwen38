@@ -189,5 +189,33 @@ class TheTwentySevenBsFactsAreNotItsOwn(Base):
         self.assertEqual(asked, [])
 
 
+class ItsAgentLimitsAfterABoot(Base):
+    """A boot whose pool does not hold the pair its switch wrote is fitted by the cockpit as by the Settings button: the
+    answer keeps the lane's 32,000 tokens at its window of 1,048,576. The cockpit's automatic fit asked for the pair as a
+    ceiling on a native window only, its fit gave the answer 200,000 tokens there, which reads as raising a declared
+    limit, and it fitted nothing: the Agent tab stayed past the pool under a warning (code review of v1.59.0,
+    2026-11-24)."""
+
+    def test_a_smaller_pool_is_fitted_with_its_answer_kept(self):
+        os.environ["OC_INKLING_UNIT"] = str(self.unit)        # its pair is read from its installed unit, as on a box
+        self.ck._OC_FIT.clear()
+        try:
+            fit = {"pool": 900_000, "context": 871_000, "output": 32_000, "worst": 903_000, "ok": False,
+                   "served": "inkling-2-mini", "window": 1_048_576}
+            pair = self.ck.autofit_pair(fit, 0)
+            self.assertIsInstance(pair, tuple, pair)
+            self.assertEqual(pair[1], 32_000)
+            self.assertLess(pair[0], 871_000)
+            # the tool's own rule, the one the Settings button runs, lands on the same pair
+            mod = self.ck._oc_fit()
+            self.assertEqual(mod.cap_for("inkling-2-mini", 1_048_576), (871_000, 32_000))
+            self.assertEqual(mod.fit(900_000, 0, 1_048_576, mod.cap_for("inkling-2-mini", 1_048_576)), pair)
+            # a lane that keeps no answer budget is still left to its pool past a native window
+            self.assertIsNone(mod.cap_for("qwen3.8-flash-next", 1_048_576))
+        finally:
+            del os.environ["OC_INKLING_UNIT"]
+            self.ck._OC_FIT.clear()
+
+
 if __name__ == "__main__":
     unittest.main()

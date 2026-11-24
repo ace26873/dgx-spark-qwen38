@@ -2391,7 +2391,9 @@ def autofit_pair(fit: dict, ceiling: int) -> tuple[int, int] | str:
     try:
         mod = _oc_fit()
         window = int(fit.get("window") or 0)
-        cap = mod.lane_cap(fit.get("served") or "") if 0 < window <= mod.NATIVE_WINDOW else None
+        # the tool's own rule (cap_for), the one its Settings button applies: the pair as a ceiling on a native window, and on
+        # any window for a lane that keeps its answer budget (the Inkling 2 Mini lane, code review of v1.59.0, 2026-11-24)
+        cap = mod.cap_for(fit.get("served") or "", window)
         ctx, outp = mod.fit(int(fit["pool"]), int(ceiling or 0), window, cap)
     except Exception:                               # noqa: BLE001 (the button still works)
         return "the fit formula could not be loaded"
