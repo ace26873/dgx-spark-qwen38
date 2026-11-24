@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.61). No content logging, and the only
+"""Keepalive proxy in front of SGLang, vLLM or llama.cpp (v6.62). No content logging, and the only
 rewriting is the tool-schema guard (role 4); two routes, POST /v1/systemone (role 5) and the
 operator's POST /proxy/stop (role 7), are answered here instead of relayed.
 
@@ -59,6 +59,12 @@ Ten roles, nothing else:
    lists every box's models (see "Two boxes behind one endpoint" below). A model both boxes serve is
    shared: a conversation stays on the box that holds its prefix, a new one goes to the box with the
    fewest requests in flight (v6.52, docs/pair.md).
+
+v6.62: the Inkling 2 Mini lane, on SGLang under the name inkling-2-mini, is a lane of the pair's routes, its template
+reads a reasoning effort itself, none included (its lowest, 0.0), so a request's "none" reaches it as it came instead of
+becoming the Qwen templates' enable_thinking false, which it does not read (it reasoned at its default, high), and POST
+/v1/systemone is refused while it serves: its card says its lowest effort does not turn the reasoning off, so the first
+token, the one System One reads its options' labels off, is its thought's.
 
 v6.61: the Liquid AI LFM3 lane, on vLLM under the name lfm3-1.7b, is a lane of the pair's routes, and its template, which
 reads enable_thinking alone as Ornith's does, gets a request's reasoning effort the way Ornith's gets it (ornith_effort):
@@ -1556,6 +1562,12 @@ def route_reasoning_effort(body, path):
         return body, None, None
 
 
+# v6.62: the SGLang lanes whose template reads the reasoning effort itself, "none" included, by the name each serves
+# under: the Inkling 2 Mini lane (its chat_template.jinja at the pinned revision: none is 0.0, its lowest level, and no
+# enable_thinking anywhere). Its "none" made enable_thinking false lost the level, and the lane reasoned at its default.
+EFFORT_NONE_NAMES = frozenset({"inkling-2-mini"})
+
+
 def qwen_effort_none(body, path):
     """(the body to forward, True when changed). v6.37: on a Qwen lane (SGLang serves it), a
     reasoning effort of "none" becomes enable_thinking false, which is how the Qwen chat
@@ -1567,13 +1579,17 @@ def qwen_effort_none(body, path):
     template is the flash lane's, and those llama.cpp serves (QWEN_LLAMACPP_NAMES, v6.55):
     llama-server turns a top-level "none" into enable_thinking false itself, but hands one in
     chat_template_kwargs to the template, which refused it (server-common.cpp, b12291; code
-    review of v1.48.0, 2026-11-12), and opencode's Kolibri entry sends it there."""
+    review of v1.48.0, 2026-11-12), and opencode's Kolibri entry sends it there. v6.62: not on an SGLang
+    lane whose template takes "none" itself (EFFORT_NONE_NAMES, the Inkling 2 Mini lane): the body goes as
+    it came."""
     if not body or not path.split("?", 1)[0] == "/v1/chat/completions":
         return body, False
     if b'"none"' not in body or b'"reasoning_effort"' not in body:
         return body, False
     qwen = {"vllm": QWEN_VLLM_NAMES, "llamacpp": QWEN_LLAMACPP_NAMES}.get(_SERVED["engine"], frozenset())
     if _SERVED["engine"] != "sglang" and not set(_SERVED["names"] or ()) & qwen:
+        return body, False
+    if set(_SERVED["names"] or ()) & EFFORT_NONE_NAMES:
         return body, False
     try:
         j = json.loads(body)
@@ -2677,8 +2693,8 @@ def served_vocab():
 TOKEN_ID_FIELDS = ("stop_token_ids", "input_ids")
 # The smallest vocabulary of a lane this proxy fronts: Kolibri's 128,000 (the Qwen lanes have
 # 248,320, the Nemotron ones 131,072; config.json of each checkpoint, 2026-10-16), LFM2.5 24B-A2B's
-# 128,000 too (its config.json at the pinned revision, 2026-11-16). An id under
-# it is in every one of them. Until the served vocabulary is learned (served_vocab, which a busy,
+# 128,000 too (its config.json at the pinned revision, 2026-11-16), Inkling 2 Mini's 201,024 above it
+# (its config.json at the pinned revision, 2026-11-24). An id under it is in every one of them. Until the served vocabulary is learned (served_vocab, which a busy,
 # paused or restarting engine leaves at 0), an id at or past it waits for a retry (503) instead
 # of being relayed on trust: the guard stood down there, and one such id takes the scheduler
 # down (found in review, 2026-10-16).
@@ -4489,7 +4505,9 @@ SYSTEMONE_ALIASES = ("jev-latest", "jev-preview", "jev-1.13.0")
 # reasoning effort (its chat_template.jinja at the pinned revision, read 2026-11-16). The one token System One reads
 # is then the first of a thought, never an option's label, whatever it asks: the answers would be noise said as a
 # decision.
-SYSTEMONE_REFUSED_NAMES = frozenset({"lfm2.5-24b-a2b"})
+# v6.62: the Inkling 2 Mini lane, whose card says that its lowest reasoning effort does not turn the reasoning off
+# (Thinking Machines' model card at the pinned revision): the same.
+SYSTEMONE_REFUSED_NAMES = frozenset({"lfm2.5-24b-a2b", "inkling-2-mini"})
 
 
 def systemone_model(requested):
@@ -9388,7 +9406,7 @@ if __name__ == "__main__":
     holds = (f"holds requests up to {HOLD_MAX_S:.0f}s while {' or '.join(HOLD_UNITS)} comes back"
              if HOLD_UNITS and HOLD_MAX_S > 0 else "holds nothing")
     # one f-string: the cockpit's tests render this line from the source
-    log(f"v6.61 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
+    log(f"v6.62 on {BIND}:{port} -> {UPSTREAM} (keepalive {KEEPALIVE_S:.0f}s, max silence {MAX_SILENCE_S:.0f}s, {holds})")
     # v6.47: what the memory floor's refusal reads, read once here, so the journal shows it works where
     # the unit runs this proxy (its sandbox leaves /proc/meminfo readable)
     avail = mem_available_gib()

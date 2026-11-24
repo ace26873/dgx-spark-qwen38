@@ -172,6 +172,22 @@ class TheTwentySevenBsFactsAreNotItsOwn(Base):
                 with self.ck.STATE_LOCK:
                     self.ck.STATE["engine_info"] = saved
 
+    def test_system_one_is_said_unavailable_without_asking_the_proxy(self):
+        """The proxy refuses it on this lane (v6.62): the cockpit says why before any probe."""
+        self.lane_serving()
+        asked = []
+        saved = self.ck.urllib.request.urlopen
+        self.ck.urllib.request.urlopen = lambda req, timeout=None: asked.append(req.full_url)
+        self.ck.SYSTEMONE_CACHE.update(data=None, ts=0.0, key=None)
+        try:
+            out = self.ck.systemone_available(max_age=0)
+        finally:
+            self.ck.urllib.request.urlopen = saved
+        self.assertFalse(out["available"])
+        self.assertIn("the Inkling 2 Mini lane is serving", out["reason"])
+        self.assertIn("it reasons before every answer, at any effort", out["reason"])
+        self.assertEqual(asked, [])
+
 
 if __name__ == "__main__":
     unittest.main()

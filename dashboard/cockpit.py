@@ -5013,6 +5013,13 @@ def systemone_available(max_age: float = 60.0) -> dict:
         return {"available": False, "lane": "", "status": None,
                 "reason": f"the Liquid AI LFM2.5 24B-A2B lane is serving: System One is answered by {who} "
                           f"(its chat template begins every answer with its reasoning), so load {one}"}
+    if text and text[0] == INKLING_UNIT:
+        # the proxy refuses it there (v6.62): its card says its lowest reasoning effort does not turn the reasoning
+        # off, so the token System One reads is its thought's, never an option's label. An SGLang text lane, refused
+        # here before the probe below, as the LFM2.5 lane is.
+        return {"available": False, "lane": "", "status": None,
+                "reason": f"the Inkling 2 Mini lane is serving: System One is answered by {who} "
+                          f"(it reasons before every answer, at any effort), so load {one}"}
     b12x = next((u for u in TABLE_LANES if states.get(u) in lc.BUSY_STATES), None)
     if text is None and b12x:
         # the proxy refuses it on every vLLM lane (v6.43), the Liquid AI LFM3 lane's included
