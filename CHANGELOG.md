@@ -1,5 +1,58 @@
 # Changelog
 
+## v1.59.0 (2026-11-24): the Inkling 2 Mini lane, the light text lane on SGLang
+
+Thinking Machines' Inkling 2 Mini (Apache-2.0, released on 2026-11-20) becomes a lane of every box, as the other lanes
+are (decision 1564: its units for everyone at install, its image and weights at its first Load), presented as the light
+option: about 60 % of the 27B lane's GPU memory, the model's window of 1M tokens, images in; the 27B stays the lane a
+box serves by default (decision 1566). Asked for in discussion #74.
+
+- **`install-inkling.sh`** serves `thinkingmachines/Inkling-2-Mini` at its pinned revision, a looped mixture of experts
+  (26.4B parameters, 3.4B active, its middle twelve layers run three times per token, its experts in NVFP4 and MXFP8),
+  with the DSpark draft head its checkpoint carries, on the text port behind the proxy and its key, as model
+  `inkling-2-mini`. The engine is SGLang from the image its cookbook gives the model (`lmsysorg/sglang:inkling-2-mini`,
+  pinned by the digest of its arm64 build: Inkling 2 Mini is in no SGLang release yet), with the cookbook's DGX Spark
+  recipe and its DSpark arm word for word (a static share of 0.45, FA4, 8 draft tokens verified per step,
+  `MAX_JOBS=4` and the recipe's four `SGLANG_OPT_*` variables), the model's window of 1,048,576 tokens and the 48
+  requests SGLang set itself, the `inkling` reasoning parser and the `inkling2` tool-call parser, images on
+  (`--enable-multimodal`), and what every SGLang lane of this box passes besides (the key by `--config`, the scheduler
+  parked when idle, the metrics and the cache report, the health route that generates nothing, the rendezvous through
+  a file). The lane keeps the kernels its engine compiles at its first start in caches of its own (379 s to its first
+  answer the first time on the reference box, 222 s the next). It needs 75 GB (21 checkpoint, 54 for its image while
+  it is pulled); `--with-inkling` installs it whole now and proves it, `--no-inkling` leaves it out of the run that
+  passes it, and a 64 GB DGX Spark leaves it out (no 64 GB run was made).
+- **In every lane list**: the registry, boxmem, every engine unit's `Conflicts=` and `After=`, the proxy's hold units,
+  install.sh (its flags, its boot kept by an update, its proof, its summary line), switch-model.sh (target `inkling`:
+  its checkpoint fetched in its image and pinned as `refs/main`, through which SGLang finds the draft head; its unit
+  from its installer's `--stage`; the boot moved to it; opencode pointed at it), prepare-lane.sh, uninstall.sh (its
+  image is its own: its uninstall takes its tag, and a `docker image prune` then reclaims it), check-pins.sh, the
+  cockpit's sudoers lines, the CI's lists and gates, and lane-templates-check.py (its template as published, rendered
+  for every client shape as SGLang hands them).
+- **The cockpit** follows it as an SGLang text lane (the canary, the pool guard and the autoheal are its own), with its
+  card in Lanes and on the Now view, its names (Inkling 2 Mini · Thinking Machines), its note with the reference box's
+  measures, its engine (SGLang nightly 03fde9cc), its journal and its container in Logs and the diagnostics bundle, and
+  System One said unavailable there. Its mark is a plain badge of Thinking Machines' initials, drawn for the cockpit:
+  no icon set has one, and the model's repository ships no logo.
+- **Its clients**: opencode's `inkling` provider takes images and offers five variants, each a level of the checkpoint's
+  template by its name in `chat_template_kwargs.reasoning_effort` (`high`, its default, then `none`, `low`, `medium`,
+  `xhigh`). Its pair is 374,000 tokens of context and 32,000 of output: at its window the KV cache decides (490,496
+  tokens measured), and the pair fits that pool less the proxy's 8 % and 10 % for a smaller boot. oc-fit-limits.py
+  fits it to the engine's pool after a boot and keeps its 32,000 of output as a ceiling whatever its window
+  (`ANSWER_CAPPED`), as the model's card recommends limits on output tokens. pi sends its level, its `off` as `none`,
+  and starts at `high`; omp offers `high`, `minimal` (sent as `none`), `low`, `medium` and `xhigh`.
+- **The proxy (v6.62)** knows the lane: its name is a lane of the pair's routes; a request's `none` reaches its
+  template as it came (on the other SGLang lanes the proxy turns it into `enable_thinking` false, which the Qwen
+  templates read and this one does not: the lane would have reasoned at its default); and POST `/v1/systemone` is
+  refused while it serves, as its card says its lowest effort does not turn the reasoning off.
+
+Measured on the reference box (an ASUS Ascent GX10, 128 GB) on 2026-11-22, its recipe in its image from a container
+of the bench's own, against the 27B lane's unit the same evening by the same tools: 53.1 GiB of GPU memory at its peak
+against 89.0, a KV cache of 490,496 tokens, a greedy median of 64.7 tok/s on `bench.sh` against 72.3, 30.3 tok/s on one
+stream and 89.2 in all at 8 at once against 34.0 and 119.0, a prompt of 32,015 tokens in 10.0 s to its first token,
+three tool calls of three, GSM8K 0.964 (250 questions) at its default effort; on 2026-11-23, GSM8K 0.972 at the
+template's highest effort and the card's sampling. The lane's own unit, a longer prompt, an image in and the clients
+through the proxy are not measured yet ([docs/inkling-lane.md](docs/inkling-lane.md)).
+
 ## v1.58.0 (2026-11-24): the one command installs the speech lane, and the cockpit shows it
 
 The speech lane (Qwen3-ASR and Kokoro on the CPU, behind OpenAI-style audio routes on port 30024)
