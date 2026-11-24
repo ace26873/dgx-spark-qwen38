@@ -87,8 +87,8 @@ LANE_MODEL = {"qwen3.8-27b": "qwen38", "qwen3.8-flash-next": "flashnext", "lfm2.
               "inkling-2-mini": "inkling"}
 # The lanes whose pair (oc-limits.sh) stays a ceiling whatever their window, not only on a native one: the Inkling 2
 # Mini lane, whose card recommends limits on output tokens (the model can loop in its reasoning). Its window of
-# 1,048,576 tokens would otherwise give its answer a quarter of the pool (OUTPUT_SHARE), 101,000 tokens on the pool
-# the reference box measured, where its pair keeps the 32,000 of the other lanes.
+# 1,048,576 tokens would otherwise give its answer a quarter of the pool (OUTPUT_SHARE) up to OUTPUT_CAP, 200,000 tokens
+# on the pool the reference box measured, where its pair keeps the 32,000 of the other lanes.
 ANSWER_CAPPED = frozenset({"inkling-2-mini"})
 AGENT_UNIT = "opencode-web.service"
 # The engine's window is the third bound, and it holds the prompt PLUS the answer:

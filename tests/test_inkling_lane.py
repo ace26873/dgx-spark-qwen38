@@ -22,8 +22,8 @@ TEXT = (REPO / "install-inkling.sh").read_text()
 PINS = {k: v.strip('"') for k, v in (ln.split("=", 1) for ln in TEXT.splitlines()
                                        if ln.startswith("INKLING_") and "=" in ln)}
 SERVED = "inkling-2-mini"
-# the KV cache the reference box's engine held at the cookbook's share (its journal, 2026-11-22: max_total_num_tokens)
-POOL = 490496
+# the KV cache the reference box's engine held at the lane's share of 0.76 (essai-076.log, 2026-11-24: max_total_num_tokens)
+POOL = 1091200
 WINDOW = 1048576
 
 
@@ -202,7 +202,7 @@ class TheUninstall(unittest.TestCase):
         self.oc = self.cfg / "opencode.json"
         self.oc.write_text(json.dumps({"model": f"inkling/{SERVED}", "provider": {
             "qwen38": {"models": {"qwen3.8-27b": {"limit": {"context": 173000, "output": 64000}}}},
-            "inkling": {"models": {SERVED: {"limit": {"context": 374000, "output": 32000}}}}}}))
+            "inkling": {"models": {SERVED: {"limit": {"context": 871000, "output": 32000}}}}}}))
         self.bin = self.d / "bin"
         self.bin.mkdir()
         self.log = self.d / "calls.log"
@@ -341,7 +341,7 @@ class TheSwitch(unittest.TestCase):
         cfg = json.loads(self.oc.read_text())
         self.assertEqual(cfg["model"], f"inkling/{SERVED}")
         self.assertEqual(cfg["provider"]["inkling"]["models"][SERVED]["limit"],
-                         {"context": 374000, "input": 374000, "output": 32000})
+                         {"context": 871000, "input": 871000, "output": 32000})
         self.assertIn("qwen38", cfg["provider"])
 
     def test_with_no_unit_installed_it_says_how_to_install_it_and_changes_nothing(self):
@@ -355,41 +355,42 @@ class TheSwitch(unittest.TestCase):
 
 class ItsClients(unittest.TestCase):
     def test_its_pair_fits_its_pool_and_its_window(self):
-        """Its window is past twice its pool: the pool decides, by the cockpit's check with a pool 10 % smaller than the
-        one measured, and the window holds the prompt at opencode's compaction point, one agent step and the answer."""
+        """Its pool holds its window 1.04 times over, and less the proxy's 8 % and 10 % for a smaller boot the pool still
+        decides, by the cockpit's check; the window holds the prompt at opencode's compaction point, one agent step and the
+        answer."""
         r = subprocess.run(["bash", str(REPO / "oc-limits.sh"), "inkling"], capture_output=True, text=True)
-        self.assertEqual(r.stdout.strip(), "374000 32000 local, 1M", r.stderr)
-        ctx, out = 374000, 32000
+        self.assertEqual(r.stdout.strip(), "871000 32000 local, 1M", r.stderr)
+        ctx, out = 871000, 32000
         self.assertLessEqual(ctx + out, int(POOL * 0.92 * 0.90))
         self.assertLessEqual(ctx - 20000 + 43863 + out, WINDOW)
 
     def test_the_fit_keeps_its_answer_whatever_its_window(self):
-        """A window past 262,144 tokens gave the answer a quarter of the pool (101,000 tokens on the pool measured): its
+        """A window past 262,144 tokens gave the answer a quarter of the pool, up to 200,000 tokens (on the pool measured): its
         card recommends limits on output tokens, and its pair is its ceiling (ANSWER_CAPPED), so the fit and the table
         land on one pair on that pool."""
         fit = load("oc_fit_limits_inkling", "oc-fit-limits.py")
         self.assertEqual(fit.LANE_MODEL[SERVED], "inkling")
         self.assertIn(SERVED, fit.ANSWER_CAPPED)
-        self.assertEqual(fit.fit(POOL, 0, WINDOW, None), (304000, 101000), "the rule without the cap")
-        self.assertEqual(fit.fit(POOL, 0, WINDOW, (374000, 32000)), (374000, 32000))
+        self.assertEqual(fit.fit(POOL, 0, WINDOW, None), (703000, 200000), "the rule without the cap")
+        self.assertEqual(fit.fit(POOL, 0, WINDOW, (871000, 32000)), (871000, 32000))
         with tempfile.TemporaryDirectory(prefix="inkling-fit-") as d:
             unit = pathlib.Path(d, "qwen38-inkling.service")
             unit.write_text("  --context-length 1048576 \\\n  python3 -m sglang.launch_server \\\n")
             os.environ["OC_INKLING_UNIT"] = str(unit)
             try:
                 fit = load("oc_fit_limits_inkling_unit", "oc-fit-limits.py")
-                self.assertEqual(fit.lane_cap(SERVED), (374000, 32000))
+                self.assertEqual(fit.lane_cap(SERVED), (871000, 32000))
             finally:
                 del os.environ["OC_INKLING_UNIT"]
 
     def test_its_provider_offers_the_templates_levels_and_images(self):
-        r = subprocess.run(["python3", str(REPO / "oc-inkling.py"), "http://127.0.0.1:30001/v1", "/k", "374000", "32000",
+        r = subprocess.run(["python3", str(REPO / "oc-inkling.py"), "http://127.0.0.1:30001/v1", "/k", "871000", "32000",
                             "n"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         block = json.loads(r.stdout)["provider"]["inkling"]
         self.assertEqual(list(block["models"]), [SERVED])
         model = block["models"][SERVED]
-        self.assertEqual(model["limit"], {"context": 374000, "input": 374000, "output": 32000})
+        self.assertEqual(model["limit"], {"context": 871000, "input": 871000, "output": 32000})
         # its default first, as a picker lists it, then the others from the lowest: each a level its template maps
         self.assertEqual(list(model["variants"]), ["high", "none", "low", "medium", "xhigh"])
         # the names its chat_template.jinja maps (effort_map at the pinned revision): none 0.0, minimal 0.1, low 0.2,
@@ -410,7 +411,7 @@ class ItsClients(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="inkling-oc-") as d:
             oc = pathlib.Path(d, "opencode.json")
             prov = json.loads(subprocess.run(["python3", str(REPO / "oc-inkling.py"), "http://127.0.0.1:30001/v1", "/k",
-                                              "374000", "32000", "n"], capture_output=True, text=True).stdout)
+                                              "871000", "32000", "n"], capture_output=True, text=True).stdout)
             oc.write_text(json.dumps({"model": "qwen38/qwen3.8-27b", "provider": {"qwen38": {
                 "options": {"baseURL": "http://127.0.0.1:30001/v1"}, "models": {"qwen3.8-27b": {}}}}}))
             src = pathlib.Path(d, "src.json")

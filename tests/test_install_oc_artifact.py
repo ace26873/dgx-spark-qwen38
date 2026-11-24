@@ -466,7 +466,7 @@ class ABoxBootingInkling(unittest.TestCase):
                                   text=True, check=True).stdout)
         self.assertEqual(d["compaction"]["preserve_recent_tokens"], keep)
         m = d["provider"]["inkling"]["models"]["inkling-2-mini"]
-        self.assertEqual(m["limit"], {"context": 374000, "input": 374000, "output": 32000})
+        self.assertEqual(m["limit"], {"context": 871000, "input": 871000, "output": 32000})
         self.assertEqual(m["name"], "Inkling 2 Mini + DSpark (local, 1M)")
         self.assertEqual(list(m["variants"]), ["high", "none", "low", "medium", "xhigh"])
         self.assertEqual(m["variants"]["none"], {"chat_template_kwargs": {"reasoning_effort": "none"}})

@@ -597,12 +597,12 @@ jobs:
           read -r C O _ <<<"$(l lfm3)"
           [ $(( C - 20000 + 43863 + O )) -le 262144 ] || { echo "lfm3: past its 262,144 window"; exit 1; }
           [ $(( C + 25000 + O )) -le 262144 ] || { echo "lfm3: past its window by oc-fit-limits.py's rule"; exit 1; }
-          # The Inkling 2 Mini lane, at its window of 1,048,576 tokens, which its pool decides (490,496 tokens measured at
-          # the cookbook's share): the pair fits that pool less 10 %, and the window the prompt at opencode's compaction
-          # point, one agent step and the answer
-          [ "$(l inkling)" = "374000 32000 local, 1M" ] || { echo "inkling drifted"; exit 1; }
+          # The Inkling 2 Mini lane, at its window of 1,048,576 tokens, which its pool decides (1,091,200 tokens measured at
+          # its share of 0.76): the pair fits that pool less the proxy's 8 % and 10 %, and the window the prompt at
+          # opencode's compaction point, one agent step and the answer
+          [ "$(l inkling)" = "871000 32000 local, 1M" ] || { echo "inkling drifted"; exit 1; }
           read -r C O _ <<<"$(l inkling)"
-          LOW=$(( 490496 * 92 / 100 * 90 / 100 ))
+          LOW=$(( 1091200 * 92 / 100 * 90 / 100 ))
           [ $(( C + O )) -le "$LOW" ] || { echo "inkling: $C + $O passes $LOW, its pool less 10 %"; exit 1; }
           [ $(( C - 20000 + 43863 + O )) -le 1048576 ] || { echo "inkling: past its 1,048,576 window"; exit 1; }
           # Nonsense is refused rather than defaulted, or a typo silently serves
