@@ -98,7 +98,7 @@ class ItsUnit(Base):
         self.assertEqual(self.ck.UNIT2CONT[U], "qwen38-inkling")
         self.assertIn("qwen38-inkling", self.ck.SGL_CONTAINERS, "its scheduler lines are SGLang's")
         self.assertNotIn(U, self.ck.OTHER_TEXT_UNITS)
-        self.assertEqual(self.ck.TEXT_BOOT_DEFAULT_S[U], 230.0)
+        self.assertEqual(self.ck.TEXT_BOOT_DEFAULT_S[U], 240.0)
         self.assertTrue(lc.blocked_reasons("unit", {"unit": U, "verb": "start"}, {"qwen38-sglang.service": "ready"}))
         self.assertTrue(lc.blocked_reasons("unit", {"unit": "qwen38-sglang.service", "verb": "start"}, {U: "ready"}))
 

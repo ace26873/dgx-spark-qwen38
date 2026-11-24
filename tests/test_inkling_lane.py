@@ -87,13 +87,14 @@ class TheStagedUnit(unittest.TestCase):
             self.assertIn(f"-v {self.home}/.config/qwen38/inkling-cache/{d}:/root/.cache/{d} ", cmd)
             self.assertTrue((self.cfg / "inkling-cache" / d).is_dir(), d)
 
-    def test_it_serves_the_cookbooks_dgx_spark_recipe_with_dspark(self):
+    def test_it_serves_the_cookbooks_dgx_spark_recipe_with_dspark_at_the_27b_lanes_share(self):
         """The recipe the reference box measured on 2026-11-22 (~/qa-tools/etudes/inkling/banc-inkling.sh, its sg-dspark
-        arm), and the window and the 48 requests SGLang set itself at that run."""
+        arm), at the 27B lane's share of 0.76 instead of its 0.45, so that the KV cache holds the whole window (1,091,200
+        tokens on 2026-11-24, essai-076.log), and the window and the 48 requests SGLang sets itself."""
         self.assertEqual(self.stage()[0], 0)
         cmd = re.sub(r"\s+", " ", exec_command(self.out.read_text()))
         for flag in ("--tp 1", "--ep 1", "--attention-backend fa4", "--dtype bfloat16", "--page-size 128",
-                     "--mem-fraction-static 0.45", "--speculative-algorithm DSPARK", "--speculative-num-draft-tokens 8",
+                     "--mem-fraction-static 0.76", "--speculative-algorithm DSPARK", "--speculative-num-draft-tokens 8",
                      "--grammar-backend xgrammar", "--enable-multimodal", "--context-length 1048576",
                      "--max-running-requests 48"):
             self.assertIn(f" {flag} ", f" {cmd} ", flag)
@@ -441,7 +442,7 @@ class ItsClients(unittest.TestCase):
 
 class ItIsNoLaneOfA64GbBox(unittest.TestCase):
     def test_boxmem_holds_it_for_a_128_gb_box_only(self):
-        """Its memory was measured on a 128 GB box only (53.1 GiB of GPU memory at its peak): no 64 GB share is claimed."""
+        """Its memory was measured on a 128 GB box only (84.4 GiB of GPU memory once ready): no 64 GB share is claimed."""
         bm = load("boxmem_inkling", "boxmem.py")
         self.assertTrue(bm.fits("inkling", "128"))
         self.assertFalse(bm.fits("inkling", "64"))

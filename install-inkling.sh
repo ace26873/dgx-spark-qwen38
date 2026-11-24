@@ -20,11 +20,12 @@
 #
 # WHY SGLANG, AND THIS IMAGE. Inkling 2 Mini is in no SGLang release yet: SGLang's cookbook serves it from the
 # lmsysorg/sglang:inkling-2-mini image (pull request sgl-project/sglang#51926), pinned here by the digest of its arm64
-# build, with the cookbook's DGX Spark recipe and its DSpark draft. The reference box ran that recipe on 2026-11-22 and
-# 2026-11-23 (~/qa-tools/etudes/inkling): ready in 222 s (379 s at its first start there), 53.1 GiB of GPU memory at its
-# peak against 89 for the 27B lane, a KV cache of 490,496 tokens, GSM8K 250 at 0.964 (its default effort, temperature 0)
-# and 0.972 (effort 0.99, temperature 1.0), three tool calls of three, and a median of 64.7 tokens/s in bench.sh against
-# 72.3 for the 27B lane.
+# build, with the cookbook's DGX Spark recipe and its DSpark draft, at the 27B lane's memory share (0.76, where the recipe
+# gives 0.45), so that its KV cache holds the model's whole window of 1,048,576 tokens. On the reference box
+# (~/qa-tools/etudes/inkling), at 0.76 on 2026-11-24: ready in 237 s, a KV cache of 1,091,200 tokens, MemAvailable 24.37
+# GiB at its lowest while it loaded. At the recipe's 0.45 on 2026-11-22 to 24: a KV cache of 490,496 tokens, GSM8K 250
+# at 0.964 (its default effort, temperature 0) and 0.980 (its default effort, temperature 1.0), HumanEval 0.976, three
+# tool calls of three, and a median of 64.7 tokens/s in bench.sh against 72.3 for the 27B lane.
 #
 # ONE ENGINE AT A TIME. The unit says so with Conflicts=: starting it stops whichever lane serves, and starting
 # another lane stops it.
@@ -65,7 +66,7 @@ CONFIG_DIR="$HOME/.config/qwen38"
 # the text lane the box comes back to, one record shared with switch-model.sh (lanes.sh)
 # shellcheck source=lanes.sh
 . "$HERE/lanes.sh"
-# A 64 GB DGX Spark cannot hold this lane as measured (boxmem.py): 53.1 GiB of GPU memory at its peak on a 128 GB box,
+# A 64 GB DGX Spark cannot hold this lane as measured (boxmem.py): 84.4 GiB of GPU memory once ready on a 128 GB box,
 # and no 64 GB run was made. Refused there before anything is fetched; --uninstall still takes away what was put.
 [ "$ACTION" = uninstall ] || [ "$(box_mem_class)" != 64 ] || lane_fits inkling || die "The Inkling 2 Mini lane needs a 128 GB DGX Spark, and this box is a 64 GB one."
 # A terminal opened before the account joined the docker group: the run goes on with it (lanes.sh).

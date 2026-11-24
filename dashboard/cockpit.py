@@ -3115,9 +3115,9 @@ def monotonic_now() -> float:
 # (the reference box's medians, as the page's READY_DEFAULT), and the grace after it
 # during which "fired up but not answering" still reads as the warm-up it usually is.
 # The Liquid AI LFM2.5 24B-A2B lane's, its one boot measured (286 s on 2026-11-14), until the box records its own; the
-# Inkling 2 Mini lane's, its boot with its kernels already compiled (222 s on 2026-11-22; 379 s at its first start).
+# Inkling 2 Mini lane's, its boot at its share of 0.76 with its kernels already compiled (237 s on 2026-11-24).
 TEXT_BOOT_DEFAULT_S = {"qwen38-sglang.service": 540.0, "qwen38-flash.service": 780.0,
-                       "qwen38-lfm25.service": 290.0, "qwen38-inkling.service": 230.0}
+                       "qwen38-lfm25.service": 290.0, "qwen38-inkling.service": 240.0}
 WARMUP_GRACE_S = 300.0
 # How long the other sampler tiers wait for the first health sample (start_samplers): the
 # engine is asked /v1/loads then, when idle, /health, 3 s and 4 s at most.

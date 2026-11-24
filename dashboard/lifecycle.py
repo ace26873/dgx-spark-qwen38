@@ -577,7 +577,8 @@ TRANSITIONAL = BUSY_STATES - {"ready", "degraded", "orphan", "wedged"}
 # else serving (2026-11-14). And the Liquid AI LFM2.5 24B-A2B lane, SGLang's, a static share of 0.7 of the memory
 # SGLang sees, which left 24 GiB available at its lowest (2026-11-14). And the Liquid AI LFM3 lane, vLLM's, its weights
 # 1.8 GB and its KV cache extended into its share of 0.75 of the memory vLLM sees. And the Inkling 2 Mini lane, SGLang's,
-# a static share of 0.45, 53.1 GiB of GPU memory at its peak (2026-11-22).
+# a static share of 0.76, 84.4 GiB of GPU memory once ready, 24.37 GiB available at its lowest while it loaded
+# (2026-11-24).
 ENGINE_UNITS = ("qwen38-sglang.service", "qwen38-flash.service",
                 "qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service",
                 "qwen38-nemotron.service", "qwen38-nemotron-super.service", "qwen38-flash-local.service",
