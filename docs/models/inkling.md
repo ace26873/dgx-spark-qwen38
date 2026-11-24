@@ -21,7 +21,8 @@ same evening:
 - **53.1 GiB** of GPU memory at its peak, against 89.0 for the 27B lane; a KV cache of 490,496 tokens.
 - **64.7 tok/s** greedy median (`./bench.sh`), against 72.3; 30.3 tok/s on one stream and 89.2 in all at 8 at once,
   against 34.0 and 119.0.
-- **GSM8K 0.964** (250 questions) at its default effort, 0.972 at its highest; three tool calls of three.
+- **GSM8K 0.980** (250 questions) and **HumanEval 0.976** (164 problems, pass@1) at its default effort with its card's
+  sampling (0.964 on GSM8K greedy), 0.972 on GSM8K at its highest effort; three tool calls of three.
 - Ready in 222 s (379 s at its first start, when it compiled its kernels).
 
 The lane's own unit, a long prompt, an image in and the clients through the proxy are not measured yet.

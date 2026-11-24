@@ -86,7 +86,12 @@ other):
 **Quality**: GSM8K, 250 questions, with `sglang.test.run_eval` from the 27B lane's image, 8 at once, at the model's
 default effort: 0.964 (2026-11-22). Again on 2026-11-23 at the template's highest effort, 0.99, and the sampling its
 card recommends (temperature 1.0, top_p 1.0): 0.972, no answer cut at 16,384 tokens, 651 tokens on average, 9,493 at
-the most. The 27B lane scores 99.2 % on the same 250 questions ([BENCHMARKS.md](../BENCHMARKS.md)).
+the most. On 2026-11-24 at its default effort, 0.9, with that same sampling and the same cap: GSM8K 0.980 (no answer
+cut, 574 tokens on average, 6,522 at the most) and HumanEval 0.976 (164 problems, pass@1, one sample a problem, 160
+passed, one answer cut at 16,384 tokens, 1,369 tokens on average). The default effort is the lane's setting: on GSM8K
+it scores higher than the highest effort with shorter answers (574 tokens on average against 651); HumanEval at the
+highest effort did not finish in time (13 of 164 problems in 10 minutes). The 27B lane scores 99.2 % on the same 250 questions
+([BENCHMARKS.md](../BENCHMARKS.md)).
 
 Not measured yet: the lane's own unit, a prompt past 32,015 tokens, more than 8 requests at once, an image in, the
 prefix cache under an agent, and the clients through the proxy.

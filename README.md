@@ -757,7 +757,8 @@ The 27B stays the lane a box serves by default. Inkling 2 Mini is the lighter on
 | GPU memory at its peak | 53.1 GiB | 89.0 GiB |
 | `bench.sh`, greedy median | 64.7 tok/s | 72.3 tok/s |
 | one stream / 8 at once, in all | 30.3 / 89.2 tok/s | 34.0 / 119.0 tok/s |
-| GSM8K (250) | 0.964 at its default effort, 0.972 at its highest | 99.2 % |
+| GSM8K (250) | 0.980 at its default effort, 0.972 at its highest | 99.2 % |
+| HumanEval (164), pass@1 | 0.976 at its default effort | 97.6 % at temperature 0 ([asus-gx10.md](docs/asus-gx10.md)) |
 | ready | 222 s (379 s at its first start) | 213 s |
 
 A 64 GB DGX Spark leaves it out until a 64 GB run measures it. Every number, what is not measured yet and why:
