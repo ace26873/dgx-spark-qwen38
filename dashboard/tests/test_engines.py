@@ -43,14 +43,19 @@ class WhatEachEngineReports(unittest.TestCase):
     def test_it_says_the_pinned_version(self):
         # the page tells the pin's version from an image of the operator's by this string (decision 1178): it says
         # the same version, or the serving lane would read as another image
+        # The Inkling 2 Mini lane's image says a version that names no commit, 0.0.0.dev1+inkling2 in /server_info (read
+        # from its unit on the reference box, 2026-11-24), where its pin is named by the image's build label (nightly
+        # 03fde9cc): reports holds what the engine says (code review of v1.59.0)
+        said_instead = {"qwen38-inkling.service": "+inkling2"}
         for unit, e in EN.ENGINES.items():
             with self.subTest(unit=unit):
                 if e["reports"] is None:
                     self.assertEqual(e["engine"], "SGLang Diffusion")       # the cockpit reads no version there
                     continue
-                said = e["version"].split(" + ")[0].split()[-1]             # 0.5.22, 53295c6, 8244d1c, 0.29.0, 77154ca6
+                said = said_instead.get(unit) or e["version"].split(" + ")[0].split()[-1]   # 0.5.22, 53295c6, 0.29.0
                 self.assertIn(said, e["reports"], (e["version"], e["reports"]))
         self.assertEqual(EN.page_table()["qwen38-flash.service"]["reports"], "0.0.0.dev1+g53295c697")
+        self.assertEqual(EN.page_table()["qwen38-inkling.service"]["reports"], "0.0.0.dev1+inkling2")
 
 
 class WhetherAUnitRunsThePin(unittest.TestCase):
