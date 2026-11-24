@@ -64,7 +64,10 @@ v6.62: the Inkling 2 Mini lane, on SGLang under the name inkling-2-mini, is a la
 reads a reasoning effort itself, none included (its lowest, 0.0), so a request's "none" reaches it as it came instead of
 becoming the Qwen templates' enable_thinking false, which it does not read (it reasoned at its default, high), and POST
 /v1/systemone is refused while it serves: its card says its lowest effort does not turn the reasoning off, so the first
-token, the one System One reads its options' labels off, is its thought's.
+token, the one System One reads its options' labels off, is its thought's. And an image costs, while it serves, what its
+processor counts (INKLING_VISION_NAMES): one token per 40-pixel cell, each side rounded up, plus 3, with no size clamp,
+where the Qwen-VL sizing the guard charged stopped at 16,386 tokens and an 8000x6000 photo costs 30,003 (code review of
+v1.59.0, measured on the reference box, 2026-11-24).
 
 v6.61: the Liquid AI LFM3 lane, on vLLM under the name lfm3-1.7b, is a lane of the pair's routes, and its template, which
 reads enable_thinking alone as Ornith's does, gets a request's reasoning effort the way Ornith's gets it (ornith_effort):
@@ -2059,9 +2062,11 @@ def _image_tokens(w, h):
     2026-09-12). Every oversize refusal this box has ever logged happened in a
     session with images in context.
     """
-    f = MEDIA_PATCH_PX
     if w <= 0 or h <= 0:
         return None
+    if set(_SERVED.get("names") or ()) & INKLING_VISION_NAMES:
+        return -(-w // INKLING_PATCH_PX) * -(-h // INKLING_PATCH_PX) + INKLING_WRAP_TOKENS
+    f = MEDIA_PATCH_PX
     wb = max(f, int(round(w / f)) * f)
     hb = max(f, int(round(h / f)) * f)
     if wb * hb > MEDIA_MAX_PIXELS:
@@ -2090,6 +2095,19 @@ def _media_payload(block):
         data = src.get("data")
         return data if isinstance(data, str) else None
     return None
+
+
+# v6.62: the Inkling 2 Mini lane's vision geometry, its own (SGLang's multimodal/inkling2/image_processing.py in the image
+# the lane pins: count_tokens_for_image, a patch of 40 pixels, no rescale, no longest edge). One token per 40-pixel cell,
+# each side rounded up, plus 3 around it, and nothing clamps the size: measured through the proxy on the reference box
+# (2026-11-24), the prompt tokens with and without a plain PNG of 64x64, 1000x1000, 1280x720, 4096x4096, 6000x6000 and
+# 8000x6000 were 7, 628, 579, 10,612, 22,503 and 30,003, the formula's to the token. The Qwen-VL sizing charged it
+# 16,386 at most: past about 26 megapixels it undercounted, the case the wedge guard exists for (code review of v1.59.0).
+# An image whose header the parser does not read is still charged _image_ceiling() there, which bounds nothing on this
+# lane; the four formats clients send (JPEG, PNG, GIF, WebP) are all read, and measured exactly.
+INKLING_VISION_NAMES = frozenset({"inkling-2-mini"})
+INKLING_PATCH_PX = 40
+INKLING_WRAP_TOKENS = 3
 
 
 def _image_ceiling():

@@ -50,6 +50,31 @@ class TheProxy(unittest.TestCase):
                 raw = json.dumps(body).encode()
                 self.assertEqual(self.kp.qwen_effort_none(raw, CHAT), (raw, False))
 
+    def test_an_image_costs_what_its_processor_counts_however_large(self):
+        """Its processor cuts an image into 40-pixel cells, one token each, each side rounded up, plus 3, and clamps
+        nothing: past about 26 megapixels that is more than the 16,386 the Qwen-VL sizing charged, an undercount where the
+        wedge guard counts (code review of v1.59.0). The numbers: the prompt tokens with and without a plain PNG of each
+        size, through the proxy on the reference box (2026-11-24)."""
+        import base64
+        import struct
+        import zlib
+        measured = {(64, 64): 7, (1000, 1000): 628, (1280, 720): 579, (4096, 4096): 10_612, (6000, 6000): 22_503,
+                    (8000, 6000): 30_003}
+        self.serving((SERVED,))
+        for (w, h), n in measured.items():
+            with self.subTest(size=(w, h)):
+                self.assertEqual(self.kp._image_tokens(w, h), n)
+                # and from a block as a client sends it, its size read from the PNG header
+                ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+                png = (b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + ihdr
+                       + struct.pack(">I", zlib.crc32(b"IHDR" + ihdr) & 0xFFFFFFFF))
+                block = {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}
+                self.assertEqual(self.kp._media_tokens(block), n)
+        # the Qwen lanes keep their own sizing, clamped
+        self.serving(("qwen3.8-27b",))
+        self.assertEqual(self.kp._image_tokens(8000, 6000), 16_172)
+        self.assertEqual(self.kp._image_tokens(4096, 4096), 16_386)
+
     def test_the_qwen_lanes_still_get_enable_thinking_false(self):
         self.serving(("qwen3.8-27b",))
         raw = json.dumps({"model": "qwen3.8-27b", "reasoning_effort": "none", "messages": []}).encode()
