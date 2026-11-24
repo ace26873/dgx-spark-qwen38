@@ -755,7 +755,7 @@ function defaultLogSource(){
     : u === NEMOTRON_SUPER_UNIT ? 'qwen38-nemotron-super' : u === FLASH_LOCAL_UNIT ? 'qwen38-flash-local'
     : u === ORNITH_UNIT ? 'qwen38-ornith-122b' : u === FLASH_UNSLOTH_UNIT ? 'qwen38-flash-unsloth'
     : u === TRANSCRIBE_UNIT ? 'qwen38-transcribe'
-    : u === LFM25_UNIT ? 'qwen38-lfm25' : u === LFM3_UNIT ? 'qwen38-lfm3' : 'qwen38-sglang';
+    : u === LFM25_UNIT ? 'qwen38-lfm25' : u === LFM3_UNIT ? 'qwen38-lfm3' : u === INKLING_UNIT ? 'qwen38-inkling' : 'qwen38-sglang';
 }
 onShow('logs', () => {
   if (LOGS_WANT.src || !logTouched){ $('log-src').value = defaultLogSource(); LOGS_WANT.src = null; }

@@ -172,7 +172,7 @@ is 223 GB, the 27B 58), the image lane (46) and the video lane (about 174 of hea
 v1.33 they come on demand: that update gives each its units, and each is built at its first Load
 from the cockpit; `--all-weights` builds them all on that run and proves each, the served lane
 stopped meanwhile and proved again after. To keep a box as it is,
-say so on every run, as a `--no-<lane>` counts for the run that passes it only: `./install.sh --no-flash --no-image --no-video --no-kolibri --no-nemotron --no-nemotron-super --no-flash-local --no-ornith-122b --no-flash-unsloth --no-image-h3 --no-transcribe --no-lfm25 --no-lfm3 --no-speech`
+say so on every run, as a `--no-<lane>` counts for the run that passes it only: `./install.sh --no-flash --no-image --no-video --no-kolibri --no-nemotron --no-nemotron-super --no-flash-local --no-ornith-122b --no-flash-unsloth --no-image-h3 --no-transcribe --no-lfm25 --no-lfm3 --no-inkling --no-speech`
 (or `--no-27b` on a flash box). A lane already installed is updated and not proved again.
 On a box that boots a side lane (images, video, Kolibri, a Nemotron lane, Qwen3.8 Flash-Next FP4-Local, Ornith, Qwen3.8 Flash-Next Unsloth GGUF, MiniMax-H3-Image, the NVIDIA Nemotron Transcribe lane, a Liquid AI lane), a run
 brings up to date the text lane the box served last; left out by its flag, or not prepared, that lane gets its units only, at

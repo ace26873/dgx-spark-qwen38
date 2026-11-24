@@ -56,6 +56,8 @@ PIN_MODELS = {
     "LFM25_DRAFT_REV": "LiquidAI/LFM2.5-24B-A2B-DSpark",
     # the Liquid AI LFM3 lane's: Liquid AI's NVFP4
     "LFM3_REV": "LiquidAI/LFM3-1.7B-NVFP4",
+    # the Inkling 2 Mini lane's: Thinking Machines' checkpoint, its DSpark draft head inside
+    "INKLING_REV": "thinkingmachines/Inkling-2-Mini",
 }
 
 # Where the pins are written: the text lanes' in the switch and the installer, every other
@@ -64,7 +66,7 @@ PIN_FILES = ("switch-model.sh", "run.sh", "install.sh",
              "install-image.sh", "install-video.sh", "install-kolibri.sh", "install-nemotron.sh",
              "install-nemotron-super.sh", "install-flash-local.sh", "install-ornith-122b.sh",
              "install-flash-unsloth.sh", "install-image-h3.sh", "install-transcribe.sh", "install-lfm25.sh",
-             "install-lfm3.sh")
+             "install-lfm3.sh", "install-inkling.sh")
 
 PIN_RE = re.compile(r'^\s*([A-Z][A-Z0-9_]*REV)="?\$?\{?[A-Z0-9_:-]*?([0-9a-f]{40})',
                     re.MULTILINE)

@@ -73,6 +73,12 @@ ENGINES = {
     "qwen38-lfm3.service": {
         "engine": "vLLM", "version": "nightly 60bd6dd", "reports": "0.34.0rc1.dev571+g60bd6dd2e",
         "pin": "vllm/vllm-openai@sha256:19cfbac06cfed28a2eb2c08950e62b4b07fd6e20685ad6e10f9422236d39e519"},
+    # install-inkling.sh INKLING_IMAGE: SGLang's inkling-2-mini image, whose build label (ai.sglang.image.tag, docker image
+    # inspect on the reference box, 2026-11-24) says nightly-dev-20261120-03fde9cc, commit 03fde9cc392a. reports holds
+    # that commit: the version string its engine says in /server_info was not read (the image ran in benches only)
+    "qwen38-inkling.service": {
+        "engine": "SGLang", "version": "nightly 03fde9cc", "reports": "03fde9cc",
+        "pin": "lmsysorg/sglang@sha256:bc811ac7ac68c6fca116a49750baca817b8613a30abface8a347682b55d132e3"},
     # install-image.sh and install-video.sh WHEEL: SGLang's diffusion runtime in the lane's own venv
     "qwen38-image.service": {"engine": "SGLang Diffusion", "version": "0.5.21", "reports": None,
                              "pin": "sglang[diffusion]==0.5.21"},

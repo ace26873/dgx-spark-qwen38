@@ -63,10 +63,11 @@ GGUF_LANES = {
     "flash-unsloth-iq3": ("install-flash-unsloth.sh", "FLASH_UNSLOTH", "FLASH_UNSLOTH_IQ3_PART1", {"LEAN_DEFAULT": "1"}),
 }
 # How each SGLang target of an installer of its own serves its template (install.sh's 27B and flash targets are read
-# from install.sh below): the Liquid AI LFM2.5 24B-A2B lane serves its checkpoint's own, as published. (installer, pin
-# prefix, the fixes as in VLLM_LANES.)
+# from install.sh below): the Liquid AI LFM2.5 24B-A2B and Inkling 2 Mini lanes serve their checkpoint's own, as
+# published. (installer, pin prefix, the fixes as in VLLM_LANES.)
 SGLANG_LANES = {
     "lfm25": ("install-lfm25.sh", "LFM25", None),
+    "inkling": ("install-inkling.sh", "INKLING", None),
 }
 # switch-model.sh's targets that serve no chat template
 NOT_TEXT = {"image", "image-turbo", "video", "image-h3", "transcribe"}

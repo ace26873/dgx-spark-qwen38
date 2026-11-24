@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Point an opencode.json at the served lane: default model + picker name.
 
-Usage: oc-point-default.py <config.json> <lane: 27b|flash|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|lfm25|lfm3> <choice> <window>
+Usage: oc-point-default.py <config.json> <lane: 27b|flash|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|lfm25|lfm3|inkling> <choice> <window>
 <window> is the served context window in tokens (1010000 or 262144, empty if
 unknown): it sets the "(local, 1M|262K)" suffix on the served entry's name.
 
@@ -78,7 +78,10 @@ LABEL = {"stock": "Qwen3.8-27B NVFP4 + DFlash2",
          # Liquid AI's official FP8 of LFM2.5 24B-A2B, a lane of its own on SGLang, with its official DSpark draft.
          "lfm25": "Liquid AI LFM2.5 24B-A2B FP8 + DSpark",
          # Liquid AI's official NVFP4 of LFM3 1.7B, a lane of its own on vLLM.
-         "lfm3": "Liquid AI LFM3 1.7B NVFP4"}
+         "lfm3": "Liquid AI LFM3 1.7B NVFP4",
+         # Thinking Machines' Inkling 2 Mini (mixed NVFP4 and MXFP8), a lane of its own on SGLang, with the DSpark draft
+         # head of its checkpoint.
+         "inkling": "Inkling 2 Mini + DSpark"}
 
 
 def label_for(choice: str, window: str) -> str | None:
@@ -114,7 +117,8 @@ def main() -> None:
             "ornith-122b": "ornith-122b/ornith-1.5-122b",
             "flash-unsloth": "flash-unsloth/qwen3.8-flash-next-unsloth",
             "lfm25": "lfm25/lfm2.5-24b-a2b",
-            "lfm3": "lfm3/lfm3-1.7b"}.get(lane, "qwen38/qwen3.8-27b")
+            "lfm3": "lfm3/lfm3-1.7b",
+            "inkling": "inkling/inkling-2-mini"}.get(lane, "qwen38/qwen3.8-27b")
     prov, mid = want.split("/")
     try:
         text = ocm.read(path)

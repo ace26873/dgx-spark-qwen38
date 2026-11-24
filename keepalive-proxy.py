@@ -3692,7 +3692,7 @@ def route_model_name(body, path):
 # the pair port takes the pair's routes only, and this box's own key admits them to its engine.
 LANE_NAMES = frozenset({"qwen3.8-27b", "qwen3.8-flash-next", "qwen3.8-flash-next-fp4", "ornith-1.5-122b",
                         "nemotron-3.5-bolt", "nemotron-3.5-super-vl", "kolibri-1", "qwen3.8-flash-next-unsloth",
-                        "lfm2.5-24b-a2b", "lfm3-1.7b"})
+                        "lfm2.5-24b-a2b", "lfm3-1.7b", "inkling-2-mini"})
 PAIR_FILE = os.path.expanduser(os.environ.get("QWEN38_PAIR_FILE") or "~/.config/qwen38/pair.json")
 PAIR_DIR = os.path.join(os.path.dirname(PAIR_FILE), "pair")
 # made by pair.py, a directory renamed into place whole: a certificate never meets another key

@@ -351,6 +351,19 @@ case "$CHOICE" in
     #     205,000 + 25,000 + 32,000 = 262,000  <=  262,144
     CTX=205000; OUT=32000; LABEL="local, 262K"
     ;;
+  inkling)
+    # The Inkling 2 Mini lane serves the model's window, 1,048,576 tokens (its config's model_max_length, the unit's
+    # --context-length), and its KV cache held 490,496 tokens at the cookbook's static share of 0.45 (measured
+    # 2026-11-22), under half the window: the pool decides, by the FP4-Local lane's rule at its 1M, the cockpit's check
+    # (fit_verdict) with a pool 10 % smaller than the one measured, the margin oc-fit-limits.py keeps for a boot that
+    # gets less, and the window holding the prompt at opencode's compaction point, one worst step and the answer. The
+    # answer keeps the 32,000 of the other lanes, which oc-fit-limits.py holds as this lane's ceiling whatever its
+    # window (ANSWER_CAPPED): the model's card recommends limits on output tokens (it can loop in its reasoning), and
+    # its longest GSM8K answer at its highest effort was 9,493 tokens (250 questions, 2026-11-23).
+    #     374,000 + 32,000 = 406,000  <=  490,496 x 0.92 x 0.90 = 406,130
+    #     374,000 - 20,000 + 43,863 + 32,000 = 429,863  <=  1,048,576
+    CTX=374000; OUT=32000; LABEL="local, 1M"
+    ;;
   *) printf 'oc-limits: unknown target "%s"\n' "$CHOICE" >&2; exit 2 ;;
 esac
 

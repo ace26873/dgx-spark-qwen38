@@ -1,12 +1,12 @@
 # shellcheck shell=bash
-# sglang-lane.sh: what an SGLang lane installed by an installer of its own shares (install-lfm25.sh, the first;
-# install.sh installs the 27B and flash lanes itself, on the same engine). Sourced after lanes.sh, never run. Each
-# installer keeps what is its own (its pins, its unit's placeholders, its words) and names itself first, as a vLLM
-# lane's does:
+# sglang-lane.sh: what an SGLang lane installed by an installer of its own shares (install-lfm25.sh, the first, and
+# install-inkling.sh; install.sh installs the 27B and flash lanes itself, on the same engine). Sourced after lanes.sh,
+# never run. Each installer keeps what is its own (its pins, its unit's placeholders, its words) and names itself
+# first, as a vLLM lane's does:
 #
-#   VLANE        the lane (lfm25): its opencode provider, the record of the text lane it took the boot from
+#   VLANE        the lane (lfm25, inkling): its opencode provider, the record of the text lane it took the boot from
 #                (lanes.sh), its --no-<lane>, its cache folder
-#   VLANE_SHORT  the lane in a sentence, by its official name (Liquid AI LFM2.5 24B-A2B)
+#   VLANE_SHORT  the lane in a sentence, by its official name (Liquid AI LFM2.5 24B-A2B, Inkling 2 Mini)
 #   UNIT, INSTALLED, CONTAINER, CONFIG_DIR, HERE, LOCAL_IMAGE (the image, by its digest); and, for each part
 #                below, what it says it reads.
 #
@@ -15,7 +15,8 @@
 # rendered unit is put in place) is every text lane's on an engine of its own: it is sourced from there, not copied,
 # as the llama.cpp lanes' llamacpp-lane.sh does. What is the SGLang lanes' own is here: the key by the file SGLang
 # merges in memory (engine-secrets.sh, as the 27B lane's unit reads it), no key middleware, and the engine's
-# uninstall, whose image is the 27B lane's and stays.
+# uninstall, which takes the lane's image tag and leaves the image (the 27B lane's for the LFM2.5 lane, kept by its
+# own tag; the Inkling 2 Mini lane's own, which a docker image prune then reclaims).
 
 # shellcheck source=vllm-lane.sh
 . "$HERE/vllm-lane.sh"
@@ -37,9 +38,9 @@ slane_service_files(){  # $1... the lane's cache folders
 }
 
 # ── --uninstall ──────────────────────────────────────────────────────────────────────────────
-# Its container, its image's local tag and its own caches; the checkpoints stay, said. The image is the 27B lane's,
-# whose own tag keeps it, as pin_untag says (lanes.sh). The key's yaml stays: the 27B lane's unit writes and reads the
-# same file.
+# Its container, its image's local tag and its own caches; the checkpoints stay, said. An image another lane's tag
+# names stays (the LFM2.5 lane runs the 27B lane's), as pin_untag says (lanes.sh). The key's yaml stays: the 27B lane's
+# unit writes and reads the same file.
 slane_uninstall_runtime(){  # $1... the checkpoints' repos
   local r d
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true

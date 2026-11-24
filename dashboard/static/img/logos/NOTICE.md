@@ -18,6 +18,11 @@ attributes removed. The marks themselves belong to their owners (Qwen to Alibaba
 MiniMax, Aleph Alpha to Aleph Alpha, NVIDIA to NVIDIA, Unsloth to Unsloth AI, Liquid AI to Liquid
 AI); the cockpit shows them only to say which model a lane runs.
 
+`thinkingmachines.svg` is no maker's mark: a plain badge of Thinking Machines' initials, drawn for the cockpit (an
+outlined square and the letters TM, in the page's own colour), for the Inkling 2 Mini lane. Lobe Icons has no Thinking
+Machines icon (1.106.0, its latest on 2026-11-24), and the model's repository at the lane's pinned revision ships no
+logo. The name belongs to its owner, and the cockpit shows it only to say which model the lane runs.
+
 `ornith.svg` is Ornith AI's round avatar, cropped from the logo its authors publish in their
 model's repository (`assets/ornith_logo.png` of https://github.com/ornith-ai/Ornith-1 at commit
 7ad11eb, MIT licensed, Copyright (c) 2026 deepreinforce.ai, the licence is in

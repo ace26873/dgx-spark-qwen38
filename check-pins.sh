@@ -91,6 +91,9 @@ eval "$lline"
 # The Liquid AI LFM3 lane's: Liquid AI's NVFP4 and vLLM's nightly image, pulled as published.
 l3line="$(grep -E '^LFM3_(REPO|REV|IMAGE)=' "$REPO_DIR/install-lfm3.sh")"
 eval "$l3line"
+# The Inkling 2 Mini lane's: Thinking Machines' checkpoint and SGLang's inkling-2-mini image, pulled as published.
+iline="$(grep -E '^INKLING_(REPO|REV|IMAGE)=' "$REPO_DIR/install-inkling.sh")"
+eval "$iline"
 # The speech lane's: llama.cpp's commit, each recognizer's two GGUF at its revision with the
 # sha256 the install checks, and Kokoro's two files, which nothing checked either (found in the
 # audit of 2026-10-16). Each recognizer size is a branch of install-speech.sh's case on
@@ -492,6 +495,8 @@ check_model  lfm25          "$LFM25_REPO" "$LFM25_REV"
 check_model  lfm25-draft    "$LFM25_DRAFT_REPO" "$LFM25_DRAFT_REV"
 echo "Liquid AI LFM3 lane"
 check_model  lfm3           "$LFM3_REPO" "$LFM3_REV"
+echo "Inkling 2 Mini lane"
+check_model  inkling        "$INKLING_REPO" "$INKLING_REV"
 echo "Speech lane"
 check_commit speech-llama-cpp ggml-org/llama.cpp "$LLAMA_CPP_PIN"
 for size in $ASR_SIZES; do
@@ -519,6 +524,7 @@ check_image nemotron-base  "$NEMOTRON_BASE_IMAGE"
 check_image flash-local    "$FLASH_LOCAL_IMAGE"
 check_image flash-unsloth  "$FLASH_UNSLOTH_IMAGE"
 check_image lfm3           "$LFM3_IMAGE"
+check_image inkling        "$INKLING_IMAGE"
 
 echo
 if [ "$FAIL" -eq 0 ]; then

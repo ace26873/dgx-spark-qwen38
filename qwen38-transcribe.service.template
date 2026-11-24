@@ -8,8 +8,8 @@ Requires=docker.service
 # 37 GB of weights and does not hold beside one of them (docs/transcribe-lane.md): it loads when no
 # engine serves, as the image lane and the video lane do, and the speech lane (a CPU lane) is the
 # only one it does not conflict with.
-Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-lfm25.service qwen38-lfm3.service
-After=network-online.target docker.service qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-lfm25.service qwen38-lfm3.service
+Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-lfm25.service qwen38-lfm3.service qwen38-inkling.service
+After=network-online.target docker.service qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-lfm25.service qwen38-lfm3.service qwen38-inkling.service
 
 [Service]
 Type=simple

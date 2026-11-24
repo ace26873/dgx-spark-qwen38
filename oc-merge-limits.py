@@ -1139,7 +1139,7 @@ def add_variant(path: str, provider: str, model: str, level: str) -> int:
 
 
 OURS = ("qwen38", "flashnext", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth",
-        "lfm25", "lfm3")
+        "lfm25", "lfm3", "inkling")
 
 
 def _added_ok(text: str, before: dict, blocks: dict) -> str:

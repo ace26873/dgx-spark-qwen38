@@ -32,6 +32,7 @@ LANES = {
     "qwen38-transcribe.service": ("qwen38-transcribe.service.template",),
     "qwen38-lfm25.service": ("qwen38-lfm25.service.template",),
     "qwen38-lfm3.service": ("qwen38-lfm3.service.template",),
+    "qwen38-inkling.service": ("qwen38-inkling.service.template",),
 }
 ALL = set(LANES)
 

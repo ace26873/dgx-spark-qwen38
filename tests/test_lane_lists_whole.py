@@ -82,7 +82,7 @@ CHOICE_LANE = {"kolibri": "qwen38-kolibri.service", "kolibri-nvfp4": "qwen38-kol
                "image": "qwen38-image.service",
                "image-turbo": "qwen38-image.service", "video": "qwen38-video.service",
                "image-h3": "qwen38-image-h3.service", "transcribe": "qwen38-transcribe.service",
-               "lfm25": "qwen38-lfm25.service", "lfm3": "qwen38-lfm3.service"}
+               "lfm25": "qwen38-lfm25.service", "lfm3": "qwen38-lfm3.service", "inkling": "qwen38-inkling.service"}
 
 
 # The two families one lane apart (the vLLM lanes less Kolibri are the b12x lanes) are told by the
@@ -384,7 +384,7 @@ class EveryListNamesThemAll(unittest.TestCase):
                             self.assertEqual(consts.setdefault(t.id, node.value.value), node.value.value, t.id)
         self.assertLessEqual({"IMAGE_UNIT", "VIDEO_UNIT", "KOLIBRI_UNIT", "NEMOTRON_UNIT", "NEMOTRON_SUPER_UNIT",
                               "FLASH_LOCAL_UNIT", "ORNITH_UNIT", "FLASH_UNSLOTH_UNIT", "IMAGE_H3_UNIT", "TRANSCRIBE_UNIT",
-                              "LFM25_UNIT", "LFM3_UNIT"},
+                              "LFM25_UNIT", "LFM3_UNIT", "INKLING_UNIT"},
                              set(consts), consts)
 
         def unit_of(e):

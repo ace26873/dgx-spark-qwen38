@@ -23,7 +23,7 @@ SIDE = {"install-image.sh": "image", "install-video.sh": "video", "install-kolib
         "install-nemotron-super.sh": "nemotron-super", "install-flash-local.sh": "flash-local",
         "install-ornith-122b.sh": "ornith-122b", "install-flash-unsloth.sh": "flash-unsloth",
         "install-image-h3.sh": "image-h3", "install-transcribe.sh": "transcribe", "install-lfm25.sh": "lfm25",
-        "install-lfm3.sh": "lfm3"}
+        "install-lfm3.sh": "lfm3", "install-inkling.sh": "inkling"}
 SOURCE = '. "$HERE/lanes.sh"\n'
 
 
@@ -466,7 +466,7 @@ class TheRunSaysIt(unittest.TestCase):
         units = wall.units_dir({"qwen38-nemotron.service": "[Service]\n"})
         script = wall.walled("prepare-lane.sh", at=PREPARE_SIDE, units=units)
         for lane in ("image", "video", "kolibri", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth", "image-h3",
-                     "transcribe", "lfm25", "lfm3"):
+                     "transcribe", "lfm25", "lfm3", "inkling"):
             with self.subTest(lane):
                 env, record = wall.fenced_env(QWEN38_MEMORY_CLASS="64")
                 r = subprocess.run(["bash", script, lane], capture_output=True, text=True, timeout=60, env=env)

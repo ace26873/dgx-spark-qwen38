@@ -26,8 +26,8 @@ TEXT_PORT = 30000
 #              install.sh's speech_step hands it whole to install-speech.sh, so it stays False here)
 #   kind       what it serves: text, image, video, speech or transcribe (speech heard on the GPU, on a port of
 #              its own, by no chat client: install-transcribe.sh)
-#   engine     sglang (lmsysorg/sglang images: install.sh's two lanes, and install-lfm25.sh's on the 27B's
-#              image), vllm (the installers that source vllm-lane.sh),
+#   engine     sglang (lmsysorg/sglang images: install.sh's two lanes, install-lfm25.sh's on the 27B's image,
+#              and install-inkling.sh's on its own), vllm (the installers that source vllm-lane.sh),
 #              llamacpp (llama.cpp's own llama-server image, the installers that source
 #              llamacpp-lane.sh), diffusion (SGLang Diffusion's wheel in the lane's own venv), own
 #              (this repo's speech-server.py, in front of llama.cpp's llama-server and Kokoro)
@@ -131,6 +131,14 @@ LANES = {
              "targets": ("lfm3",), "heavy_64": (),
              "served": "lfm3-1.7b", "provider": "lfm3", "ports": (TEXT_PORT,), "fits_64": False,
              "title": "Liquid AI LFM3"},
+    # install-inkling.sh: SGLang's own inkling-2-mini image (by its arm64 digest), Thinking Machines' Inkling 2 Mini with
+    # the DSpark draft head of its checkpoint, on the text lanes' port behind the proxy; its unit's --served-model-name
+    # inkling-2-mini
+    "inkling": {"unit": "qwen38-inkling.service", "installer": "install-inkling.sh", "flags": True, "kind": "text",
+                "engine": "sglang", "b12x": False,
+                "targets": ("inkling",), "heavy_64": (),
+                "served": "inkling-2-mini", "provider": "inkling", "ports": (TEXT_PORT,), "fits_64": False,
+                "title": "Inkling 2 Mini"},
     # install-speech.sh: on the CPU beside any lane, PORT 30024 (SPEECH_PORT) and its recognizer on the
     # next one (ASR_PORT); no switch target, no official name of its own (it is "the speech lane")
     "speech": {"unit": "qwen38-speech.service", "installer": "install-speech.sh", "flags": False, "kind": "speech",

@@ -1,0 +1,103 @@
+[Unit]
+Description=Inkling 2 Mini NVFP4/MXFP8 + DSpark (SGLang, capped docker), OpenAI+Anthropic API :__PORT__
+Wants=network-online.target
+Requires=docker.service
+# One engine at a time on this box, said to systemd: starting this lane stops the others
+# and starting another stops this one, the stop finishing before the start in both
+# directions (Conflicts= alone orders nothing, hence After= on the same units).
+Conflicts=qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service qwen38-lfm25.service qwen38-lfm3.service
+After=network-online.target docker.service qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service qwen38-lfm25.service qwen38-lfm3.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+ExecStartPre=-/usr/bin/docker rm -f qwen38-inkling
+# The memory the last engine held has to be back before this one starts (see engine-preflight.sh).
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-preflight.sh qwen38-inkling.service
+# The key goes to the server in a file SGLang merges in memory (see engine-secrets.sh),
+# written again before every start, so it is on no command line.
+ExecStartPre=/bin/bash __HOME__/.config/qwen38/engine-secrets.sh
+# Thinking Machines' Inkling 2 Mini (mixed NVFP4 and MXFP8 experts, the DSpark draft head in the checkpoint), served by
+# the image SGLang's cookbook gives it (lmsysorg/sglang:inkling-2-mini, by its arm64 digest) with the cookbook's DGX
+# Spark recipe and its DSpark draft, as the reference box measured it on 2026-11-22 (ready in 222 s, 53.1 GiB of GPU
+# memory at its peak, a KV cache of 490,496 tokens, GSM8K 250 at 0.964; ~/qa-tools/etudes/inkling):
+#   --tp 1 --ep 1 --attention-backend fa4 --dtype bfloat16 --page-size 128 --mem-fraction-static 0.45
+#     --grammar-backend xgrammar: the recipe's, word for word, and MAX_JOBS=4, the cap it sets on the kernels the
+#     engine compiles at its start.
+#   --speculative-algorithm DSPARK --speculative-num-draft-tokens 8 and the four SGLANG_OPT_* variables: the recipe's
+#     DSpark arm. SGLang takes the draft from the checkpoint itself (mtp.safetensors), by the model's name and no
+#     revision, so through refs/main, which install-inkling.sh pins at the revision below.
+#   --context-length 1048576: the model's window (its config's model_max_length), the one SGLang took at that run
+#     with none given, said here so that no later default moves it. The KV cache that run held, 490,496 tokens at
+#     this share, is what one request may fill.
+#   --max-running-requests 48: the number SGLang set itself at that run, said here for the same reason.
+#   --enable-multimodal: the model reads images (its vision tower); the recipe passes it.
+#   --reasoning-parser inkling --tool-call-parser inkling2: the recipe's, the two SGLang names for the model's own
+#     reasoning and tool-call messages (three tool calls of three on the reference box).
+#   No --chat-template: the checkpoint's own. Its reasoning effort is a request's chat_template_kwargs.reasoning_effort,
+#     a number in [0.0, 0.99] or a level by name (none 0.0, minimal 0.1, low 0.2, medium 0.7, high 0.9, xhigh and max
+#     0.99), 0.9 when a request names none (its chat_template.jinja at the pinned revision); the engine refuses one out
+#     of bounds (400, measured on the reference box with 5).
+#     Its sampling defaults (temperature 1.0) are its generation_config.json, which SGLang applies to a request that
+#     sets none.
+# What every SGLang lane of this box passes besides (qwen38-sglang.service.template says why each): the health
+# route that generates nothing, the rendezvous through a file, gloo and NCCL on lo, the request header overrides
+# the proxy's request ids need, the offline cache, the scheduler parked when idle (--sleep-on-idle), the metrics
+# and the cache report, the key by --config, and the bind of the other text lanes. The first two, as each unit
+# says them:
+# SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION=0: GET /health answers from the server's state, 503
+# while it starts and 200 once it serves, instead of generating a token whenever the engine is
+# idle. /health takes no key, and the proxy relayed it from the network (D02 of the 2026-10-24
+# security review); /health_generate still generates, and the proxy asks the key for it.
+# SGLANG_DISTRIBUTED_INIT_METHOD_OVERRIDE: the rendezvous of the engine's one process goes through a file
+# in the container, which --rm makes new at each start. torch's TCPStore, the default, listened on every
+# interface whatever address it was given (*:23906 on the reference box, 2026-10-30, no key, no firewall),
+# and with the file no port opens for it. GLOO_SOCKET_IFNAME and NCCL_SOCKET_IFNAME keep gloo's and NCCL's
+# bootstrap on lo: under the real clients, the lane listened on four ports of the box's LAN address without
+# them, though the box's name resolves to 127.0.0.1 (2026-10-30).
+# Of the config directory, the one file the engine reads, read-only: the key's yaml. --mount, not -v: a source that
+# is not there fails the start, where -v made a directory in its place, owned by root. Its own caches: torch's, and
+# the kernels SGLang and b12x compile at the first start, kept for the next ones, as the reference box's runs kept
+# them (379 s to the first answer at the first start there, when they were compiled, 222 s at the next).
+# --memory 100g: the 27B lane's cap, on the same engine. The cgroup is not charged for the engine's GPU memory
+# (docs/gb10-memory.md): the static share bounds that.
+ExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --name qwen38-inkling --gpus all \
+  --memory 100g --memory-swap 100g --shm-size 16g --network host --ipc=host \
+  -e TORCHINDUCTOR_CACHE_DIR=/cache/inductor \
+  -e MAX_JOBS=4 \
+  -e SGLANG_OPT_INKLING2_VERIFY_REL_BIAS_KERNEL=1 \
+  -e SGLANG_OPT_DSV41_DSPARK_MID_FOLD=1 \
+  -e SGLANG_OPT_DSV41_DSPARK_PREPARE_INPUTS_ONCE=1 \
+  -e SGLANG_OPT_DSV41_DSPARK_SKIP_PREFILLED_INPUTS=1 \
+  -e SGLANG_ENABLE_REQUEST_HEADER_OVERRIDES=1 \
+  -e SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION=0 \
+  -e SGLANG_DISTRIBUTED_INIT_METHOD_OVERRIDE=file:///tmp/sglang-rdv \
+  -e GLOO_SOCKET_IFNAME=lo -e NCCL_SOCKET_IFNAME=lo \
+  -e HF_HUB_OFFLINE=1 \
+  -v __HOME__/.config/qwen38/inkling-cache:/cache \
+  -v __HOME__/.config/qwen38/inkling-cache/sglang:/root/.cache/sglang \
+  -v __HOME__/.config/qwen38/inkling-cache/b12x:/root/.cache/b12x \
+  -v __HF_CACHE__:/root/.cache/huggingface \
+  --mount type=bind,source=__HOME__/.config/qwen38/engine-secrets.yaml,target=/out/engine-secrets.yaml,readonly \
+  __IMAGE__ \
+  python3 -m sglang.launch_server \
+    --model-path __MODEL__ --revision __REV__ --tp 1 --ep 1 \
+    --served-model-name inkling-2-mini \
+    --attention-backend fa4 --dtype bfloat16 --page-size 128 \
+    --context-length 1048576 --mem-fraction-static 0.45 --max-running-requests 48 \
+    --speculative-algorithm DSPARK --speculative-num-draft-tokens 8 \
+    --grammar-backend xgrammar --enable-multimodal \
+    --sleep-on-idle --enable-metrics --enable-cache-report \
+    --reasoning-parser inkling --tool-call-parser inkling2 \
+    --config /out/engine-secrets.yaml \
+    --host __ENGINE_BIND__ --port __PORT__'
+ExecStop=-/usr/bin/docker stop -t 20 qwen38-inkling
+Restart=always
+# docker kills SGLang with SIGKILL (137) or SIGTERM (143) on a plain stop; that is
+# a clean stop, not a failure
+SuccessExitStatus=137 143
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -490,15 +490,16 @@ jobs:
           # (--with-ornith-122b), and `flash-unsloth` and `flash-unsloth-iq3`, the Qwen3.8
           # Flash-Next Unsloth GGUF lane's two quantizations (--with-flash-unsloth), and the MiniMax-H3-Image
           # lane's `image-h3` (--with-image-h3), the NVIDIA Nemotron Transcribe lane's `transcribe`
-          # (--with-transcribe), the Liquid AI LFM2.5 24B-A2B lane's `lfm25` (--with-lfm25) and the Liquid AI
-          # LFM3 lane's `lfm3` (--with-lfm3), each
+          # (--with-transcribe), the Liquid AI LFM2.5 24B-A2B lane's `lfm25` (--with-lfm25), the Liquid AI
+          # LFM3 lane's `lfm3` (--with-lfm3) and the Inkling 2 Mini lane's `inkling` (--with-inkling), each
           # switched to like any other, and none a MODEL_CHOICE (none has a recipe; Kolibri, the Nemotron
           # lanes, Flash FP4-Local and Ornith serve text from vLLM, the Unsloth GGUF lane from llama.cpp,
-          # and the LFM2.5 lane from SGLang, under their own installers). Both sets are asserted, so a
+          # and the LFM2.5 and Inkling lanes from SGLang, under their own installers). Both sets are asserted, so a
           # target added to the switcher and forgotten in the cockpit's enum is
           # still caught.
           FLAG_LANES = ["image", "image-turbo", "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-local",
-                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25", "lfm3"]
+                        "ornith-122b", "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25", "lfm3",
+                        "inkling"]
           ref = choices
           switch_ref = sorted(ref + FLAG_LANES)
           text_lists = {"install.sh MODEL_CHOICE": choices, "recipes BUILTIN_IDS": sorted(builtins)}
@@ -596,6 +597,14 @@ jobs:
           read -r C O _ <<<"$(l lfm3)"
           [ $(( C - 20000 + 43863 + O )) -le 262144 ] || { echo "lfm3: past its 262,144 window"; exit 1; }
           [ $(( C + 25000 + O )) -le 262144 ] || { echo "lfm3: past its window by oc-fit-limits.py's rule"; exit 1; }
+          # The Inkling 2 Mini lane, at its window of 1,048,576 tokens, which its pool decides (490,496 tokens measured at
+          # the cookbook's share): the pair fits that pool less 10 %, and the window the prompt at opencode's compaction
+          # point, one agent step and the answer
+          [ "$(l inkling)" = "374000 32000 local, 1M" ] || { echo "inkling drifted"; exit 1; }
+          read -r C O _ <<<"$(l inkling)"
+          LOW=$(( 490496 * 92 / 100 * 90 / 100 ))
+          [ $(( C + O )) -le "$LOW" ] || { echo "inkling: $C + $O passes $LOW, its pool less 10 %"; exit 1; }
+          [ $(( C - 20000 + 43863 + O )) -le 1048576 ] || { echo "inkling: past its 1,048,576 window"; exit 1; }
           # Nonsense is refused rather than defaulted, or a typo silently serves
           # the wrong budget.
           ! l banana native 2>/dev/null || { echo "an unknown target must be refused"; exit 1; }
@@ -868,7 +877,7 @@ jobs:
           # so the flag is a gate now, not a habit.
           for f in qwen38-sglang.service.template qwen38-sglang-1m.service.template \
                    qwen38-flash-launch.sh.template run.sh qwen38-image-h3.service.template \
-                   qwen38-lfm25.service.template; do
+                   qwen38-lfm25.service.template qwen38-inkling.service.template; do
             grep -q -- '--sleep-on-idle' "$f" || { echo "$f does not park its scheduler when idle"; exit 1; }
           done
           # The image and video lanes' runtime (v0.5.21) has no such flag: their scheduler-idle-poll
@@ -884,7 +893,8 @@ jobs:
           # unnoticed, and its exposure is stated (unauthenticated on a port whose
           # whole surface already assumes a trusted network: SECURITY.md).
           for f in qwen38-sglang.service.template qwen38-sglang-1m.service.template \
-                   qwen38-flash-launch.sh.template run.sh qwen38-lfm25.service.template; do
+                   qwen38-flash-launch.sh.template run.sh qwen38-lfm25.service.template \
+                   qwen38-inkling.service.template; do
             grep -q -- '--enable-metrics' "$f" || { echo "$f exports no metrics"; exit 1; }
           done
 
@@ -1039,12 +1049,12 @@ jobs:
           script = pathlib.Path("switch-model.sh").read_text()
           alw = pathlib.Path("dashboard/sudoers-cockpit.template").read_text()
           allowed = {m.strip() for m in re.findall(r"NOPASSWD:\s*(.+)$", alw, re.M)}
-          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE|TRANSCRIBE_STAGE|LFM25_STAGE|LFM3_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
+          stage = dict(re.findall(r'^(STAGE_UNIT|STAGE_CEIL|IMG_STAGE|KOL_STAGE|NEM_STAGE|NSV_STAGE|FLL_STAGE|ORN_STAGE|FLU_STAGE|VID_STAGE|H3_STAGE|TRANSCRIBE_STAGE|LFM25_STAGE|LFM3_STAGE|INKLING_STAGE)="\$CONFIG_DIR/([^"]+)"', script, re.M))
           units = {"qwen38-sglang.service", "qwen38-flash.service"}
           engines = units | {"qwen38-image.service", "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                              "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
                              "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
-                             "qwen38-lfm25.service", "qwen38-lfm3.service"}
+                             "qwen38-lfm25.service", "qwen38-lfm3.service", "qwen38-inkling.service"}
           values = {
               "TEXT_UNIT_NAME": engines, "TARGET_UNIT_NAME": units, "OTHER_UNIT_NAME": engines,
               "IMAGE_UNIT_NAME": {"qwen38-image.service"},
@@ -1059,6 +1069,7 @@ jobs:
               "TRANSCRIBE_UNIT_NAME": {"qwen38-transcribe.service"},
               "LFM25_UNIT_NAME": {"qwen38-lfm25.service"},
               "LFM3_UNIT_NAME": {"qwen38-lfm3.service"},
+              "INKLING_UNIT_NAME": {"qwen38-inkling.service"},
               "TARGET_UNIT": {re.search(r'^SGL_UNIT="([^"]+)"', script, re.M).group(1)},
               "IMAGE_UNIT": {re.search(r'^IMAGE_UNIT="([^"]+)"', script, re.M).group(1)},
               "VIDEO_UNIT": {re.search(r'^VIDEO_UNIT="([^"]+)"', script, re.M).group(1)},
@@ -1072,6 +1083,7 @@ jobs:
               "TRANSCRIBE_UNIT": {re.search(r'^TRANSCRIBE_UNIT="([^"]+)"', script, re.M).group(1)},
               "LFM25_UNIT": {re.search(r'^LFM25_UNIT="([^"]+)"', script, re.M).group(1)},
               "LFM3_UNIT": {re.search(r'^LFM3_UNIT="([^"]+)"', script, re.M).group(1)},
+              "INKLING_UNIT": {re.search(r'^INKLING_UNIT="([^"]+)"', script, re.M).group(1)},
               "STAGE_UNIT": {"__HOME__/.config/qwen38/" + stage["STAGE_UNIT"]},
               "STAGE_CEIL": {"__HOME__/.config/qwen38/" + stage["STAGE_CEIL"]},
               "IMG_STAGE": {"__HOME__/.config/qwen38/" + stage["IMG_STAGE"]},
@@ -1086,6 +1098,7 @@ jobs:
               "TRANSCRIBE_STAGE": {"__HOME__/.config/qwen38/" + stage["TRANSCRIBE_STAGE"]},
               "LFM25_STAGE": {"__HOME__/.config/qwen38/" + stage["LFM25_STAGE"]},
               "LFM3_STAGE": {"__HOME__/.config/qwen38/" + stage["LFM3_STAGE"]},
+              "INKLING_STAGE": {"__HOME__/.config/qwen38/" + stage["INKLING_STAGE"]},
           }
           seen, bad = 0, []
           for raw in script.splitlines():
@@ -1240,6 +1253,13 @@ jobs:
           m = re.search(r'^LFM3_IMAGE="([^"]+)"', pathlib.Path("install-lfm3.sh").read_text(), re.M)
           if not m or m.group(1) not in un.split('BASE_IMAGES="', 1)[-1].split('"', 1)[0].split():
               bad.append("install-lfm3.sh LFM3_IMAGE")
+          # and the Inkling 2 Mini lane's checkpoint, and its image, SGLang's own for it, by its digest
+          m = re.search(r'^INKLING_REPO="([^"]+)"', pathlib.Path("install-inkling.sh").read_text(), re.M)
+          if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():
+              bad.append("install-inkling.sh INKLING_REPO")
+          m = re.search(r'^INKLING_IMAGE="([^"]+)"', pathlib.Path("install-inkling.sh").read_text(), re.M)
+          if not m or m.group(1) not in un.split('BASE_IMAGES="', 1)[-1].split('"', 1)[0].split():
+              bad.append("install-inkling.sh INKLING_IMAGE")
           # and the NVIDIA Nemotron Transcribe lane's GGUF repository
           m = re.search(r'^TRANSCRIBE_REPO="([^"]+)"', pathlib.Path("install-transcribe.sh").read_text(), re.M)
           if not m or m.group(1) not in un.split('HF_REPOS="', 1)[-1].split('"', 1)[0].split():

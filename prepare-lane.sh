@@ -4,8 +4,8 @@
 # SGLang Diffusion, the video lane's Turbo adapter) and the Kolibri, Nemotron, Qwen3.8 Flash-Next FP4-Local and Ornith
 # lanes' images (one image for the two Nemotron lanes, one for Qwen3.8 Flash-Next FP4-Local and Ornith), and llama.cpp's
 # image for the Qwen3.8 Flash-Next Unsloth GGUF and NVIDIA Nemotron Transcribe lanes, the 27B lane's SGLang image for
-# the Liquid AI LFM2.5 24B-A2B lane, and vLLM's own nightly image for the Liquid AI LFM3 lane, each by its own
-# installer's --prepare; their
+# the Liquid AI LFM2.5 24B-A2B lane, vLLM's own nightly image for the Liquid AI LFM3 lane, and SGLang's
+# inkling-2-mini image for the Inkling 2 Mini lane, each by its own installer's --prepare; their
 # checkpoint comes with the Load's switch, as for any Load. The
 # other text lane, beside the lane that serves: the image its launcher (flash) or unit (27B)
 # runs, the checkpoint of the target it serves (the switch's own fetch, ./switch-model.sh
@@ -14,7 +14,7 @@
 # draft, its config set for the window the unit serves. Each download is refused before its
 # first byte when its room is not there.
 #
-#   ./prepare-lane.sh image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3
+#   ./prepare-lane.sh image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3|inkling
 #   ./prepare-lane.sh flash|27b [<target>]
 #
 # The target is the one the Load loads, for the two lanes whose preparation fetches a
@@ -29,11 +29,11 @@ set -euo pipefail
 # exact-argv sudoers is rendered from it and has to match the cockpit's own calls (2026-10-22).
 while [ -n "${HOME:-}" ] && [ "$HOME" != / ] && [ "${HOME%/}" != "$HOME" ]; do HOME="${HOME%/}"; done; export HOME
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage(){ echo "usage: ./prepare-lane.sh <image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3> | <flash|27b> [<target>]" >&2; exit 2; }
+usage(){ echo "usage: ./prepare-lane.sh <image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3|inkling> | <flash|27b> [<target>]" >&2; exit 2; }
 die(){ printf '\n\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 section(){ printf '\n\033[1;36m── %s\033[0m\n' "$*"; }
 case "${1:-}" in
-  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3) [ "$#" -eq 1 ] || usage ;;
+  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3|inkling) [ "$#" -eq 1 ] || usage ;;
   flash|27b) [ "$#" -le 2 ] || usage ;;
   *) usage ;;
 esac
@@ -275,7 +275,7 @@ prepare_27b(){
 }
 
 case "$1" in
-  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3)
+  image|video|kolibri|nemotron|nemotron-super|flash-local|ornith-122b|flash-unsloth|image-h3|transcribe|lfm25|lfm3|inkling)
     # its checkpoint comes with its switch, as for any Load: no target here
     CONFIG_DIR="$HOME/.config/qwen38"; REPO_DIR="$HERE"
     # shellcheck source=lanes.sh

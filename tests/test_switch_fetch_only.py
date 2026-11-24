@@ -46,7 +46,7 @@ class Box:
         for unit in ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-nemotron.service",
                      "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
                      "qwen38-flash-unsloth.service", "qwen38-transcribe.service", "qwen38-lfm25.service",
-                     "qwen38-lfm3.service"):
+                     "qwen38-lfm3.service", "qwen38-inkling.service"):
             old = f'"/etc/systemd/system/{unit}"'
             assert old in text, f"switch-model.sh no longer names {unit} that way"
             text = text.replace(old, f'"{units}/{unit}"')
@@ -56,7 +56,7 @@ class Box:
         for f in ("lanes.sh", "ckpt-fetch.py", "install-nemotron.sh", "install-nemotron-super.sh", "install-flash-local.sh",
                   "install-ornith-122b.sh", "vllm-lane.sh", "ple-table.py", "install-flash-unsloth.sh", "llamacpp-lane.sh",
                   "gguf-fetch.py", "install-transcribe.sh", "install-lfm25.sh", "sglang-lane.sh",
-                  "install-lfm3.sh"):
+                  "install-lfm3.sh", "install-inkling.sh"):
             (repo / f).write_text((REPO / f).read_text())
         # the Nemotron lane's unit, as install-nemotron.sh writes it: its image, its cache, the
         # checkpoint and the memory share on lines of their own
@@ -152,6 +152,17 @@ class Box:
             f"  -v {self.home}/.cache/huggingface:/root/.cache/huggingface \\\n"
             f"  {self.lfm3_pins['LFM3_IMAGE']} \\\n"
             f"    {self.lfm3_pins['LFM3_REPO']} --revision {self.lfm3_pins['LFM3_REV']} --port 30000'\n")
+        # the Inkling 2 Mini lane's unit: its own SGLang image by digest, its cache, its checkpoint at its revision
+        ipins = dict(line.split("=", 1) for line in (REPO / "install-inkling.sh").read_text().splitlines()
+                     if line.startswith("INKLING_") and "=" in line)
+        self.inkling_pins = {k: v.strip('"') for k, v in ipins.items()}
+        self.inkling_unit = units / "qwen38-inkling.service"
+        self.inkling_unit.write_text(
+            "[Service]\nExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --name qwen38-inkling \\\n"
+            f"  -v {self.home}/.cache/huggingface:/root/.cache/huggingface \\\n"
+            f"  {self.inkling_pins['INKLING_IMAGE']} \\\n"
+            f"  python3 -m sglang.launch_server --model-path {self.inkling_pins['INKLING_REPO']} "
+            f"--revision {self.inkling_pins['INKLING_REV']} --port 30000'\n")
         (repo / "switch-model.sh").chmod(0o755)
         self.bin = self.t / "bin"
         self.bin.mkdir()
@@ -353,6 +364,22 @@ class FetchOnly(unittest.TestCase):
         self.assertEqual(box.lfm3_unit.read_bytes(), unit_before)
         self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
 
+    def test_the_inkling_lane_fetches_in_its_own_image_and_stops(self):
+        box = Box()
+        unit_before = box.inkling_unit.read_bytes()
+        rc, out, runs, calls = box.run("inkling", "--fetch")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("is in the cache; nothing else was changed", out)
+        pins = box.inkling_pins
+        self.assertEqual(len(runs), 1, runs)
+        self.assertIn(f"/opt/qwen38/ckpt-fetch.py {pins['INKLING_REPO']} {pins['INKLING_REV']} ", runs[0])
+        # pinned as refs/main, as install-inkling.sh pins it: SGLang reads the draft head by the model's name offline
+        self.assertIn(" --offline-first --refs-main pin ", runs[0])
+        self.assertIn(f"--need-gb {pins['INKLING_GB']} ", runs[0])
+        self.assertIn(f" {pins['INKLING_IMAGE']} ", runs[0], "in its own SGLang image, by digest")
+        self.assertEqual(box.inkling_unit.read_bytes(), unit_before)
+        self.assertFalse([c for c in calls if re.search(r"\b(enable|disable|daemon-reload|restart|start|stop)\b", c)], calls)
+
     def test_without_it_the_switch_goes_on_past_the_download(self):
         rc, out, runs, _ = Box().run("stock")
         self.assertEqual(len(runs), 1, out)
@@ -365,13 +392,14 @@ class FetchOnly(unittest.TestCase):
         self.assertEqual((runs, calls), ([], []))
 
     def test_every_lane_stops_right_after_its_own_download(self):
-        # the eleven fetch calls of the switch: the nine branches that fetch (Kolibri, Nemotron, Flash FP4-Local, Ornith,
-        # image, video, the text lanes, Liquid AI's LFM2.5 24B-A2B and LFM3 lanes) and MiniMax-H3-Image's two (its checkpoint,
+        # the twelve fetch calls of the switch: the ten branches that fetch (Kolibri, Nemotron, Flash FP4-Local, Ornith,
+        # image, video, the text lanes, Liquid AI's LFM2.5 24B-A2B and LFM3 lanes, the Inkling 2 Mini lane) and
+        # MiniMax-H3-Image's two (its checkpoint,
         # then its text encoder), that pair ending with ONE stop (v1.50); each call is followed at once by the --fetch
         # stop, before anything it writes; the Nemotron lane's loop over its model and its drafter ends first, with
         # nothing else in it, and so does the LFM2.5 lane's over its checkpoint and its draft
         calls = [m.start() for m in re.finditer(r"ckpt-fetch\.py\"? \"\$", SWITCH)]
-        self.assertEqual(len(calls), 11)
+        self.assertEqual(len(calls), 12)
         for at in calls:
             rest = SWITCH[at:]
             die = rest.index("|| die ")

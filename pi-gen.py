@@ -54,7 +54,7 @@ import shlex
 import sys
 
 OURS = ("qwen38", "flashnext", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth",
-        "lfm25", "lfm3")
+        "lfm25", "lfm3", "inkling")
 RESIZE = {"maxWidth": 1568, "maxHeight": 1568, "maxBytes": 524288, "jpegQuality": 75}
 
 

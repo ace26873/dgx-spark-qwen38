@@ -773,13 +773,13 @@ class ReadRoutes(Base):
         self.assertEqual(set(self.cp.CONTAINERS), {"qwen38-sglang", "qwen38-flash", "qwen38-kolibri", "qwen38-nemotron",
                                                    "qwen38-nemotron-super", "qwen38-flash-local", "qwen38-ornith-122b",
                                                    "qwen38-flash-unsloth", "qwen38-transcribe", "qwen38-lfm25",
-                                                   "qwen38-lfm3"})
+                                                   "qwen38-lfm3", "qwen38-inkling"})
         self.assertEqual(set(self.cp.JOURNAL_UNITS), {
             "qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service",
             "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
             "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
             "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service", "qwen38-lfm25.service",
-            "qwen38-lfm3.service", "qwen38-keepalive.service", "opencode-web.service",
+            "qwen38-lfm3.service", "qwen38-inkling.service", "qwen38-keepalive.service", "opencode-web.service",
             # the speech lane, on the CPU beside any lane (v1.58.0): its journal is read like the others
             "qwen38-speech.service"})
 

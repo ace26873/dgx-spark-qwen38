@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # vllm-lane.sh: what the six vLLM lanes' installers share (install-kolibri.sh, install-nemotron.sh,
 # install-nemotron-super.sh, install-flash-local.sh, install-ornith-122b.sh, install-lfm3.sh), and through llamacpp-lane.sh and
-# sglang-lane.sh what is no vLLM's here, the llama.cpp lanes' and install-lfm25.sh's. Sourced after lanes.sh, never
-# run. Each installer keeps what is its own (its pins, its image, its unit's placeholders, its words) and names
-# itself first:
+# sglang-lane.sh what is no vLLM's here, the llama.cpp lanes' and the SGLang lanes' (install-lfm25.sh's,
+# install-inkling.sh's). Sourced after lanes.sh, never run. Each installer keeps what is its own (its pins, its image,
+# its unit's placeholders, its words) and names itself first:
 #
 #   VLANE        the lane (kolibri, nemotron, nemotron-super, flash-local, ornith-122b, lfm3): its opencode provider, the
 #                record of the text lane it took the boot from (lanes.sh), its --no-<lane>, its cache folder
@@ -351,7 +351,7 @@ vlane_prove(){
   { [ -n "${LANE_FILES+x}" ] && [ "${#LANE_FILES[@]}" -gt 0 ]; } \
     || die "the proof runs before the service step (repo bug: please open an issue)"
   VLANE_WAS=""
-  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service qwen38-lfm25.service qwen38-lfm3.service; do
+  for u in qwen38-sglang.service qwen38-flash.service qwen38-image.service qwen38-video.service qwen38-kolibri.service qwen38-nemotron.service qwen38-nemotron-super.service qwen38-flash-local.service qwen38-ornith-122b.service qwen38-flash-unsloth.service qwen38-image-h3.service qwen38-transcribe.service qwen38-lfm25.service qwen38-lfm3.service qwen38-inkling.service; do
     [ "$u" = "$UNIT" ] && continue
     systemctl is-active --quiet "$u" 2>/dev/null && VLANE_WAS="$u"
   done

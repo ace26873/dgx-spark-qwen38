@@ -320,12 +320,13 @@ def vllm_lane_disabled(case, lane, secondary, lane_boot):
     for f in ("sudo", "systemctl"):
         (d / f).chmod(0o755)
     boots = {"kolibri": 0, "nemotron": 0, "nemotron-super": 0, "flash-local": 0, "ornith-122b": 0, "flash-unsloth": 0,
-             "image-h3": 0, "transcribe": 0, "lfm25": 0, "lfm3": 0, lane: lane_boot}
+             "image-h3": 0, "transcribe": 0, "lfm25": 0, "lfm3": 0, "inkling": 0, lane: lane_boot}
     r = subprocess.run(["bash", "-c", f'set -euo pipefail\nRECOMMENDED=0\nSECONDARY="{secondary}"; KOLIBRI_BOOT={boots["kolibri"]}; '
                         f'NEMOTRON_BOOT={boots["nemotron"]}; NEMOTRON_SUPER_BOOT={boots["nemotron-super"]}; '
                         f'FLASH_LOCAL_BOOT={boots["flash-local"]}; ORNITH_122B_BOOT={boots["ornith-122b"]}; '
                         f'FLASH_UNSLOTH_BOOT={boots["flash-unsloth"]}; IMAGE_H3_BOOT={boots["image-h3"]}; '
-                        f'TRANSCRIBE_BOOT={boots["transcribe"]}; LFM25_BOOT={boots["lfm25"]}; LFM3_BOOT={boots["lfm3"]}\n' + block],
+                        f'TRANSCRIBE_BOOT={boots["transcribe"]}; LFM25_BOOT={boots["lfm25"]}; LFM3_BOOT={boots["lfm3"]}; '
+                        f'INKLING_BOOT={boots["inkling"]}\n' + block],
                        capture_output=True, text=True, timeout=30,
                        env={"PATH": f"{d}:/usr/bin:/bin"})
     case.assertEqual(r.returncode, 0, r.stderr)
@@ -597,6 +598,37 @@ class ABoxBootingLfm3(unittest.TestCase):
         self.assertEqual(vllm_lane_disabled(self, "lfm3", "", 0), ["sudo systemctl disable qwen38-lfm3.service"])
         self.assertEqual(vllm_lane_disabled(self, "lfm3", "", 1), [], "the run that keeps it at boot")
         self.assertEqual(vllm_lane_disabled(self, "lfm3", "flash", 0), [], "the run for the other text lane")
+
+
+class ABoxBootingInkling(unittest.TestCase):
+    """The Inkling 2 Mini lane, SGLang under an installer of its own, keeps the same promise, on its own unit."""
+
+    def resolve(self, text_lane, env=None):
+        home = tmp("lane-inkling-home-")
+        cfg = home / ".config" / "qwen38"
+        cfg.mkdir(parents=True)
+        (cfg / "text-lane").write_text(text_lane + "\n")      # the record a switch to it wrote
+        (cfg / "launch-flash.sh").write_text(ABoxBootingKolibri.LAUNCHER)
+        units = {"qwen38-sglang.service": SGL_UNIT, "qwen38-flash.service": ABoxBootingKolibri.FLASH_UNIT,
+                 "qwen38-inkling.service": "[Service]\n"}
+        rc, out, _ = converge(units, enabled=("qwen38-inkling.service",), env={**SHARED, **(env or {})}, home=home)
+        self.assertEqual(rc, 97, out)
+        return out
+
+    def test_it_stays_the_boot_lane_and_the_flash_before_it_is_brought_up_to_date(self):
+        out = self.resolve("qwen38-flash.service")
+        self.assertIn("The Inkling 2 Mini lane is this box's boot lane", out)
+        self.assertIn("INSTALLED=flash", out)
+
+    def test_an_explicit_target_takes_the_boot_back(self):
+        out = self.resolve("qwen38-flash.service", env={"MODEL_CHOICE": "flash"})
+        self.assertIn("MODEL_CHOICE=flash given on a box booting the Inkling 2 Mini lane", out)
+        self.assertNotIn("The Inkling 2 Mini lane is this box's boot lane", out)
+
+    def test_the_run_that_takes_the_boot_back_disables_it(self):
+        self.assertEqual(vllm_lane_disabled(self, "inkling", "", 0), ["sudo systemctl disable qwen38-inkling.service"])
+        self.assertEqual(vllm_lane_disabled(self, "inkling", "", 1), [], "the run that keeps it at boot")
+        self.assertEqual(vllm_lane_disabled(self, "inkling", "flash", 0), [], "the run for the other text lane")
 
 
 class ItLeavesWhatIsSharedToItsParent(unittest.TestCase):
@@ -941,7 +973,8 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
             want_kolibri=1, with_kolibri=0, kolibri_rc=0, prepared=(), all_weights=0, begun=(), second_new=None,
             want_nemotron=1, with_nemotron=0, nemotron_rc=0, want_super=1, with_super=0, super_rc=0,
             nemotron_image=None, want_flocal=0, with_flocal=0, flocal_rc=0, want_ornith=0, with_ornith=0, ornith_rc=0,
-            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0, pending_put=0, waits=(), want_tr=0, with_tr=0, tr_rc=0, want_lfm25=0, with_lfm25=0, lfm25_rc=0, want_lfm3=0, with_lfm3=0, lfm3_rc=0):
+            want_unsloth=0, with_unsloth=0, unsloth_rc=0, want_h3=0, with_h3=0, h3_rc=0, pending_put=0, waits=(), want_tr=0, with_tr=0, tr_rc=0, want_lfm25=0, with_lfm25=0, lfm25_rc=0, want_lfm3=0, with_lfm3=0, lfm3_rc=0,
+            want_inkling=0, with_inkling=0, inkling_rc=0):
         t = tmp("lane-end-")
         unit_dir = t / "units"
         unit_dir.mkdir()
@@ -985,12 +1018,18 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                 # vLLM's nightly image by digest, its checkpoint at its revision, from the cache its unit mounts
                 (unit_dir / u).write_text(f"[Unit]\nExecStart=/bin/bash -c '/usr/bin/docker run -v {hf}:/root/.cache/huggingface "
                                           f"vllm/vllm-openai@sha256:{'f' * 64} org/lfm3 --revision {'a' * 40}'\n")
+            elif vllm == "inkling":
+                # SGLang's own image for it by digest (another than the 27B's), its checkpoint at its revision (its unit's
+                # shape: the draft head is in the checkpoint)
+                (unit_dir / u).write_text(f"[Unit]\nExecStart=/bin/bash -c 'exec /usr/bin/docker run -v {hf}:/root/.cache/huggingface "
+                                          f"lmsysorg/sglang@sha256:{'9' * 64} python3 -m sglang.launch_server "
+                                          f"--model-path org/inkling --revision {'a' * 40}'\n")
             else:
                 (unit_dir / u).write_text(f"[Unit]\nExecStart=/usr/bin/docker run qwen38-{vllm}:test\n"
                                           if vllm == "kolibri" else "[Unit]\n")
         # a Nemotron lane's own first Load fetched its checkpoint into that cache
         for lane in set(prepared) & {"nemotron", "nemotron-super", "flash-local", "ornith-122b", "flash-unsloth", "transcribe",
-                                     "lfm25", "lfm3"}:
+                                     "lfm25", "lfm3", "inkling"}:
             (hf / "hub" / f"models--org--{lane}").mkdir(parents=True)
         # a prepared lane: its runtime is on the box (the venv and its wheel's note; a vLLM lane's image)
         for lane in prepared:
@@ -1016,7 +1055,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                          ("install-nemotron-super.sh", super_rc), ("install-flash-local.sh", flocal_rc),
                          ("install-ornith-122b.sh", ornith_rc), ("install-flash-unsloth.sh", unsloth_rc),
                          ("install-image-h3.sh", h3_rc), ("install-transcribe.sh", tr_rc), ("install-lfm25.sh", lfm25_rc),
-                         ("install-lfm3.sh", lfm3_rc)):
+                         ("install-lfm3.sh", lfm3_rc), ("install-inkling.sh", inkling_rc)):
             # a lane in waits: its --units-only leaves its new unit waiting for its Load (lanes.sh's unit_put)
             lane = name[len("install-"):-len(".sh")]
             wait = (f'case "$*" in *--units-only*) mkdir -p "{t}/pending"; echo new > "{t}/pending/qwen38-{lane}.service"; '
@@ -1036,6 +1075,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                                                         for v in ("kolibri", "nemotron"))
              + f"*org/b12x@sha256:*) exit {0 if {'flash-local', 'ornith-122b'} & set(prepared) else 1} ;; "
              + f"*llama.cpp@sha256:*) exit {0 if {'flash-unsloth', 'transcribe'} & set(prepared) else 1} ;; "
+             + f"*lmsysorg/sglang@sha256:{'9' * 64}*) exit {0 if 'inkling' in prepared else 1} ;; "
              + f"*lmsysorg/sglang@sha256:*) exit {0 if 'lfm25' in prepared else 1} ;; "
              + f"*vllm/vllm-openai@sha256:*) exit {0 if 'lfm3' in prepared else 1} ;; " + "esac\nexit 1")
         block = self.BLOCK.replace("/etc/systemd/system/", f"{unit_dir}/")
@@ -1059,6 +1099,7 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                   f'TRANSCRIBE_UNIT_PATH="{unit_dir}/qwen38-transcribe.service"\n'
                   f'LFM25_UNIT_PATH="{unit_dir}/qwen38-lfm25.service"\n'
                   f'LFM3_UNIT_PATH="{unit_dir}/qwen38-lfm3.service"\n'
+                  f'INKLING_UNIT_PATH="{unit_dir}/qwen38-inkling.service"\n'
                   'KEEPALIVE_UNIT=qwen38-keepalive.service; PORT=30000; PROXY_PORT=30001; CONTEXT_MODE=1m; OPENCODE=1; KA_CHANGED=0\n'
                   f"WANT_IMAGE={want_image}; WANT_VIDEO={want_video}; WITH_IMAGE={with_image}; WITH_VIDEO={with_video}\n"
                   f"WITH_FLASH={with_flash}; WITH_27B=0; WANT_KOLIBRI={want_kolibri}; WITH_KOLIBRI={with_kolibri}\n"
@@ -1071,13 +1112,15 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
                   f"WANT_TRANSCRIBE={want_tr}; WITH_TRANSCRIBE={with_tr}\n"
                   f"WANT_LFM25={want_lfm25}; WITH_LFM25={with_lfm25}\n"
                   f"WANT_LFM3={want_lfm3}; WITH_LFM3={with_lfm3}\n"
+                  f"WANT_INKLING={want_inkling}; WITH_INKLING={with_inkling}\n"
                   # the speech lane (v1.58.0) is no GPU lane and has its own tests (test_install_speech_default.py):
                   # left out here, so these runs stay the GPU lanes' alone
                   "WANT_SPEECH=0; WITH_SPEECH=0\n"
                   f"SECOND_LANE=flash; SECOND_UNIT=qwen38-flash.service; SECOND_STATE={second_state}; SECOND_FRESH={second_fresh}; SECOND_NEW={second_fresh if second_new is None else second_new}\n"
                   + block + '\necho "STATES second=$SECOND_STATE image=$IMAGE_STATE video=$VIDEO_STATE kolibri=$KOLIBRI_STATE'
                   ' nemotron=$NEMOTRON_STATE super=$NEMOTRON_SUPER_STATE flocal=$FLASH_LOCAL_STATE ornith=$ORNITH_122B_STATE'
-                  ' unsloth=$FLASH_UNSLOTH_STATE h3=$IMAGE_H3_STATE tr=$TRANSCRIBE_STATE lfm25=$LFM25_STATE lfm3=$LFM3_STATE"\n')
+                  ' unsloth=$FLASH_UNSLOTH_STATE h3=$IMAGE_H3_STATE tr=$TRANSCRIBE_STATE lfm25=$LFM25_STATE lfm3=$LFM3_STATE'
+                  ' inkling=$INKLING_STATE"\n')
         r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
                            env={"PATH": f"{bin_}:/usr/bin:/bin"})
         return r.returncode, r.stdout + r.stderr, log.read_text().splitlines()
@@ -1414,6 +1457,42 @@ class TheOtherLanesAndTheirProofs(unittest.TestCase):
         self.assertIn("NOTE: the Liquid AI LFM3 lane did not install", out)
         self.assertNotIn("install-lfm3.sh ", calls)              # nothing to prove
         self.assertIn("lfm3=failed", out)
+
+    def test_the_inkling_lane_comes_as_its_units_on_a_new_box_and_whole_with_all_weights(self):
+        # on demand, as every side lane: its unit on a new box, its first Load pulls its image and its switch fetches its
+        # checkpoint
+        rc, out, calls = self.end(want_lfm3=1, want_inkling=1)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls[5:7], ["install-lfm3.sh --units-only", "install-inkling.sh --units-only"])
+        self.assertIn("inkling=units", out)
+        rc, out, calls = self.end(want_lfm3=1, want_inkling=1, all_weights=1)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("install-inkling.sh --no-smoke", calls)
+        self.assertLess(calls.index("install-lfm3.sh "), calls.index("install-inkling.sh "))   # its proof, last
+        self.assertLess(calls.index("install-inkling.sh "), calls.index("prove qwen38-sglang.service qwen3.8-27b"))
+        self.assertIn("inkling=proved", out)
+        rc, out, calls = self.end(want_inkling=0, all_weights=1)
+        self.assertFalse([c for c in calls if c.startswith("install-inkling.sh")], calls)
+
+    def test_the_inkling_lane_is_begun_by_its_own_image_and_its_checkpoint(self):
+        units = ("qwen38-inkling.service",)
+        only = dict(second_fresh=0, want_image=0, want_video=0, want_kolibri=0, want_nemotron=0, want_super=0,
+                    want_inkling=1)
+        rc, out, calls = self.end(units=units, prepared=("inkling",), **only)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-inkling.sh --no-smoke"])
+        self.assertIn("inkling=installed", out)
+        # the 27B lane's image there is not its own: its units only, as on a new box
+        rc, out, calls = self.end(units=units, prepared=("lfm25",), **only)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls, ["install-inkling.sh --units-only"])
+
+    def test_a_failed_inkling_install_is_said_and_the_rest_goes_on(self):
+        rc, out, calls = self.end(want_inkling=1, inkling_rc=1, all_weights=1)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("NOTE: the Inkling 2 Mini lane did not install", out)
+        self.assertNotIn("install-inkling.sh ", calls)              # nothing to prove
+        self.assertIn("inkling=failed", out)
 
     def test_a_failed_ornith_install_is_said_and_the_rest_goes_on(self):
         rc, out, calls = self.end(want_ornith=1, ornith_rc=1, all_weights=1)

@@ -39,6 +39,7 @@ const UNITS = {units: {'qwen38-sglang.service': {active: 'active', enabled: 'ena
                        'qwen38-transcribe.service': {active: 'inactive', enabled: 'disabled'},
                        'qwen38-lfm25.service': {active: 'inactive', enabled: 'disabled'},
                        'qwen38-lfm3.service': {active: 'inactive', enabled: 'disabled'},
+                       'qwen38-inkling.service': {active: 'inactive', enabled: 'disabled'},
                        'qwen38-keepalive.service': {active: 'active', enabled: 'enabled'}}};
 const life = (engines, extra) => Object.assign({engines, events: [], blocked: {}}, extra || {});
 const eng = (state, extra) => Object.assign({state, target: 'stock', elapsed: 600}, extra || {});
@@ -1836,7 +1837,7 @@ class AnEmptyStateIsSaidNotPending(unittest.TestCase):
                 u27: installed('qwen38-sglang.service'), flash: installed('qwen38-flash.service')});
         """)
         self.assertNotIn("…", r["cps"], r)
-        self.assertEqual(sorted(r["cps"]), ["not installed"] * 12 + ["unknown"] * 2, r)
+        self.assertEqual(sorted(r["cps"]), ["not installed"] * 13 + ["unknown"] * 2, r)
         self.assertEqual((r["image"], r["video"], r["kolibri"], r["nemotron"], r["nsuper"], r["flocal"], r["ornith"], r["u27"],
                           r["flash"]), (False, False, False, False, False, False, False, True, True), r)
 
@@ -1878,7 +1879,7 @@ class TheBootLaneIsSaidOnlyWhenOneIs(unittest.TestCase):
     for (const u of ['qwen38-sglang.service', 'qwen38-flash.service', 'qwen38-image.service', 'qwen38-video.service', 'qwen38-kolibri.service',
                      'qwen38-nemotron.service', 'qwen38-nemotron-super.service', 'qwen38-flash-local.service',
                      'qwen38-ornith-122b.service', 'qwen38-flash-unsloth.service', 'qwen38-image-h3.service',
-                     'qwen38-transcribe.service', 'qwen38-lfm25.service', 'qwen38-lfm3.service'])
+                     'qwen38-transcribe.service', 'qwen38-lfm25.service', 'qwen38-lfm3.service', 'qwen38-inkling.service'])
       if (%s !== null) units.units[u].enabled = %s;
     feed({config: CONFIG, units, lifecycle: life({'qwen38-sglang.service': eng('stopped', {target: 'uncensored'}),
                                                  'qwen38-flash.service': eng('stopped', {target: 'flash'})})});
@@ -1898,7 +1899,7 @@ class TheBootLaneIsSaidOnlyWhenOneIs(unittest.TestCase):
         r = self.page("'disabled'")
         self.assertEqual(r["sub"], "no lane starts at boot; load one from Lanes", r)
         self.assertTrue(r["atBoot"] and all(a == "manual start" for a in r["atBoot"]), r["atBoot"])
-        self.assertEqual(r["notes"], ["manual start"] * 14, r["notes"])   # each of the fourteen lanes
+        self.assertEqual(r["notes"], ["manual start"] * 15, r["notes"])   # each of the fifteen lanes
         self.assertIn("Boot lanenone", r["facts"])
         self.assertEqual(len(r["steps"]), 2, r["steps"])
         self.assertIn("switch-model.sh uncensored", r["steps"][0])
@@ -3019,7 +3020,7 @@ class ALaneToComeOpensTheRack(unittest.TestCase):
         self.assertEqual(r["n"], 1)
         self.assertEqual(r["at"], 0)
         self.assertTrue(r["next"].startswith("Qwen3.8 27B"), r["next"])
-        self.assertEqual(r["bays"], 15)   # the fourteen lanes and this card
+        self.assertEqual(r["bays"], 16)   # the fifteen lanes and this card
         self.assertEqual((r["title"], r["cap"], r["lamp"]), ("Qwen4 27B", "coming soon", 0))
         self.assertIn("not released yet", r["text"])
         self.assertIn("no date yet", r["text"])
@@ -3055,9 +3056,10 @@ class EachLaneWearsItsMakersMark(unittest.TestCase):
                 none, flash, video});
         """)
         lanes = ["qwen.svg", "qwen.svg", "nvidia.svg", "unsloth.svg", "ornith.svg", "alephalpha.svg", "nvidia.svg", "nvidia.svg",
-                 "liquid.svg", "liquid.svg", "qwen.svg", "minimax.svg", "minimax.svg", "nvidia.svg"]   # 27B, flash,
-        # Flash FP4-Local, Unsloth GGUF, Ornith, Kolibri, the Nemotron lanes, Liquid AI's LFM2.5 and LFM3, the two image
-        # lanes (Qwen-Image 2.1, MiniMax-H3-Image), video, and NVIDIA's speech recognizer (NVIDIA Nemotron Transcribe)
+                 "liquid.svg", "liquid.svg", "thinkingmachines.svg", "qwen.svg", "minimax.svg", "minimax.svg",
+                 "nvidia.svg"]   # 27B, flash, Flash FP4-Local, Unsloth GGUF, Ornith, Kolibri, the Nemotron lanes, Liquid AI's
+        # LFM2.5 and LFM3, Inkling 2 Mini, the two image lanes (Qwen-Image 2.1, MiniMax-H3-Image), video, and NVIDIA's
+        # speech recognizer (NVIDIA Nemotron Transcribe)
         self.assertEqual(r["bays"], lanes)
         self.assertEqual(r["cards"], lanes)
         # the mark is decoration beside the lane's name: no alt text to read twice
@@ -3071,7 +3073,7 @@ class EachLaneWearsItsMakersMark(unittest.TestCase):
         names = set()
         for f in (pagejs.STATIC / "js").glob("*.js"):
             names |= set(re.findall(r"maker: '([a-z]+)'", f.read_text()))
-        self.assertEqual(names, {"qwen", "minimax", "alephalpha", "nvidia", "ornith", "unsloth", "liquid"})
+        self.assertEqual(names, {"qwen", "minimax", "alephalpha", "nvidia", "ornith", "unsloth", "liquid", "thinkingmachines"})
         for n in names:
             self.assertTrue((pagejs.STATIC / "img" / "logos" / f"{n}.svg").is_file(), n)
         css = (pagejs.STATIC / "css" / "cockpit.css").read_text()
@@ -3079,7 +3081,7 @@ class EachLaneWearsItsMakersMark(unittest.TestCase):
         # unchecked (found when the Ornith lane came, 2026-10-21)
         lanes = set(re.findall(r"lane: '([a-z0-9-]+)'", (pagejs.STATIC / "js" / "base.js").read_text()))
         self.assertEqual(lanes, {"27b", "flash", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                 "flash-unsloth", "image", "video", "image-h3", "transcribe", "lfm25", "lfm3"})
+                                 "flash-unsloth", "image", "video", "image-h3", "transcribe", "lfm25", "lfm3", "inkling"})
         for lane in lanes:
             self.assertRegex(css, r"--lane-%s:#[0-9a-f]{6};" % lane)
 

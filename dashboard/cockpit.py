@@ -214,17 +214,17 @@ UNITS = ("qwen38-sglang.service", "qwen38-flash.service", "qwen38-image.service"
          "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
          "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
          "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
-         "qwen38-lfm25.service", "qwen38-lfm3.service", "qwen38-keepalive.service")
+         "qwen38-lfm25.service", "qwen38-lfm3.service", "qwen38-inkling.service", "qwen38-keepalive.service")
 # The speech lane (install-speech.sh): Qwen3-ASR and Kokoro on the CPU, beside whichever engine serves. It is
 # none of the engines that take the GPU in turn (lifecycle.ENGINE_UNITS, UNITS above): no Load, no boot to
 # follow, no restart owed by an engine's inputs. The page shows it since v1.58.0 and starts or stops its unit.
 SPEECH_UNIT = "qwen38-speech.service"
 JOURNAL_UNITS = UNITS + (AGENT_UNIT, SPEECH_UNIT)   # what the Logs tab may read (UNITS carries the image, video, Kolibri and Nemotron lanes)
 # The SGLang text engines' containers: what their scheduler lines and their abort contract
-# are read from (the Liquid AI LFM2.5 24B-A2B lane's too, SGLang on the 27B's image). The Kolibri and Nemotron
-# lanes' vLLM writes neither, so they are only in CONTAINERS, the list the Logs tab, the diagnostics bundle and the
-# container stats read.
-SGL_CONTAINERS = ("qwen38-sglang", "qwen38-flash", "qwen38-lfm25")
+# are read from (the Liquid AI LFM2.5 24B-A2B lane's too, SGLang on the 27B's image, and the Inkling 2 Mini lane's,
+# SGLang on its own). The Kolibri and Nemotron lanes' vLLM writes neither, so they are only in CONTAINERS, the list the
+# Logs tab, the diagnostics bundle and the container stats read.
+SGL_CONTAINERS = ("qwen38-sglang", "qwen38-flash", "qwen38-lfm25", "qwen38-inkling")
 CONTAINERS = SGL_CONTAINERS + ("qwen38-kolibri", "qwen38-nemotron", "qwen38-nemotron-super", "qwen38-flash-local",
                                "qwen38-ornith-122b", "qwen38-flash-unsloth", "qwen38-transcribe", "qwen38-lfm3")
 
@@ -238,7 +238,8 @@ UNIT2CONT = {"qwen38-sglang.service": "qwen38-sglang",
              "qwen38-flash-unsloth.service": "qwen38-flash-unsloth",
              "qwen38-transcribe.service": "qwen38-transcribe",
              "qwen38-lfm25.service": "qwen38-lfm25",
-             "qwen38-lfm3.service": "qwen38-lfm3"}
+             "qwen38-lfm3.service": "qwen38-lfm3",
+             "qwen38-inkling.service": "qwen38-inkling"}
 HISTORY_FILE_NAME = "cockpit-history.json"
 
 EVENTS: deque = deque(maxlen=200)
@@ -1334,6 +1335,10 @@ def transcribe_serving() -> bool:
 # of lc.TEXT_UNITS with every SGLang belt (the canary, the pool guard, the autoheal), its facts read as the 27B's are.
 LFM25_UNIT = "qwen38-lfm25.service"
 LFM25_UNIT_PATH = SYSTEMD_DIR / LFM25_UNIT
+# The Inkling 2 Mini lane: SGLang on the image its cookbook gives the model, on the text port behind the proxy, a text
+# unit of lc.TEXT_UNITS as the LFM2.5 lane's, with every SGLang belt.
+INKLING_UNIT = "qwen38-inkling.service"
+INKLING_UNIT_PATH = SYSTEMD_DIR / INKLING_UNIT
 
 
 def transcribe_flag(flag: str, fallback: str) -> str:
@@ -2510,7 +2515,7 @@ def collect_opencode():
         if key == "real":
             for prov, pv in (cfg.get("provider") or {}).items():
                 if prov not in ("qwen38", "flashnext", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                "flash-unsloth", "lfm25", "lfm3"):
+                                "flash-unsloth", "lfm25", "lfm3", "inkling"):
                     continue
                 for mid, mv in (pv.get("models") or {}).items():
                     lim = mv.get("limit") or {}
@@ -2533,7 +2538,7 @@ def collect_opencode():
                 "nemotron-3.5-bolt": "nemotron", "nemotron-3.5-super-vl": "nemotron-super",
                 "qwen3.8-flash-next-fp4": "flash-local", "ornith-1.5-122b": "ornith-122b",
                 "qwen3.8-flash-next-unsloth": "flash-unsloth", "lfm2.5-24b-a2b": "lfm25",
-                "lfm3-1.7b": "lfm3"}.get(served)
+                "lfm3-1.7b": "lfm3", "inkling-2-mini": "inkling"}.get(served)
         lim = (out["real"]["limits"] or {}).get(f"{prov}/{served}") if prov else None
         if lim and lim.get("context"):
             ctx, outp = int(lim["context"]), int(lim.get("output") or 0)
@@ -3004,10 +3009,12 @@ def _guard_failed(err: str):
 
 VAR2TARGET = {"STOCK_REV": "stock", "UNC_REV": "uncensored", "FP8_REV": "fp8",
               "UNCFP8_REV": "uncensored-fp8", "ARETE_REV": "arete", "DAISYROSE_REV": "daisyrose", "FLASH_REV": "flash",
-              "FLASH_NVDA_REV": "flash-nvda", "FLASH_UNC_REV": "flash-uncensored", "LFM25_REV": "lfm25"}
+              "FLASH_NVDA_REV": "flash-nvda", "FLASH_UNC_REV": "flash-uncensored", "LFM25_REV": "lfm25",
+              "INKLING_REV": "inkling"}
 UNIT_PATHS = {"qwen38-sglang.service": SYSTEMD_DIR / "qwen38-sglang.service",
               "qwen38-flash.service": CONFIG_DIR / "launch-flash.sh",
-              "qwen38-lfm25.service": LFM25_UNIT_PATH}
+              "qwen38-lfm25.service": LFM25_UNIT_PATH,
+              "qwen38-inkling.service": INKLING_UNIT_PATH}
 UNIT_TARGET_CACHE: dict = {}
 
 
@@ -3107,9 +3114,10 @@ def monotonic_now() -> float:
 # The boot a text lane is expected to take when this box has recorded none of its own
 # (the reference box's medians, as the page's READY_DEFAULT), and the grace after it
 # during which "fired up but not answering" still reads as the warm-up it usually is.
-# The Liquid AI LFM2.5 24B-A2B lane's, its one boot measured (286 s on 2026-11-14), until the box records its own.
+# The Liquid AI LFM2.5 24B-A2B lane's, its one boot measured (286 s on 2026-11-14), until the box records its own; the
+# Inkling 2 Mini lane's, its boot with its kernels already compiled (222 s on 2026-11-22; 379 s at its first start).
 TEXT_BOOT_DEFAULT_S = {"qwen38-sglang.service": 540.0, "qwen38-flash.service": 780.0,
-                       "qwen38-lfm25.service": 290.0}
+                       "qwen38-lfm25.service": 290.0, "qwen38-inkling.service": 230.0}
 WARMUP_GRACE_S = 300.0
 # How long the other sampler tiers wait for the first health sample (start_samplers): the
 # engine is asked /v1/loads then, when idle, /health, 3 s and 4 s at most.
@@ -3761,6 +3769,7 @@ def lane_prepared(lane: str):
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_122B_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
             "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH,
+            "inkling": INKLING_UNIT_PATH,
             "flash": UNIT_PATHS["qwen38-flash.service"], "27b": UNIT_PATHS["qwen38-sglang.service"]}[lane]
     try:
         text = unit.read_text(errors="replace")
@@ -3780,10 +3789,11 @@ def lane_prepared(lane: str):
             return Path(waits.group(1)).stat().st_size > 0     # [ -s ]: an empty one is skipped
         except OSError:
             return False
-    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe", "lfm25", "lfm3"):
+    if lane in ("flash-local", "ornith-122b", "flash-unsloth", "transcribe", "lfm25", "lfm3", "inkling"):
         # its image is pulled as published, by digest: the one digest its unit names (FP4-Local's and Ornith's one,
         # llama.cpp's for the Unsloth GGUF and NVIDIA Nemotron Transcribe lanes, the 27B's for the LFM2.5 lane, whose
-        # checkpoints come with its switch, as Ornith's do; vLLM's own nightly for the LFM3 lane)
+        # checkpoints come with its switch, as Ornith's do; vLLM's own nightly for the LFM3 lane; SGLang's
+        # inkling-2-mini image for the Inkling 2 Mini lane)
         m = re.search(r"\S+@sha256:[0-9a-f]{64}", text)
         return bool(m) and run(["docker", "image", "inspect", "--format", "{{.Id}}", m.group(0)],
                                timeout=10).strip().startswith("sha256:")
@@ -4032,13 +4042,14 @@ def collect_lanes_ready():
     """30 s tier: which side lanes are prepared, for the Load journey (it builds a lane's
     runtime first when it is not)."""
     return {lane: lane_prepared(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                   "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "flash", "27b")}
+                                                   "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "inkling", "flash",
+                                                   "27b")}
 
 
 UNIT_OF_LANE = {"image": "qwen38-image.service", "video": "qwen38-video.service", "kolibri": KOLIBRI_UNIT,
                 "nemotron": NEMOTRON_UNIT, "nemotron-super": NEMOTRON_SUPER_UNIT, "flash-local": FLASH_LOCAL_UNIT,
                 "ornith-122b": ORNITH_UNIT, "flash-unsloth": FLASH_UNSLOTH_UNIT, "image-h3": "qwen38-image-h3.service",
-                "transcribe": TRANSCRIBE_UNIT, "lfm25": LFM25_UNIT, "lfm3": LFM3_UNIT,
+                "transcribe": TRANSCRIBE_UNIT, "lfm25": LFM25_UNIT, "lfm3": LFM3_UNIT, "inkling": INKLING_UNIT,
                 "flash": "qwen38-flash.service", "27b": "qwen38-sglang.service"}
 
 
@@ -4088,7 +4099,8 @@ def lane_startable(lane: str):
             "nemotron": NEMOTRON_UNIT_PATH, "nemotron-super": NEMOTRON_SUPER_UNIT_PATH,
             "flash-local": FLASH_LOCAL_UNIT_PATH, "ornith-122b": ORNITH_122B_UNIT_PATH,
             "flash-unsloth": FLASH_UNSLOTH_UNIT_PATH, "image-h3": IMAGE_H3_UNIT_PATH,
-            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
+            "transcribe": TRANSCRIBE_UNIT_PATH, "lfm25": LFM25_UNIT_PATH, "lfm3": LFM3_UNIT_PATH,
+            "inkling": INKLING_UNIT_PATH}.get(lane) or UNIT_PATHS[unit]
     try:
         text = path.read_text(errors="replace")
     except OSError:
@@ -4193,7 +4205,8 @@ def lane_startable(lane: str):
 def collect_lanes_startable():
     """30 s tier: which side lanes can start as installed (their Start), lane_startable."""
     return {lane: lane_startable(lane) for lane in ("image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                                    "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "flash", "27b")}
+                                                    "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "inkling", "flash",
+                                                    "27b")}
 
 
 def engine_table() -> dict:
@@ -4370,7 +4383,7 @@ SERVING_UNITS = {"qwen38-sglang.service", "qwen38-flash.service",
                  "qwen38-video.service", "qwen38-kolibri.service", "qwen38-nemotron.service",
                  "qwen38-nemotron-super.service", "qwen38-flash-local.service", "qwen38-ornith-122b.service",
                  "qwen38-flash-unsloth.service", "qwen38-image-h3.service", "qwen38-transcribe.service",
-                 "qwen38-lfm25.service", "qwen38-lfm3.service", AGENT_UNIT}
+                 "qwen38-lfm25.service", "qwen38-lfm3.service", "qwen38-inkling.service", AGENT_UNIT}
 UNIT_VERBS = {"start", "stop", "restart"}
 
 def _lane_unit_texts() -> list[str]:
@@ -4380,7 +4393,7 @@ def _lane_unit_texts() -> list[str]:
     for path in (UNIT_PATHS["qwen38-sglang.service"], UNIT_PATHS["qwen38-flash.service"],
                  KOLIBRI_UNIT_PATH, NEMOTRON_UNIT_PATH, NEMOTRON_SUPER_UNIT_PATH, FLASH_LOCAL_UNIT_PATH,
                  ORNITH_122B_UNIT_PATH, FLASH_UNSLOTH_UNIT_PATH, IMAGE_UNIT_PATH, VIDEO_UNIT_PATH, IMAGE_H3_UNIT_PATH,
-                 TRANSCRIBE_UNIT_PATH, LFM25_UNIT_PATH, LFM3_UNIT_PATH):
+                 TRANSCRIBE_UNIT_PATH, LFM25_UNIT_PATH, LFM3_UNIT_PATH, INKLING_UNIT_PATH):
         try:
             texts.append(path.read_text(errors="replace"))
         except OSError:
@@ -4413,7 +4426,8 @@ ACTIONS = {
         "params": {"target": ["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose",
                               "flash", "flash-nvda", "flash-uncensored", "flash-local", "image", "image-turbo",
                               "video", "kolibri", "kolibri-nvfp4", "nemotron", "nemotron-super", "ornith-122b",
-                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25", "lfm3"]},
+                              "flash-unsloth", "flash-unsloth-iq3", "image-h3", "transcribe", "lfm25", "lfm3",
+                              "inkling"]},
         "argv": lambda p: ["bash", str(REPO_DIR / "switch-model.sh"), p["target"]],
         # A switch can download a whole checkpoint: 124 GB for flash take about 23 min at
         # the 89 MB/s the reference box gets, so 30 min failed it on any slower link, and
@@ -4517,6 +4531,8 @@ def target_lane(target: str) -> str:
         return "lfm25"
     if target == "lfm3":
         return "lfm3"
+    if target == "inkling":
+        return "inkling"
     if target == "video":
         return "video"
     if target.startswith("kolibri"):
@@ -4561,7 +4577,7 @@ TARGET_PIN = {"stock": "STOCK_REV", "uncensored": "UNC_REV", "fp8": "FP8_REV", "
               # the Unsloth GGUF lane's two targets, two folders of one repository at one revision
               "flash-unsloth-iq3": "FLASH_UNSLOTH_REV",
               "image-h3": "IMAGE_H3_MODEL_PIN_REV", "transcribe": "TRANSCRIBE_REV", "lfm25": "LFM25_REV",
-              "lfm3": "LFM3_REV"}
+              "lfm3": "LFM3_REV", "inkling": "INKLING_REV"}
 # The Nemotron lanes load a drafter with the checkpoint, and their Download (the switch's --fetch)
 # fetches both: Library's state of such a target counts its drafter too. Bolt's read whole with its
 # drafter missing, which its Load then fetched (found on the reference box, 2026-10-15). The 27B's
@@ -4693,6 +4709,8 @@ def target_unit(target: str) -> Path:
         return LFM25_UNIT_PATH
     if target == "lfm3":
         return LFM3_UNIT_PATH
+    if target == "inkling":
+        return INKLING_UNIT_PATH
     if target.startswith("flash"):
         return UNIT_PATHS["qwen38-flash.service"]
     return UNIT_PATHS["qwen38-sglang.service"]
@@ -4933,6 +4951,8 @@ def served_model_name() -> str:
             return served
     if states.get(LFM25_UNIT) not in (None, "stopped", "failed"):
         return "lfm2.5-24b-a2b"
+    if states.get(INKLING_UNIT) not in (None, "stopped", "failed"):
+        return "inkling-2-mini"
     return "qwen3.8-27b"
 
 
@@ -6666,6 +6686,7 @@ def job_diag_bundle(job: Job):
         (tdp / "journal-transcribe.txt").write_text(run(["journalctl", "-u", TRANSCRIBE_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-lfm25.txt").write_text(run(["journalctl", "-u", LFM25_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-lfm3.txt").write_text(run(["journalctl", "-u", LFM3_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
+        (tdp / "journal-inkling.txt").write_text(run(["journalctl", "-u", INKLING_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         # the speech lane's too (v1.58.0): units.txt said it failed, and the bundle did not hold why
         (tdp / "journal-speech.txt").write_text(run(["journalctl", "-u", SPEECH_UNIT, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=15))
         (tdp / "journal-opencode-web.txt").write_text(run(["journalctl", "-u", AGENT_UNIT, "-n", "200", "--no-pager", "-o", "short-iso"], timeout=15))

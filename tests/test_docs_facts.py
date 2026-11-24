@@ -156,15 +156,15 @@ class TheDiskNeedsAreThePreflights(unittest.TestCase):
         said = {re.sub(r"\s+", "-", name.lower()).replace("flash-fp4-local", "flash-local")
                 .replace("qwen3.8-flash-next-unsloth-gguf", "flash-unsloth").replace("minimax-h3-image", "image-h3")
                 .replace("nvidia-nemotron-transcribe", "transcribe").replace("liquid-ai-lfm2.5-24b-a2b", "lfm25")
-                .replace("liquid-ai-lfm3", "lfm3"):
+                .replace("liquid-ai-lfm3", "lfm3").replace("inkling-2-mini", "inkling"):
                 re.findall(r"\d+", inside.split(";")[0])[-1] for name, inside in
                 re.findall(r"the (image|video|Kolibri|Nemotron Super|Nemotron|Flash\s+FP4-Local|Ornith\s+122B"
                            r"|Qwen3\.8\s+Flash-Next\s+Unsloth\s+GGUF|MiniMax-H3-Image"
-                           r"|NVIDIA\s+Nemotron\s+Transcribe|Liquid\s+AI\s+LFM2\.5\s+24B-A2B|Liquid\s+AI\s+LFM3) lane \(([^)]*)\)", overview)}
+                           r"|NVIDIA\s+Nemotron\s+Transcribe|Liquid\s+AI\s+LFM2\.5\s+24B-A2B|Liquid\s+AI\s+LFM3|Inkling\s+2\s+Mini) lane \(([^)]*)\)", overview)}
         flags = dict(re.findall(r"--no-(image-h3|image|video|kolibri|nemotron-super|nemotron|flash-local|ornith-122b|flash-unsloth|transcribe"
-                                r"|lfm25|lfm3)\s+leave the .*?\((?:vLLM, |llama\.cpp, |SGLang, )?(\d+) GB\)", sh))
+                                r"|lfm25|lfm3|inkling)\s+leave the .*?\((?:vLLM, |llama\.cpp, |SGLang, )?(\d+) GB\)", sh))
         self.assertEqual(set(said), {"image", "video", "kolibri", "nemotron", "nemotron-super", "flash-local", "ornith-122b",
-                                     "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3"}, overview)
+                                     "flash-unsloth", "image-h3", "transcribe", "lfm25", "lfm3", "inkling"}, overview)
         self.assertEqual(said, flags)
 
 

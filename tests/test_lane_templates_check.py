@@ -24,11 +24,13 @@ class TheLanesItKnows(unittest.TestCase):
         self.assertEqual(sorted(specs), sorted(["stock", "uncensored", "fp8", "uncensored-fp8", "arete", "daisyrose", "flash", "flash-nvda",
                                                 "flash-uncensored", "flash-local", "ornith-122b", "kolibri",
                                                 "kolibri-nvfp4", "nemotron", "nemotron-super", "flash-unsloth",
-                                                "flash-unsloth-iq3", "lfm25", "lfm3"]))
+                                                "flash-unsloth-iq3", "lfm25", "lfm3", "inkling"]))
         # the Liquid AI LFM3 lane's, on vLLM's nightly: its checkpoint's own, as published
         self.assertIsNone(specs["lfm3"])
         # the Liquid AI LFM2.5 24B-A2B lane's, on SGLang under an installer of its own: its checkpoint's own, as published
         self.assertIsNone(specs["lfm25"])
+        # the Inkling 2 Mini lane's, on SGLang under an installer of its own: its checkpoint's own, as published
+        self.assertIsNone(specs["inkling"])
         # the Unsloth GGUF lane's: the template its GGUF's first part carries, patched with the Qwen fixes at lean, the
         # first part of each of its two targets (v1.49)
         self.assertEqual(specs["flash-unsloth"], {"LEAN_DEFAULT": "1", "gguf": "UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf"})

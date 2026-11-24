@@ -30,7 +30,8 @@ def sglang_starts():
 class EveryEngineStartTakesTheFileRendezvous(unittest.TestCase):
     def test_the_starts_are_the_ones_this_test_knows(self):
         # a new SGLang lane is held to it as soon as its unit exists
-        self.assertEqual(sglang_starts(), ["qwen38-flash-launch.sh.template", "qwen38-lfm25.service.template",
+        self.assertEqual(sglang_starts(), ["qwen38-flash-launch.sh.template", "qwen38-inkling.service.template",
+                                           "qwen38-lfm25.service.template",
                                            "qwen38-sglang-1m.service.template", "qwen38-sglang-64.service.template",
                                            "qwen38-sglang.service.template", "run.sh"])
 
