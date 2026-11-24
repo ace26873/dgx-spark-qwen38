@@ -85,6 +85,11 @@ so its speeds are a lower bound (the bench of 2026-11-22 below ran uncapped):
   tokens: found in 27.8 s;
 - an image in, read; the effort by its name (`none`, `high`) and by a number (0.5), each answered, and 5 refused (400,
   out of the template's bounds);
+- an image's cost, the prompt tokens with and without a plain PNG through the proxy: 7, 628, 579, 10,612, 22,503 and
+  30,003 tokens at 64x64, 1000x1000, 1280x720, 4096x4096, 6000x6000 and 8000x6000, one token per 40-pixel cell (each
+  side rounded up) plus 3, with no size clamp: the proxy counts an image that way while this lane serves;
+- the smoke test's prompt, three runs at the lane's default effort: the marker every time, after up to 159 tokens
+  (the cockpit's smoke gives it 2,048);
 - an agent's four turns, by the OpenAI and the Anthropic routes: from the second turn on, 7,168 of its 7,222 to 7,256
   prompt tokens read from the prefix cache, about 1.0 s a turn against 3.4 s for the first;
 - Claude Code, opencode, Hermes, pi, LiteLLM, the OpenAI and Anthropic SDKs, fetch from Node and from Bun, and the

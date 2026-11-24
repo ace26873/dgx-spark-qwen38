@@ -30,21 +30,31 @@ stays the lane a box serves by default. Asked for in discussion #74.
   for every client shape as SGLang hands them).
 - **The cockpit** follows it as an SGLang text lane (the canary, the pool guard and the autoheal are its own), with its
   card in Lanes and on the Now view, its names (Inkling 2 Mini · Thinking Machines), its note with the reference box's
-  measures, its engine (SGLang nightly 03fde9cc), its journal and its container in Logs and the diagnostics bundle, and
-  System One said unavailable there. Its mark is a plain badge of Thinking Machines' initials, drawn for the cockpit:
-  no icon set has one, and the model's repository ships no logo.
+  measures, its engine (SGLang nightly 03fde9cc, known by the version that image's engine says, `0.0.0.dev1+inkling2`),
+  its journal and its container in Logs and the diagnostics bundle, and System One said unavailable there. Its mark is
+  a plain badge of Thinking Machines' initials, drawn for the cockpit: no icon set has one, and the model's repository
+  ships no logo. The smoke test (Ops) gives its answer 2,048 tokens where it gave 200: the lane reasons before its
+  answer whatever `enable_thinking` says, up to 159 tokens on the smoke's prompt in three runs on the reference box.
 - **Its clients**: opencode's `inkling` provider takes images and offers five variants, each a level of the checkpoint's
   template by its name in `chat_template_kwargs.reasoning_effort` (`high`, its default, then `none`, `low`, `medium`,
   `xhigh`). Its pair is 871,000 tokens of context and 32,000 of output: at its window the KV cache decides (1,091,200
   tokens measured at 0.76), and the pair fits that pool less the proxy's 8 % and 10 % for a smaller boot
   (871,000 + 32,000 <= 1,091,200 x 0.92 x 0.90 = 903,513). oc-fit-limits.py
   fits it to the engine's pool after a boot and keeps its 32,000 of output as a ceiling whatever its window
-  (`ANSWER_CAPPED`), as the model's card recommends limits on output tokens. pi sends its level, its `off` as `none`,
+  (`ANSWER_CAPPED`), as the model's card recommends limits on output tokens; the cockpit's own fit after a boot asks
+  the same rule (`cap_for`), so it fits the lane as the Settings button does. pi sends its level, its `off` as `none`,
   and starts at `high`; omp offers `high`, `minimal` (sent as `none`), `low`, `medium` and `xhigh`.
 - **The proxy (v6.62)** knows the lane: its name is a lane of the pair's routes; a request's `none` reaches its
   template as it came (on the other SGLang lanes the proxy turns it into `enable_thinking` false, which the Qwen
-  templates read and this one does not: the lane would have reasoned at its default); and POST `/v1/systemone` is
-  refused while it serves, as its card says its lowest effort does not turn the reasoning off.
+  templates read and this one does not: the lane would have reasoned at its default); POST `/v1/systemone` is
+  refused while it serves, as its card says its lowest effort does not turn the reasoning off; and an image costs, in
+  the count that keeps a prompt past the pool from wedging the engine, what its processor counts: one token per
+  40-pixel cell, each side rounded up, plus 3, with no size clamp (an 8000x6000 photo is 30,003 tokens, where the
+  Qwen-VL sizing stopped at 16,386), measured through the proxy at six sizes from 64x64 to 8000x6000.
+- **Found by the code review of the version**, each fixed with a test that fails on the code before it: the cockpit's
+  fit after a boot left the lane's limits past a smaller pool (it gave the answer 200,000 tokens and fitted nothing);
+  the card named its engine by a version the image never says; the smoke test's 200 tokens could end inside the
+  lane's reasoning; the proxy undercounted an image past about 26 megapixels on this lane.
 
 Measured on the reference box (an ASUS Ascent GX10, 128 GB), its recipe in its image from a container of its own. At
 the lane's share of 0.76 on 2026-11-24: ready in 237 s, 84.4 GiB of GPU memory once ready, MemAvailable 24.37 GiB at
