@@ -102,8 +102,8 @@ Served model names: `qwen3.8-27b` (27B lane, both context modes),
 `qwen3.8-flash-next` (flash lane), `qwen3.8-flash-next-fp4` (Qwen3.8 Flash-Next FP4-Local lane),
 `qwen3.8-flash-next-unsloth` (Qwen3.8 Flash-Next Unsloth GGUF lane),
 `kolibri-1` (Kolibri lane), `nemotron-3.5-bolt` (Nemotron lane), `nemotron-3.5-super-vl`
-(Nemotron Super lane), `ornith-1.5-122b` (Ornith lane), `lfm2.5-24b-a2b` (Liquid AI LFM2.5 24B-A2B lane) and
-`lfm3-1.7b` (Liquid AI LFM3 lane). Send the name, not the checkpoint path. A client set up for one lane
+(Nemotron Super lane), `ornith-1.5-122b` (Ornith lane), `lfm2.5-24b-a2b` (Liquid AI LFM2.5 24B-A2B lane),
+`lfm3-1.7b` (Liquid AI LFM3 lane) and `inkling-2-mini` (Inkling 2 Mini lane). Send the name, not the checkpoint path. A client set up for one lane
 keeps working on another: SGLang answers any name, and on the vLLM lanes, whose vLLM
 refuses a model it does not serve, the proxy gives such a request the served name
 (proxy v6.37).
@@ -148,6 +148,16 @@ it does. SGLang's `deepseek-r1` parser takes its reasoning apart from the answer
 calls, which it writes in LFM2's own form, into OpenAI `tool_calls`. Both were chosen by reading the parsers' source
 in the image, and neither has been measured with a client yet. Its window is 131,072 tokens.
 
+The Inkling 2 Mini lane (SGLang, the image SGLang's cookbook gives the model, [docs/inkling-lane.md](inkling-lane.md))
+takes text and images, and reasons at the effort a request asks in `chat_template_kwargs.reasoning_effort`: a number
+from 0.0 to 0.99 or a level by name (`none` 0.0, `minimal` 0.1, `low` 0.2, `medium` 0.7, `high` 0.9, `xhigh` and `max`
+0.99), `high` when a request names none; the engine refuses a number out of bounds. The proxy relays `none` as it came
+there (v6.62), where on the Qwen lanes it becomes `enable_thinking` false. Its card says the lowest effort does not turn
+the reasoning off, and `/v1/systemone` is not served on it. SGLang's `inkling` parser takes its reasoning apart from the
+answer and its `inkling2` parser turns its tool calls into OpenAI `tool_calls` (three of three on the reference box, on
+the engine alone). Its window is 1,048,576 tokens, and its KV cache held 490,496 at its share: one request fits in that.
+No client has run on the lane through the proxy yet.
+
 The Nemotron lanes (vLLM, [docs/nemotron-lane.md](nemotron-lane.md) and
 [docs/nemotron-super-lane.md](nemotron-super-lane.md)) also say their
 reasoning in the `reasoning` field. Their templates read no effort level: each reasons at its
@@ -181,7 +191,7 @@ ceiling (`FLASH_PROMPT_CEILING_TOKENS`, 250,000 by default), which keeps a long
 flash prefill off the memory edge. The engine itself refuses a request whose
 prompt plus `max_tokens` passes its window (262,144 tokens on most lanes;
 1,010,000 on the 27B in 1M mode; 1,048,576 on Super VL, Ornith, and FP4-Local
-with its 1M option; 131,072 on the Liquid AI LFM2.5 24B-A2B lane). A 413 means a body over `MAX_BODY_BYTES` (256 MiB), refused before a
+with its 1M option and the Inkling 2 Mini lane; 131,072 on the Liquid AI LFM2.5 24B-A2B lane). A 413 means a body over `MAX_BODY_BYTES` (256 MiB), refused before a
 byte of it is read.
 
 The network's share of the port is bounded (proxy v6.41). Another machine holds

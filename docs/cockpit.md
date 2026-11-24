@@ -167,7 +167,7 @@ themes.
   is no panel for the API key, which is what you log in with; the diagnostics
   bundle masks it.
 - **Checkpoints.** Library lists every lane's checkpoints, the text lanes', the image
-  and video lanes', Kolibri's, the two Nemotron lanes' (their drafters too), Qwen3.8 Flash-Next FP4-Local's, Ornith's, the Qwen3.8 Flash-Next Unsloth GGUF lane's (its draft too), the NVIDIA Nemotron Transcribe lane's and the two Liquid AI lanes' (LFM2.5's draft too), in the caches the lanes read (each lane's unit says
+  and video lanes', Kolibri's, the two Nemotron lanes' (their drafters too), Qwen3.8 Flash-Next FP4-Local's, Ornith's, the Qwen3.8 Flash-Next Unsloth GGUF lane's (its draft too), the NVIDIA Nemotron Transcribe lane's, the two Liquid AI lanes' (LFM2.5's draft too) and the Inkling 2 Mini lane's, in the caches the lanes read (each lane's unit says
   which), each revision pinned or stray, with what it holds on disk. A stray revision
   is one no pin, no installed unit and no ref names: the line says what deleting it
   frees, or why it stays (a ref names it, and a load by name reads it), and one button

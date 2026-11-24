@@ -8,9 +8,10 @@ Since v1.15 the keepalive proxy answers **`POST /v1/systemone`** with the wire c
 TypeSafe's Jev ([docs.typesafe.ai/api](https://docs.typesafe.ai/api)): one `state` (a string
 or JSON), a map of typed `questions` (`choice`, `score`, `noul`), and one typed answer per
 question with its probabilities and a confidence. The answers come from **the Qwen lane you already
-run** (27B or flash; on the other text lanes the proxy says so, 400, the two Liquid AI lanes included: LFM2.5
-24B-A2B's template opens a thought at every answer, before the one token System One reads, and LFM3 runs on vLLM,
-which caps `top_logprobs`, like every vLLM lane). Every question becomes one
+run** (27B or flash; on the other text lanes the proxy says so, 400, the two Liquid AI lanes and the Inkling 2 Mini
+lane included: LFM2.5 24B-A2B's template opens a thought at every answer, before the one token System One reads,
+Inkling 2 Mini reasons before every answer at any effort, as its card says, and LFM3 runs on vLLM, which caps
+`top_logprobs`, like every vLLM lane). Every question becomes one
 chat completion of exactly one token, the options are named
 by single-token letters, and `top_logprobs` hands back the probability of each letter. Nothing
 is generated, nothing is parsed, and the state is the shared prefix the radix cache reuses from

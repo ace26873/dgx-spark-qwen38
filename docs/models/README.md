@@ -17,6 +17,7 @@ from [BENCHMARKS.md](../../BENCHMARKS.md) and the lane pages it links, nothing h
 | Qwen3.8 Flash-Next UD-Q4_K_XL GGUF · Unsloth | llama.cpp b12316 | [qwen38-flash-next-unsloth-gguf.md](qwen38-flash-next-unsloth-gguf.md) | `./switch-model.sh flash-unsloth` | 51.8 tok/s on code and 123.7 on a rewrite of code at the card's sampling |
 | LFM2.5 24B-A2B FP8 · Liquid AI, with its DSpark draft | SGLang 0.5.22 | [lfm25.md](lfm25.md) | `./switch-model.sh lfm25` | GSM8K 0.912 and 362 tok/s in all at 8 requests, in one trial |
 | LFM3 1.7B NVFP4 · Liquid AI | vLLM nightly 60bd6dd | [lfm3.md](lfm3.md) | `./switch-model.sh lfm3` | 87.7 tok/s alone, 3,912 in all at 128 requests, GSM8K 0.896, before its memory share |
+| Inkling 2 Mini · Thinking Machines, with its DSpark draft head | SGLang nightly 03fde9cc | [inkling.md](inkling.md) | `./switch-model.sh inkling` | the light text lane: 53.1 GiB of GPU memory against 89.0 for the 27B, 64.7 tok/s, GSM8K 0.964, a 1M window, images |
 | Qwen-Image 2.1 · Qwen | SGLang Diffusion 0.5.21 | [qwen-image-21.md](qwen-image-21.md) | `./switch-model.sh image` | 1024x1024 in 7.5 s with its Turbo |
 | MiniMax-H3 · MiniMax, video with sound | SGLang Diffusion 0.5.21 | [minimax-h3.md](minimax-h3.md) | `./switch-model.sh video` | 4 s of 480P in about 127 s with its Turbo |
 | MiniMax-H3-Image · MiniMax | SGLang Diffusion main 49f1a44 | [minimax-h3-image.md](minimax-h3-image.md) | `./switch-model.sh image-h3` | 2048x2048 in 15.6 s, 4736x3552 in 81 s |
