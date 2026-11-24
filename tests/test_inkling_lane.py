@@ -405,6 +405,39 @@ class ItsClients(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(r.stdout.strip(), "Inkling 2 Mini + DSpark (local, 1M)")
 
+    def test_opencode_is_pointed_at_it_and_pi_and_omp_send_its_levels(self):
+        with tempfile.TemporaryDirectory(prefix="inkling-oc-") as d:
+            oc = pathlib.Path(d, "opencode.json")
+            prov = json.loads(subprocess.run(["python3", str(REPO / "oc-inkling.py"), "http://127.0.0.1:30001/v1", "/k",
+                                              "374000", "32000", "n"], capture_output=True, text=True).stdout)
+            oc.write_text(json.dumps({"model": "qwen38/qwen3.8-27b", "provider": {"qwen38": {
+                "options": {"baseURL": "http://127.0.0.1:30001/v1"}, "models": {"qwen3.8-27b": {}}}}}))
+            src = pathlib.Path(d, "src.json")
+            src.write_text(json.dumps(prov))
+            r = subprocess.run(["python3", str(REPO / "oc-merge-limits.py"), str(oc), "--add-providers", str(src)],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = subprocess.run(["python3", str(REPO / "oc-point-default.py"), str(oc), "inkling", "inkling", "1048576"],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            cfg = json.loads(oc.read_text())
+            self.assertEqual(cfg["model"], f"inkling/{SERVED}")
+            pi = load("pi_gen_inkling", "pi-gen.py")
+            models, settings, efforts = pi.build(cfg)
+            meta = models["providers"]["inkling"]["models"][0]
+            self.assertEqual((settings["defaultProvider"], settings["defaultModel"]), ("inkling", SERVED))
+            # pi sends its level, its off as none, and starts at high, the template's own default
+            self.assertEqual(settings["modelThinkingLevels"][f"inkling/{SERVED}"], "high")
+            self.assertTrue(meta["compat"]["supportsReasoningEffort"])
+            self.assertEqual(meta["thinkingLevelMap"], {"off": "none"})
+            self.assertEqual(meta["input"], ["text", "image"])
+            # omp rides none on its own minimal and starts at high
+            omp, _ = pi.omp_convert(models, settings, efforts)
+            e = omp["providers"]["inkling"]["models"][0]
+            self.assertEqual(e["thinking"], {"mode": "effort", "efforts": ["high", "minimal", "low", "medium", "xhigh"],
+                                             "defaultLevel": "high"})
+            self.assertEqual(e["compat"]["reasoningEffortMap"], {"minimal": "none"})
+
 
 class ItIsNoLaneOfA64GbBox(unittest.TestCase):
     def test_boxmem_holds_it_for_a_128_gb_box_only(self):

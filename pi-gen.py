@@ -21,7 +21,7 @@ pi's settings.json adds the default model,
 modelThinkingLevels "off" for the Qwen models (unset sends no effort field: the
 installed template's default, lean, or xhigh on a box installed with LEAN_DEFAULT=0
 and on the Qwen3.8 Flash-Next FP4-Local lane installed with FLASH_LOCAL_EFFORT=xhigh)
-and "high" for Kolibri-1, the two Nemotron lanes and Ornith 1.5 122B, which are
+and "high" for Kolibri-1, the two Nemotron lanes, Ornith 1.5 122B and Inkling 2 Mini, which are
 sent their effort (EFFORT_FIELD); the Liquid AI LFM2.5 24B-A2B lane, whose template reasons on every
 request and reads no level, is offered "high" alone and sent none (FIXED_LEVEL),
 keepRecentTokens from the artifact's compaction block and per-lane reserveTokens =
@@ -169,7 +169,12 @@ EFFORT_FIELD = {"kolibri": ({"off": "none", "minimal": "low", "xhigh": "high"}, 
                 "ornith-122b": ({"off": "none"}, "high"),
                 # LFM3's template reads enable_thinking alone, as Ornith's: the proxy translates the field the same
                 # way (ornith_effort), none off and high on, and pi offers those two alone (HELD_LEVELS)
-                "lfm3": ({"off": "none"}, "high")}
+                "lfm3": ({"off": "none"}, "high"),
+                # Inkling 2 Mini's template reads reasoning_effort by the very names pi sends (none 0.0, minimal 0.1, low
+                # 0.2, medium 0.7, high 0.9, xhigh and max 0.99; its chat_template.jinja at the pinned revision, read
+                # 2026-11-24), and reasons at high unasked: pi sends its levels as they are, its off as none (the
+                # template's lowest, which the model's card says does not turn the reasoning off), and starts at high
+                "inkling": ({"off": "none"}, "high")}
 # The lanes whose template reasons on every request and reads no level and no switch: the one level a client may show
 # is the one the model holds, and no field is sent, since the template reads none. The Liquid AI LFM2.5 24B-A2B lane's
 # chat_template.jinja (at the pinned revision, read 2026-11-16) ends every generation prompt with "<think>", and the
