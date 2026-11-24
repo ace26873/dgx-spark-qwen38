@@ -751,7 +751,9 @@ Lanes view, pick **Inkling 2 Mini** and press **Load**; from a terminal, `./prep
 then `./switch-model.sh inkling`.
 
 The 27B stays the lane a box serves by default. At its share of 0.76 (2026-11-24) the lane was ready in 237 s with
-84.4 GiB of GPU memory once ready. At the recipe's share of 0.45 it was measured on the reference box on 2026-11-22,
+84.4 GiB of GPU memory once ready, and its own unit found a needle in a prompt of 960,037 tokens and decoded 62.6 tok/s
+on `bench.sh` with the GPU clock capped at 2,000 MHz. At the recipe's share of 0.45 it was measured on the reference
+box on 2026-11-22,
 against the 27B lane the same evening by the same tools (the quality from 2026-11-22 to 24, which the share does not
 change):
 

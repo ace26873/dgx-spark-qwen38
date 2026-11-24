@@ -11,10 +11,11 @@ pinned revision on the same port and behind the same proxy and key as the other 
 The lane serves it at the 27B lane's memory share, 0.76, where the cookbook's recipe gives 0.45: at 0.76 its KV cache
 holds the model's whole window. The 27B stays the lane a box serves by default.
 
-What is measured of it, on the reference box (an ASUS Ascent GX10, 128 GB): the recipe at the lane's share of 0.76 on
-2026-11-24, from a container of its own, its memory and its pool; and at the recipe's share of 0.45, the bench of
-2026-11-22 against the 27B lane the same evening by the same tools, and the quality runs of 2026-11-22 to 24. The
-quality does not depend on the share; the memory and the pool do.
+What is measured of it, on the reference box (an ASUS Ascent GX10, 128 GB): the lane's own unit at its share of 0.76
+on 2026-11-24, installed by `./install.sh` and loaded as the cockpit loads it; the recipe at that share the same day,
+from a container of its own, its memory and its pool; and at the recipe's share of 0.45, the bench of 2026-11-22
+against the 27B lane the same evening by the same tools, and the quality runs of 2026-11-22 to 24. The quality does
+not depend on the share; the memory and the pool do.
 
 ## Why SGLang, and this image
 
@@ -74,6 +75,21 @@ At the lane's share of 0.76, on 2026-11-24 (`essai-076.log`): ready in 237 s, it
 MiB (84.4 GiB) of GPU memory once ready; MemAvailable 24.37 GiB at its lowest while it loaded; a KV cache of 1,091,200
 tokens, and 109,056 in its sliding window; 48 requests and a window of 1,048,576 in SGLang's own `server_info`.
 
+The lane's own unit at 0.76, the same day: installed by `./install.sh` from this release's tree, loaded as the cockpit
+loads it (the 27B stopped first), every request through the proxy and the box's key, the GPU clock capped at 2,000 MHz,
+so its speeds are a lower bound (the bench of 2026-11-22 below ran uncapped):
+
+- ready in 254 s from the cockpit's switch, with 85,683 MiB (83.7 GiB) of GPU memory once ready;
+- `bench.sh`, greedy median, two runs: 62.6 and 62.8 tok/s (free prose, the worst case: 28.5 to 28.9 tok/s);
+- a needle in a prompt of 960,037 tokens: found, 1,461 s for the whole request, 476 tokens out; in a prompt of 64,835
+  tokens: found in 27.8 s;
+- an image in, read; the effort by its name (`none`, `high`) and by a number (0.5), each answered, and 5 refused (400,
+  out of the template's bounds);
+- an agent's four turns, by the OpenAI and the Anthropic routes: from the second turn on, 7,168 of its 7,222 to 7,256
+  prompt tokens read from the prefix cache, about 1.0 s a turn against 3.4 s for the first;
+- Claude Code, opencode, Hermes, pi, LiteLLM, the OpenAI and Anthropic SDKs, fetch from Node and from Bun, and the
+  production checks: nine of nine.
+
 At the recipe's share of 0.45, the bench of 2026-11-22 (`banc-inkling.sh`, its DSpark arm against the 27B lane's
 unit, the same tools, one after the other):
 
@@ -99,8 +115,7 @@ it scores higher than the highest effort with shorter answers (574 tokens on ave
 highest effort did not finish in time (13 of 164 problems in 10 minutes). The 27B lane scores 99.2 % on the same 250 questions
 ([BENCHMARKS.md](../BENCHMARKS.md)).
 
-Not measured yet at 0.76: its speed, a prompt past 32,015 tokens, more than 8 requests at once, an image in, the prefix
-cache under an agent, and the clients through the proxy.
+Not measured yet at 0.76: several requests at once (8 at once at the recipe's share, in the table above).
 
 ## Clients
 

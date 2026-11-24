@@ -27,7 +27,10 @@ the same evening:
 - **GSM8K 0.980** (250 questions) and **HumanEval 0.976** (164 problems, pass@1) at its default effort with its card's
   sampling (0.964 on GSM8K greedy), 0.972 on GSM8K at its highest effort; three tool calls of three.
 
-Its speed at 0.76, a long prompt, an image in and the clients through the proxy are not measured yet.
+The lane's own unit at 0.76, the same day, the GPU clock capped at 2,000 MHz (a lower bound): **62.6 tok/s** greedy
+median (`./bench.sh`, two runs, 62.6 and 62.8); a needle found in a prompt of **960,037 tokens**; an image read; the
+prefix cache read from an agent's second turn on; Claude Code, opencode, Hermes, pi, LiteLLM, the OpenAI and Anthropic
+SDKs and fetch from Node and Bun, through the proxy, all answered. Several requests at once at 0.76 are not measured yet.
 
 ## What it is good at
 

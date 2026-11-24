@@ -54,8 +54,16 @@ its lowest while it loaded, a KV cache of 1,091,200 tokens. At the recipe's shar
 stream and 89.2 in all at 8 at once against 34.0 and 119.0, a prompt of 32,015 tokens in 10.0 s to its first token,
 three tool calls of three, GSM8K 0.964 (250 questions) at its default effort; on 2026-11-23, GSM8K 0.972 at the
 template's highest effort and the card's sampling; on 2026-11-24, at its default effort and the card's sampling,
-GSM8K 0.980 and HumanEval 0.976 (164 problems, pass@1, one answer cut at 16,384 tokens). Its speed at 0.76, a longer
-prompt, an image in and the clients through the proxy are not measured yet ([docs/inkling-lane.md](docs/inkling-lane.md)).
+GSM8K 0.980 and HumanEval 0.976 (164 problems, pass@1, one answer cut at 16,384 tokens).
+
+The lane's own unit at 0.76 on 2026-11-24, installed by `./install.sh` from this release's tree and loaded as the
+cockpit loads it, the GPU clock capped at 2,000 MHz (its speeds a lower bound; the bench of 2026-11-22 ran uncapped):
+ready in 254 s, 83.7 GiB of GPU memory once ready; a greedy median of 62.6 and 62.8 tok/s on `bench.sh` (two runs); a
+needle found in a prompt of 960,037 tokens (1,461 s for the whole request) and in one of 64,835 (27.8 s); an image
+read; the effort by its name and by a number, and 5 refused; from an agent's second turn on, 7,168 of its 7,222 to
+7,256 prompt tokens read from the prefix cache, by the OpenAI and the Anthropic routes; through the proxy and its key,
+Claude Code, opencode, Hermes, pi, LiteLLM, the OpenAI and Anthropic SDKs, fetch from Node and Bun, and the production
+checks, nine of nine. Not measured yet at 0.76: several requests at once ([docs/inkling-lane.md](docs/inkling-lane.md)).
 
 ## v1.58.0 (2026-11-24): the one command installs the speech lane, and the cockpit shows it
 
