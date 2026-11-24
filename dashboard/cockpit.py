@@ -6650,8 +6650,12 @@ def job_abort_all(job: Job):
 
 def job_smoke(job: Job):
     model = served_model_name()
-    job.append(f"canary through the proxy {PROXY_BASE}, model {model}, up to 200 tokens")
-    body = json.dumps({"model": model, "max_tokens": 200,
+    job.append(f"canary through the proxy {PROXY_BASE}, model {model}, up to 2048 tokens")
+    # 2048 tokens, not 200: a lane that reasons before its answer whatever enable_thinking says spends its budget there
+    # first. The Inkling 2 Mini lane, whose template reads no enable_thinking, took up to 159 of the 200 on this very
+    # prompt (three runs on the reference box, 2026-11-24): a longer thought was a "smoke FAILED" on a healthy lane
+    # (code review of v1.59.0). A lane that answers at once stops after a few tokens all the same.
+    body = json.dumps({"model": model, "max_tokens": 2048,
                        "chat_template_kwargs": {"enable_thinking": False},
                        "messages": [{"role": "user",
                                      "content": "Reply with exactly: COCKPIT-SMOKE-OK"}]}).encode()

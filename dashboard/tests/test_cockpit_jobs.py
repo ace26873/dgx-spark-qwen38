@@ -246,6 +246,28 @@ class PythonJobs(Base):
         self.assertTrue(seen, "the smoke sent nothing")
         self.assertEqual({k.lower(): v for k, v in seen[0].items()}.get("x-alzeo-here"), "1", seen[0])
 
+    def test_the_smoke_leaves_room_for_a_lane_that_reasons_first(self):
+        """The Inkling 2 Mini lane reasons before its answer whatever enable_thinking says: on this prompt it took up to
+        159 of the 200 tokens the smoke gave (three runs on the reference box, 2026-11-24), so a longer thought read as a
+        failed smoke on a healthy lane (code review of v1.59.0). The budget holds ten times that."""
+        bodies = []
+
+        class Answer(io.BytesIO):
+            pass
+
+        def urlopen(req, timeout=None):
+            bodies.append(json.loads(req.data))
+            return Answer(json.dumps({"choices": [{"message": {"content": "COCKPIT-SMOKE-OK"}}]}).encode())
+        real = self.cp.urllib.request.urlopen
+        self.cp.urllib.request.urlopen = urlopen
+        try:
+            self.cp.JOB_LOCK.acquire(blocking=False)
+            self._drive("smoke", self.cp.job_smoke)
+        finally:
+            self.cp.urllib.request.urlopen = real
+        self.assertTrue(bodies, "the smoke sent nothing")
+        self.assertGreaterEqual(bodies[0]["max_tokens"], 2048, bodies[0])
+
     def test_the_lock_is_released_by_a_job_that_raises(self):
         self.cp.JOB_LOCK.acquire(blocking=False)
         self._drive("abort_all", self.cp.job_abort_all)
