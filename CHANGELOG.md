@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.58.0 (2026-11-23): the one command installs the speech lane, and the cockpit shows it
+## v1.58.0 (2026-11-24): the one command installs the speech lane, and the cockpit shows it
 
 The speech lane (Qwen3-ASR and Kokoro on the CPU, behind OpenAI-style audio routes on port 30024)
 was installed by its own script only, so a box that ran the one command never had it, and the
@@ -52,6 +52,12 @@ and their sudoers lines, and the card in the page's own scripts (dashboard/tests
 mutants shown red). On the reference box: the card seen in a browser on a cockpit of its own, and
 the real installer run twice on the lane while it served (the second run asked PyPI nothing, the
 lane was not restarted, its health answered 200).
+
+Proved on the reference box on 2026-11-24, this release installed from its branch by a plain `./install.sh`
+(1 min 40 s): the lane it found running stayed as it was (its start time unchanged) and the summary said "installed
+and up to date, running"; the cockpit reported 1.58.0 and read the card's facts from the unit and its launcher; the
+card's Stop and Start stopped and started the lane (its health answered 200 again) and its boot switch took it out of
+the boot and back (each state read by systemctl after the click); the 8 real clients answered on the 27B lane.
 
 ## v1.57.0 (2026-11-23): the opencode guard covers webfetch as well as the shell, on both majors
 
